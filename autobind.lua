@@ -1,10 +1,10 @@
 script_name("Autobind")
-script_author("akacross", "spnKO(Oleg)", "Farid_Speed", "P-Greggy", "checkdasound")
+script_author("akacross", "spnKO", "Farid", "P-Greggy", "checkdasound")
 script_url("https://akacross.net/")
 script_tester = {"Taro"}
 
-local script_version = 1.5
-local script_version_text = '1.5'
+local script_version = 1.6
+local script_version_text = '1.6'
 
 if getMoonloaderVersion() >= 27 then
 	require 'libstd.deps' {
@@ -22,6 +22,7 @@ local imgui, ffi = require 'mimgui', require 'ffi'
 local new, str, sizeof = imgui.new, ffi.string, ffi.sizeof
 local ped, h = playerPed, playerHandle
 local sampev = require 'lib.samp.events'
+local mem = require 'memory'
 local https = require 'ssl.https'
 local vk = require 'vkeys'
 local keys  = require 'game.keys'
@@ -45,13 +46,11 @@ local autobind = {
 	autosave = true,
 	autoupdate = true,
 	ddmode = false,
-	radio = true, 
 	capturf = false,
 	capture = false, 
 	autoacceptsex = false, 
 	autoacceptrepair = false,
 	disableaftercapping = false,
-	blankmessages = false,
 	factionboth = false,
 	enablebydefault = true,
 	sound = true,
@@ -114,6 +113,14 @@ local autobind = {
 		BikeBind = {
 			Keybind = tostring(VK_SHIFT),
 			Dual = false
+		},
+		Frisk = {
+			Keybind = tostring(VK_MENU)..','..tostring(VK_F),
+			Dual = true
+		},
+		TakePills = {
+			Keybind = tostring(VK_F4),
+			Dual = false
 		}
 	},
 	BlackMarket = {
@@ -125,7 +132,10 @@ local autobind = {
 	SprintBind = {
 		tog = {true,false},
 		delay = 10
-	} 
+	},
+	Frisk = {
+		false, false,
+	}
 }
 local _enabled = true
 local autoaccepter = false
@@ -563,22 +573,6 @@ function()
 			
 				imgui.BeginChild("##config", imgui.ImVec2(330, 120), false)
 				
-					if imgui.Checkbox("Diamond Donator", new.bool(autobind.ddmode)) then
-						autobind.ddmode = not autobind.ddmode
-						autobind.timer = autobind.ddmode and 7 or 12
-					end
-					
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('If you are Diamond Donator toggle this on.')
-					end
-
-					imgui.SameLine()
-					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					
-					if imgui.Checkbox('Blank Messages', new.bool(autobind.blankmessages)) then 
-						autobind.blankmessages = not autobind.blankmessages 
-					end
-					
 					imgui.Text('AutoBind:')
 					
 					if imgui.Checkbox('Cap Spam (Turfs)', new.bool(captog)) then 
@@ -624,13 +618,6 @@ function()
 						autoaccepter = not autoaccepter 
 					end
 					
-					imgui.SameLine()
-					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					
-					if imgui.Checkbox('Radio', new.bool(autobind.radio)) then 
-						autobind.radio = not autobind.radio
-					end
-					
 					imgui.Text('SprintBind:')
 					if imgui.Checkbox('Sprintbind', new.bool(autobind.SprintBind.tog[1])) then 
 						autobind.SprintBind.tog[1] = not autobind.SprintBind.tog[1] 
@@ -653,12 +640,15 @@ function()
 					end
 					
 					imgui.Text('AutoVest:')
-					if imgui.Checkbox("Compare Both", new.bool(autobind.factionboth)) then
-						autobind.factionboth = not autobind.factionboth
+					if imgui.Checkbox("Diamond Donator", new.bool(autobind.ddmode)) then
+						autobind.ddmode = not autobind.ddmode
+						autobind.timer = autobind.ddmode and 7 or 12
 					end
+					
 					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Compare faction (ticked color and skin) or (unticked color or skin)')
+						imgui.SetTooltip('If you are Diamond Donator toggle this on.')
 					end
+					
 					imgui.SameLine()
 					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
 					if imgui.Checkbox("Show Prevest",  new.bool(autobind.showprevest)) then
@@ -682,18 +672,21 @@ function()
 					
 					imgui.SameLine()
 					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					if imgui.Checkbox("Message Spam", new.bool(autobind.messages)) then
-						autobind.messages = not autobind.messages
+					if imgui.Checkbox("Compare Both", new.bool(autobind.factionboth)) then
+						autobind.factionboth = not autobind.factionboth
+					end
+					if imgui.IsItemHovered() then
+						imgui.SetTooltip('Compare faction (ticked color and skin) or (unticked color or skin)')
 					end
 					
-					if imgui.Checkbox("Hide Offer",  new.bool(autobind.notification_hide[1])) then
-						autobind.notification_hide[1] = not autobind.notification_hide[1]
-						if autobind.notification_hide[1] then
-							autobind.notification[1] = false
+					if imgui.Checkbox("Always Offered",  new.bool(autobind.notification[2])) then
+						autobind.notification[2] = not autobind.notification[2]
+						if autobind.notification[2] then
+							autobind.notification_hide[2] = false
 						end
 					end
 					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Always Hide Offer')
+						imgui.SetTooltip('Always Display Offered')
 					end
 					imgui.SameLine()
 					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
@@ -718,14 +711,15 @@ function()
 					end
 					imgui.SameLine()
 					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					if imgui.Checkbox("Always Offered",  new.bool(autobind.notification[2])) then
-						autobind.notification[2] = not autobind.notification[2]
-						if autobind.notification[2] then
-							autobind.notification_hide[2] = false
+					
+					if imgui.Checkbox("Hide Offer",  new.bool(autobind.notification_hide[1])) then
+						autobind.notification_hide[1] = not autobind.notification_hide[1]
+						if autobind.notification_hide[1] then
+							autobind.notification[1] = false
 						end
 					end
 					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Always Display Offered')
+						imgui.SetTooltip('Always Hide Offer')
 					end
 					
 					if imgui.Checkbox("Always Point/Turf",  new.bool(autobind.notification_capper)) then
@@ -747,6 +741,19 @@ function()
 					end
 					if imgui.IsItemHovered() then
 						imgui.SetTooltip('Always Hide Turf/Point')
+					end
+					if imgui.Checkbox("Message Spam", new.bool(autobind.messages)) then
+						autobind.messages = not autobind.messages
+					end
+					
+					imgui.Text('Frisk:')
+					if imgui.Checkbox("Player Target", new.bool(autobind.Frisk[1])) then
+						autobind.Frisk[1] = not autobind.Frisk[1]
+					end
+					imgui.SameLine()
+					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
+					if imgui.Checkbox("Player Aim", new.bool(autobind.Frisk[2])) then
+						autobind.Frisk[2] = not autobind.Frisk[2]
 					end
 				imgui.EndChild()
 				
@@ -1032,6 +1039,44 @@ function()
 						end
 					end
 					keychange('SprintBind', autobind.Keybinds["SprintBind"].Dual)
+					
+					imgui.Text("Frisk")
+					if imgui.Checkbox("Dual Keybind##Frisk", new.bool(autobind.Keybinds["Frisk"].Dual)) then
+						local key_split = split(autobind.Keybinds["Frisk"].Keybind, ",")
+						if autobind.Keybinds["Frisk"].Dual then
+							if string.contains(autobind.Keybinds['Frisk'].Keybind, ',', true) then
+								inuse_key = true
+								autobind.Keybinds["Frisk"].Dual = false
+								autobind.Keybinds["Frisk"].Keybind = tostring(key_split[2])
+								inuse_key = false
+							end
+						else
+							inuse_key = true
+							autobind.Keybinds["Frisk"].Dual = true
+							autobind.Keybinds["Frisk"].Keybind = tostring(VK_MENU)..','..tostring(key_split[1])
+							inuse_key = false
+						end
+					end
+					keychange('Frisk', autobind.Keybinds["Frisk"].Dual)
+					
+					imgui.Text("TakePills")
+					if imgui.Checkbox("Dual Keybind##TakePills", new.bool(autobind.Keybinds["TakePills"].Dual)) then
+						local key_split = split(autobind.Keybinds["TakePills"].Keybind, ",")
+						if autobind.Keybinds["TakePills"].Dual then
+							if string.contains(autobind.Keybinds['Frisk'].Keybind, ',', true) then
+								inuse_key = true
+								autobind.Keybinds["TakePills"].Dual = false
+								autobind.Keybinds["TakePills"].Keybind = tostring(key_split[2])
+								inuse_key = false
+							end
+						else
+							inuse_key = true
+							autobind.Keybinds["TakePills"].Dual = true
+							autobind.Keybinds["TakePills"].Keybind = tostring(VK_MENU)..','..tostring(key_split[1])
+							inuse_key = false
+						end
+					end
+					keychange('TakePills', autobind.Keybinds["TakePills"].Dual)
 				imgui.EndChild()
 			end
 			
@@ -1442,13 +1487,11 @@ function main()
 	sampRegisterChatCommand(autobind.sprintbindcmd, function() 
 		autobind.SprintBind.tog[1] = not autobind.SprintBind.tog[1] 
 		sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.SprintBind.tog[1] and '{008000}on' or '{FF0000}off'), -1) 
-		saveIni()
 	end)
 	
 	sampRegisterChatCommand(autobind.bikebindcmd, function() 
 		autobind.SprintBind.tog[2] = not autobind.SprintBind.tog[2] 
 		sampAddChatMessage('[Autobind]{ffff00} Bikebind: '..(autobind.SprintBind.tog[2] and '{008000}on' or '{FF0000}off'), -1) 
-		saveIni()
 	end)
 	
 	sampRegisterChatCommand(autobind.autovestcmd, function() 
@@ -1522,32 +1565,14 @@ function main()
 	
 	loadskinidsurl()
 	
-	while true do wait(0)
-		lua_thread.create(function() 
+	lua_thread.create(function() 
+		while true do wait(0)
 			listenToKeybinds()
-		end)
-	
-		if autobind.SprintBind.tog[1] and getPadState(h, keys.player.SPRINT) == 255 and (isCharOnFoot(ped) or isCharInWater(ped)) then
-			setGameKeyUpDown(keys.player.SPRINT, 255, autobind.SprintBind.delay) 
 		end
+	end)
 	
-		if getCharArmour(ped) > 49 and not autobind.showprevest then
-			sampname2 = 'Nobody'
-			playerid2 = -1
-			
-			if autobind.notification_hide[2] then
-				hide[2] = false
-			end
-		end
-	
-		if autobind.vestmode ~= 0 then
-			if autoaccepter then
-				autoaccepter = false
-				sampAddChatMessage(string.format("[Autobind]{ffff00} Autoaccepter is now %s.", autoaccepter and 'enabled' or 'disabled'), 1999280)
-			end
-		end
-		
-		lua_thread.create(function()
+	lua_thread.create(function() 
+		while true do wait(0)
 			if captog then 
 				sampAddChatMessage("{FFFF00}Starting capture spam... (type /tcap to toggle)",-1)
 				while captog do
@@ -1556,11 +1581,26 @@ function main()
 				end
 				sampAddChatMessage("{FFFF00}Capture spam ended.",-1)
 			end
-		end)
+		end
+	end)
 	
-		if not autobind.radio and isCharInAnyCar(ped) and getRadioChannel() < 12 then 
-			setRadioChannel(12) 
-		end 
+	lua_thread.create(function() 
+		while true do wait(0)
+			if autobind.SprintBind.tog[1] and getPadState(h, keys.player.SPRINT) == 255 and (isCharOnFoot(ped) or isCharInWater(ped)) then
+				setGameKeyUpDown(keys.player.SPRINT, 255, autobind.SprintBind.delay) 
+			end
+		end
+	end)
+	
+	while true do wait(0)
+		if getCharArmour(ped) > 49 and not autobind.showprevest then
+			sampname2 = 'Nobody'
+			playerid2 = -1
+			
+			if autobind.notification_hide[2] then
+				hide[2] = false
+			end
+		end
 	
 		local _, aduty = getSampfuncsGlobalVar("aduty")
 		local _, HideMe = getSampfuncsGlobalVar("HideMe_check")
@@ -1715,7 +1755,29 @@ function listenToKeybinds()
 				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
 					autobind.SprintBind.tog[1] = not autobind.SprintBind.tog[1] 
 					sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.SprintBind.tog[1] and '{008000}on' or '{FF0000}off'), -1) 
-					saveIni()
+				end
+			end
+			if k == "Frisk" then
+				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+					local _, playerped = storeClosestEntities(ped)
+					local result, id = sampGetPlayerIdByCharHandle(playerped)
+					local result2, target = getCharPlayerIsTargeting(h)
+					if result then
+						if (result2 and autobind.Frisk[1]) or not autobind.Frisk[1] then
+							if (target == playerped and autobind.Frisk[1]) or not autobind.Frisk[1] then
+								if (isPlayerAiming(true, true) and autobind.Frisk[2]) or not autobind.Frisk[2] then
+									sampSendChat(string.format("/frisk %d", id))
+									wait(1000)
+								end
+							end
+						end
+					end
+				end
+			end
+			if k == 'TakePills' then
+				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+					sampSendChat("/takepills")
+					wait(1000)
 				end
 			end
 		else
@@ -1782,7 +1844,30 @@ function listenToKeybinds()
 				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
 					autobind.SprintBind.tog[1] = not autobind.SprintBind.tog[1] 
 					sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.SprintBind.tog[1] and '{008000}on' or '{FF0000}off'), -1)
-					saveIni()
+					wait(1000)
+				end
+			end
+			if k == "Frisk" then
+				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+					local _, playerped = storeClosestEntities(ped)
+					local result, id = sampGetPlayerIdByCharHandle(playerped)
+					local result2, target = getCharPlayerIsTargeting(h)
+					if result then
+						if (result2 and autobind.Frisk[1]) or not autobind.Frisk[1] then
+							if (target == playerped and autobind.Frisk[1]) or not autobind.Frisk[1] then
+								if (isPlayerAiming(true, true) and autobind.Frisk[2]) or not autobind.Frisk[2] then
+									sampSendChat(string.format("/frisk %d", id))
+									wait(1000)
+								end
+							end
+						end
+					end
+				end
+			end
+			if k == 'TakePills' then
+				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+					sampSendChat("/takepills")
+					wait(1000)
 				end
 			end
 		end
@@ -1930,11 +2015,6 @@ function sampev.onServerMessage(color, text)
 		if autobind.autoacceptrepair then
 			sampSendChat("/accept repair")
 		end
-	end
-	
-	-- Removes blank messages
-	if autobind.blankmessages and string.len(text) < 1 then
-		return false
 	end
 
 	if text:match("You are not a Sapphire or Diamond Donator!") or 
@@ -2568,10 +2648,6 @@ function repairmissing()
 	if autobind.ddmode == nil then
 		autobind.ddmode = false
 	end
-	
-	if autobind.radio == nil then
-		autobind.radio = true
-	end
 	if autobind.capturf == nil then
 		autobind.capturf = false
 	end
@@ -2586,9 +2662,6 @@ function repairmissing()
 	end
 	if autobind.disableaftercapping == nil then
 		autobind.disableaftercapping = false
-	end
-	if autobind.blankmessages == nil then
-		autobind.blankmessages = false
 	end
 	
 	if autobind.factionboth == nil then 
@@ -2788,6 +2861,26 @@ function repairmissing()
 		autobind.Keybinds.SprintBind.Dual = false
 	end
 	
+	if autobind.Keybinds.Frisk == nil then
+		autobind.Keybinds.Frisk = {}
+	end
+	if autobind.Keybinds.Frisk.Keybind == nil then 
+		autobind.Keybinds.Frisk.Keybind = tostring(VK_MENU)..','..tostring(VK_F)
+	end
+	if autobind.Keybinds.Frisk.Dual == nil then 
+		autobind.Keybinds.Frisk.Dual = true
+	end
+	
+	if autobind.Keybinds.TakePills == nil then
+		autobind.Keybinds.TakePills = {}
+	end
+	if autobind.Keybinds.TakePills.Keybind == nil then 
+		autobind.Keybinds.TakePills.Keybind = tostring(VK_F4)
+	end
+	if autobind.Keybinds.TakePills.Dual == nil then 
+		autobind.Keybinds.TakePills.Dual = false
+	end
+	
 	if autobind.BlackMarket == nil then
 		autobind.BlackMarket = {}
 	end
@@ -2885,6 +2978,16 @@ function repairmissing()
 	
 	if autobind.SprintBind.delay == nil then 
 		autobind.SprintBind.delay = 10
+	end
+	
+	if autobind.Frisk == nil then
+		autobind.Frisk = {}
+	end
+	if autobind.Frisk[1] == nil then 
+		autobind.Frisk[1] = false
+	end
+	if autobind.Frisk[2] == nil then 
+		autobind.Frisk[2] = false
 	end
 end
 
@@ -2995,6 +3098,12 @@ function getClosestPlayerId(maxdist, type)
 		end
     end
 	return false, -1
+end
+
+function isPlayerAiming(thirdperson, firstperson)
+	local id = mem.read(11989416, 2, false)
+	if thirdperson and (id == 5 or id == 53 or id == 55 or id == 65) then return true end
+	if firstperson and (id == 7 or id == 8 or id == 16 or id == 34 or id == 39 or id == 40 or id == 41 or id == 42 or id == 45 or id == 46 or id == 51 or id == 52) then return true end
 end
 
 function getDownKeys()
