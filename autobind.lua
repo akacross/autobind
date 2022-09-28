@@ -42,136 +42,58 @@ local update_url = "https://raw.githubusercontent.com/akacross/autobind/main/aut
 local skins_url = "https://raw.githubusercontent.com/akacross/autobind/main/resource/skins/"
 
 local blank = {}
-local autobind = {
-	autosave = true,
-	autoupdate = true,
-	ddmode = false,
-	capturf = false,
-	capture = false, 
-	autoacceptsex = false, 
-	autoacceptrepair = false,
-	disableaftercapping = false,
-	factionboth = false,
-	enablebydefault = true,
-	sound = true,
-	timercorrection = true,
-	messages = false,
-	customskins = true,
-	gettarget = false,
-	notification = {true,true},
-	notification_hide = {false,false},
-	showprevest = true,
-	notification_capper = true,
-	notification_capper_hide = false,
-	point_turf_mode = false,
-	vestmode = 2,
-	timer = 12,
-	point_capper_timer = 14,
-	turf_capper_timer = 17,
-	skinsurl = "https://dickwhitman.do.am/skins.html",
-	skins = {},
-	names = {},
-	vestnearcmd = "vestnear",
-	sexnearcmd = "sexnear",
-	repairnearcmd = "repairnear",
-	hfindcmd = "hfind",
-	tcapcmd = "tcap",
-	sprintbindcmd = "sprintbind",
-	bikebindcmd = "bikebind",
-	autovestcmd = "autovest",
-	autoacceptercmd = "av",
-	ddmodecmd = "ddmode",
-	vestmodecmd = "vestmode",
-	factionbothcmd = "factionboth",
-	autovestsettingscmd = "autobind",
-	turfmodecmd = 'turfmode',
-	pointmodecmd = 'pointmode',
-	offerpos = {500, 500},
-	offeredpos = {700, 500},
-	capperpos = {900, 500},
-	Keybinds = {
-		Accept = {
-			Keybind = tostring(VK_MENU)..','..tostring(VK_V),
-			Dual = true
-		},
-		Offer = {
-			Keybind = tostring(VK_MENU)..','..tostring(VK_O),
-			Dual = true
-		},
-		BlackMarket = {
-			Keybind = tostring(VK_MENU)..','..tostring(VK_X),
-			Dual = true
-		},
-		FactionLocker = {
-			Keybind = tostring(VK_MENU)..','..tostring(VK_X),
-			Dual = true
-		},
-		SprintBind = {
-			Keybind = tostring(VK_F11),
-			Dual = false
-		},
-		BikeBind = {
-			Keybind = tostring(VK_SHIFT),
-			Dual = false
-		},
-		Frisk = {
-			Keybind = tostring(VK_MENU)..','..tostring(VK_F),
-			Dual = true
-		},
-		TakePills = {
-			Keybind = tostring(VK_F4),
-			Dual = false
-		}
-	},
-	BlackMarket = {
-		true, false, false, false, false, false, false, false, true, false, false, false, false
-    },
-	FactionLocker = {
-		true, true, false, true, false, false, false, false, false, true, true
-	},
-	SprintBind = {
-		tog = {true,false},
-		delay = 10
-	},
-	Frisk = {
-		false, false,
-	}
-}
+local autobind = {}
+local isIniLoaded = false
+local isGamePaused = false
+local menu = new.bool(false)
+local _menu = 1
+local skinmenu = new.bool(false)
+local bmmenu = new.bool(false)
+local factionlockermenu = new.bool(false)
+local helpmenu = new.bool(false)
 local _enabled = true
+local _you_are_not_bodyguard = true
 local autoaccepter = false
 local autoacceptertoggle = false
+local specstate = false
+local updateskin = false
+local timeset = {false, false}
+local flashing = {false, false}
 local _last_vest = 0
 local _last_point_capper = 0
 local _last_turf_capper = 0
 local _last_point_capper_refresh = 0
 local _last_turf_capper_refresh = 0
-local _menu = 1
 local sampname = 'Nobody'
 local playerid = -1
 local sampname2 = 'Nobody'
 local playerid2 = -1
+local point_capper = 'Nobody'
+local turf_capper = 'Nobody'
+local point_capper_capturedby = 'Nobody'
+local turf_capper_capturedby = 'Nobody'
+local point_location = "No captured point" 
+local turf_location = "No captured turf "
 local cooldown = 0
 local point_capper_timer = 750
 local turf_capper_timer = 1050
-local specstate = false
-local updateskin = false
-local temp_pos = {x = 0, y = 0}
+local pointtime = 0
+local turftime = 0
+local hide = {false, false}
+local capper_hide = false
 local skins = {}
 local factions = {61, 71, 73, 141, 163, 164, 165, 166, 191, 255, 265, 266, 267, 280, 281, 282, 283, 284, 285, 286, 287, 288, 294, 312, 300, 301, 306, 309, 310, 311, 120}
 local factions_color = {-14269954, -7500289, -14911565}
-local menu = new.bool(false)
-local skinmenu = new.bool(false)
-local bmmenu = new.bool(false)
-local factionlockermenu = new.bool(false)
-local selected = -1
-local skinTexture = {}
-local page = 1
-local hide = {false, false}
-local capper_hide = false
 local changekey = {}
 local changekey2 = {}
 local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 local inuse_key = false
+local bmbool = false
+local bmstate = 0
+local bmcmd = 0
+local lockerbool = false
+local lockerstate = 0
+local lockercmd = 0
 local inuse_move = false
 local size = {
 	{x = 0, y = 0},
@@ -179,23 +101,9 @@ local size = {
 	{x = 0, y = 0}
 }
 local selectedbox = {false, false, false}
-local point_capper = 'Nobody'
-local turf_capper = 'Nobody'
-local point_capper_capturedby = 'Nobody'
-local turf_capper_capturedby = 'Nobody'
-local point_location = "No captured point" 
-local turf_location = "No captured turf "
-local timeset = {false, false}
-local turftime = '0'
-local pointtime = '0'
-local _you_are_not_bodyguard = true
-local flashing = {false, false}
-local bmbool = false
-local bmstate = 0
-local bmcmd = 0
-local lockerbool = false
-local lockerstate = 0
-local lockercmd = 0
+local skinTexture = {}
+local selected = -1
+local page = 1
 local bike, moto = {[481] = true, [509] = true, [510] = true}, {[448] = true, [461] = true, [462] = true, [463] = true, [468] = true, [471] = true, [521] = true, [522] = true, [523] = true, [581] = true, [586] = true}
 local captog = false
 local autofind, cooldown = false, false
@@ -315,7 +223,7 @@ imgui.OnInitialize(function()
 	end
 end)
 
-imgui.OnFrame(function() return (autobind.notification[1] or hide[1] or menu[0]) and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) end,
+imgui.OnFrame(function() return isIniLoaded and (autobind.notification[1] or hide[1] or menu[0]) and not isGamePaused and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) end,
 function()
 	if menu[0] then
 		local mpos = imgui.GetMousePos()
@@ -361,7 +269,7 @@ function()
 	imgui.End()
 end).HideCursor = true
 
-imgui.OnFrame(function() return (autobind.notification[2] or hide[2] or menu[0]) and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) end,
+imgui.OnFrame(function() return isIniLoaded and (autobind.notification[2] or hide[2] or menu[0]) and not isGamePaused and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) end,
 function()
 	if menu[0] then
 		local mpos = imgui.GetMousePos()
@@ -396,7 +304,7 @@ function()
 	imgui.End()
 end).HideCursor = true
 
-imgui.OnFrame(function() return (autobind.notification_capper or capper_hide or menu[0]) and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) end,
+imgui.OnFrame(function() return isIniLoaded and (autobind.notification_capper or capper_hide or menu[0]) and not isGamePaused and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) end,
 function()
 	if menu[0] then
 		local mpos = imgui.GetMousePos()
@@ -449,11 +357,11 @@ function()
 	imgui.End()
 end).HideCursor = true
 
-imgui.OnFrame(function() return menu[0] and not isGamePaused() end,
+imgui.OnFrame(function() return isIniLoaded and menu[0] and not isGamePaused end,
 function()
 	local width, height = getScreenResolution()
 	imgui.SetNextWindowPos(imgui.ImVec2(width / 2, height / 2), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-	imgui.Begin(fa.ICON_FA_SHIELD_ALT .. "Autobind Settings", menu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize)
+	imgui.Begin(fa.ICON_FA_SHIELD_ALT .. string.format(" %s Settings - Version: %s", script.this.name, script_version_text), menu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize)
 
 		imgui.BeginChild("##1", imgui.ImVec2(85, 392), true)
 				
@@ -1184,7 +1092,7 @@ function()
 	imgui.End()
 end)
 
-imgui.OnFrame(function() return skinmenu[0] end,
+imgui.OnFrame(function() return isIniLoaded and skinmenu[0] and not isGamePaused end,
 function()
 	local width, height = getScreenResolution()
 	imgui.SetNextWindowPos(imgui.ImVec2(width / 2, height / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
@@ -1230,7 +1138,7 @@ function()
 	imgui.End()
 end)
 
-imgui.OnFrame(function() return bmmenu[0] end,
+imgui.OnFrame(function() return isIniLoaded and bmmenu[0] and not isGamePaused end,
 function()
 	local width, height = getScreenResolution()
 	imgui.SetNextWindowPos(imgui.ImVec2(width / 2, height / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
@@ -1333,7 +1241,7 @@ function()
     imgui.End()
 end)
 
-imgui.OnFrame(function() return factionlockermenu[0] end,
+imgui.OnFrame(function() return isIniLoaded and factionlockermenu[0] and not isGamePaused end,
 function()
 	local width, height = getScreenResolution()
 	imgui.SetNextWindowPos(imgui.ImVec2(width / 2, height / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
@@ -1377,13 +1285,36 @@ function()
 	imgui.End()
 end)
 
+imgui.OnFrame(function() return isIniLoaded and helpmenu[0] and not isGamePaused end,
+function()
+	local width, height = getScreenResolution()
+	imgui.SetNextWindowPos(imgui.ImVec2(width / 2, height / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
+
+    imgui.Begin(string.format("Help Menu", script.this.name, script.this.version), helpmenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize) 
+		imgui.Text("/autobind (Add Description )")
+		imgui.Text("/vestnear (Add Description )")
+		imgui.Text("/sexnear (Add Description )")
+		imgui.Text("/repairnear (Add Description )")
+		imgui.Text("/hfind (Add Description )")
+		imgui.Text("/tcap (Add Description )")
+		imgui.Text("/sprintbind (Add Description )")
+		imgui.Text("/bikebind (Add Description )")
+		imgui.Text("/av (Add Description )")
+		imgui.Text("/ddmode (Add Description )")
+		imgui.Text("/vestmode (Add Description )")
+		imgui.Text("/factionboth (Add Description )")
+		imgui.Text("/autovest (Add Description )")
+		imgui.Text("/turfmode (Add Description )")
+		imgui.Text("/pointmode (Add Description )")
+	imgui.End()
+end)
+
 function main()
-	blank = table.deepcopy(autobind)
 	if not doesDirectoryExist(path) then createDirectory(path) end
 	if not doesDirectoryExist(skinspath) then createDirectory(skinspath) end
 	if doesFileExist(cfg) then loadIni() else blankIni() end
 	while not isSampAvailable() do wait(100) end
-	sampAddChatMessage("["..script.this.name..'] '.. "{FF1A74}(/autobind) Authors: " .. table.concat(thisScript().authors, ", ")..", Testers: ".. table.concat(script_tester, ", "), -1)
+	sampAddChatMessage("["..script.this.name..'] '.. "{FF1A74}(/autobind, autobind.help) Authors: " .. table.concat(thisScript().authors, ", ")..", Testers: ".. table.concat(script_tester, ", "), -1)
 	
 	skins_script()
 	
@@ -1412,6 +1343,15 @@ function main()
 	mp3 = loadAudioStream("moonloader\\resource\\autobind\\sound.mp3")
 	
 	autobind.timer = autobind.ddmode and 7 or 12
+
+	sampRegisterChatCommand(autobind.autovestsettingscmd, function() 
+		_menu = 1
+		menu[0] = not menu[0]
+	end)
+	
+	sampRegisterChatCommand(autobind.helpcmd, function() 
+		helpmenu[0] = not helpmenu[0]
+	end)
 
 	sampRegisterChatCommand(autobind.vestnearcmd, function() 
 		for PlayerID = 0, sampGetMaxPlayerId(false) do
@@ -1518,11 +1458,6 @@ function main()
 	sampRegisterChatCommand(autobind.factionbothcmd, function() 
 		autobind.factionboth  = not autobind.factionboth
 		sampAddChatMessage(string.format("[Autobind]{ffff00} factionbothcmd is now %s.", autobind.factionboth and 'enabled' or 'disabled'), 1999280)
-	end)
-	
-	sampRegisterChatCommand(autobind.autovestsettingscmd, function() 
-		_menu = 1
-		menu[0] = not menu[0]
 	end)
 	
 	sampRegisterChatCommand(autobind.vestmodecmd, function(params) 
@@ -1930,6 +1865,12 @@ function onScriptTerminate(scr, quitGame)
 end
 
 function onWindowMessage(msg, wparam, lparam)
+	if msg == wm.WM_KILLFOCUS then
+		isGamePaused = true
+	elseif msg == wm.WM_SETFOCUS then
+		isGamePaused = false
+	end
+
 	if wparam == VK_ESCAPE and (menu[0] or skinmenu[0] or bmmenu[0] or factionlockermenu[0]) then
         if msg == wm.WM_KEYDOWN then
             consumeWindowMessage(true, false)
@@ -2611,9 +2552,10 @@ function update_script()
 end
 
 function blankIni()
-	autobind = table.deepcopy(blank)
+	autobind = {}
+	repairmissing()
 	saveIni()
-	loadIni()
+	isIniLoaded = true
 end
 
 function loadIni()
@@ -2624,6 +2566,7 @@ function loadIni()
 	end
 	repairmissing()
 	saveIni()
+	isIniLoaded = true
 end
 
 function saveIni()
@@ -2663,7 +2606,6 @@ function repairmissing()
 	if autobind.disableaftercapping == nil then
 		autobind.disableaftercapping = false
 	end
-	
 	if autobind.factionboth == nil then 
 		autobind.factionboth = false
 	end
@@ -2685,7 +2627,6 @@ function repairmissing()
 	if autobind.gettarget == nil then
 		autobind.gettarget = false
 	end
-	
 	if autobind.notification == nil then
 		autobind.notification = {}
 	end
@@ -2695,7 +2636,6 @@ function repairmissing()
 	if autobind.notification[2] == nil then 
 		autobind.notification[2] = true
 	end
-	
 	if autobind.notification_hide == nil then
 		autobind.notification_hide = {}
 	end
@@ -2705,7 +2645,6 @@ function repairmissing()
 	if autobind.notification_hide[2] == nil then 
 		autobind.notification_hide[2] = false
 	end
-	
 	if autobind.showprevest == nil then 
 		autobind.showprevest = true
 	end
@@ -2736,10 +2675,12 @@ function repairmissing()
 	if autobind.skins == nil then
 		autobind.skins = {}
 	end
-	if autobind.autovestcmd == nil then 
-		autobind.autovestcmd = "autobind"
+	if autobind.autovestsettingscmd == nil then 
+		autobind.autovestsettingscmd = "autobind"
 	end
-	
+	if autobind.helpcmd == nil then 
+		autobind.helpcmd = "autobind.help"
+	end
 	if autobind.vestnearcmd == nil then 
 		autobind.vestnearcmd = "vestnear"
 	end
@@ -2755,14 +2696,12 @@ function repairmissing()
 	if autobind.tcapcmd == nil then 
 		autobind.tcapcmd = "tcap"
 	end
-	
 	if autobind.sprintbindcmd == nil then 
 		autobind.sprintbindcmd = "sprintbind"
 	end
 	if autobind.bikebindcmd == nil then 
 		autobind.bikebindcmd = "bikebind"
 	end
-	
 	if autobind.autoacceptercmd == nil then 
 		autobind.autoacceptercmd = "av"
 	end
@@ -2775,8 +2714,8 @@ function repairmissing()
 	if autobind.factionbothcmd == nil then 
 		autobind.factionbothcmd = "factionboth"
 	end
-	if autobind.autovestsettingscmd == nil then 
-		autobind.autovestsettingscmd = "autobind.settings"
+	if autobind.autovestcmd == nil then 
+		autobind.autovestcmd = "autovest"
 	end
 	if autobind.turfmodecmd == nil then 
 		autobind.turfmodecmd = 'turfmode'
@@ -2796,13 +2735,14 @@ function repairmissing()
 	if autobind.names == nil then 
 		autobind.names = {}
 	end
-	
 	if autobind.Keybinds == nil then
 		autobind.Keybinds = {}
 	end
-	
 	if autobind.Keybinds.Accept == nil then
 		autobind.Keybinds.Accept = {}
+	end
+	if autobind.Keybinds.Accept.Toggle == nil then 
+		autobind.Keybinds.Accept.Toggle = true
 	end
 	if autobind.Keybinds.Accept.Keybind == nil then 
 		autobind.Keybinds.Accept.Keybind = tostring(VK_MENU)..','..tostring(VK_V)
@@ -2810,9 +2750,11 @@ function repairmissing()
 	if autobind.Keybinds.Accept.Dual == nil then 
 		autobind.Keybinds.Accept.Dual = true
 	end
-	
 	if autobind.Keybinds.Offer == nil then
 		autobind.Keybinds.Offer = {}
+	end
+	if autobind.Keybinds.Offer.Toggle == nil then 
+		autobind.Keybinds.Offer.Toggle = true
 	end
 	if autobind.Keybinds.Offer.Keybind == nil then 
 		autobind.Keybinds.Offer.Keybind = tostring(VK_MENU)..','..tostring(VK_O)
@@ -2820,9 +2762,11 @@ function repairmissing()
 	if autobind.Keybinds.Offer.Dual == nil then 
 		autobind.Keybinds.Offer.Dual = true
 	end
-	
 	if autobind.Keybinds.BlackMarket == nil then
 		autobind.Keybinds.BlackMarket = {}
+	end
+	if autobind.Keybinds.BlackMarket.Toggle == nil then 
+		autobind.Keybinds.BlackMarket.Toggle = false
 	end
 	if autobind.Keybinds.BlackMarket.Keybind == nil then 
 		autobind.Keybinds.BlackMarket.Keybind = tostring(VK_MENU)..','..tostring(VK_X)
@@ -2830,9 +2774,11 @@ function repairmissing()
 	if autobind.Keybinds.BlackMarket.Dual == nil then 
 		autobind.Keybinds.BlackMarket.Dual = true
 	end
-	
 	if autobind.Keybinds.FactionLocker == nil then
 		autobind.Keybinds.FactionLocker = {}
+	end
+	if autobind.Keybinds.FactionLocker.Toggle == nil then 
+		autobind.Keybinds.FactionLocker.Toggle = false
 	end
 	if autobind.Keybinds.FactionLocker.Keybind == nil then 
 		autobind.Keybinds.FactionLocker.Keybind = tostring(VK_MENU)..','..tostring(VK_X)
@@ -2840,9 +2786,11 @@ function repairmissing()
 	if autobind.Keybinds.FactionLocker.Dual == nil then 
 		autobind.Keybinds.FactionLocker.Dual = true
 	end
-	
 	if autobind.Keybinds.BikeBind == nil then
 		autobind.Keybinds.BikeBind = {}
+	end
+	if autobind.Keybinds.BikeBind.Toggle == nil then 
+		autobind.Keybinds.BikeBind.Toggle = false
 	end
 	if autobind.Keybinds.BikeBind.Keybind == nil then 
 		autobind.Keybinds.BikeBind.Keybind = tostring(VK_SHIFT)
@@ -2850,9 +2798,11 @@ function repairmissing()
 	if autobind.Keybinds.BikeBind.Dual == nil then 
 		autobind.Keybinds.BikeBind.Dual = false
 	end
-	
 	if autobind.Keybinds.SprintBind == nil then
 		autobind.Keybinds.SprintBind = {}
+	end
+	if autobind.Keybinds.SprintBind.Toggle == nil then 
+		autobind.Keybinds.SprintBind.Toggle = true
 	end
 	if autobind.Keybinds.SprintBind.Keybind == nil then 
 		autobind.Keybinds.SprintBind.Keybind = tostring(VK_F11)
@@ -2860,9 +2810,11 @@ function repairmissing()
 	if autobind.Keybinds.SprintBind.Dual == nil then 
 		autobind.Keybinds.SprintBind.Dual = false
 	end
-	
 	if autobind.Keybinds.Frisk == nil then
 		autobind.Keybinds.Frisk = {}
+	end
+	if autobind.Keybinds.Frisk.Toggle == nil then 
+		autobind.Keybinds.Frisk.Toggle = false
 	end
 	if autobind.Keybinds.Frisk.Keybind == nil then 
 		autobind.Keybinds.Frisk.Keybind = tostring(VK_MENU)..','..tostring(VK_F)
@@ -2870,9 +2822,11 @@ function repairmissing()
 	if autobind.Keybinds.Frisk.Dual == nil then 
 		autobind.Keybinds.Frisk.Dual = true
 	end
-	
 	if autobind.Keybinds.TakePills == nil then
 		autobind.Keybinds.TakePills = {}
+	end
+	if autobind.Keybinds.TakePills.Toggle == nil then 
+		autobind.Keybinds.TakePills.Toggle = false
 	end
 	if autobind.Keybinds.TakePills.Keybind == nil then 
 		autobind.Keybinds.TakePills.Keybind = tostring(VK_F4)
