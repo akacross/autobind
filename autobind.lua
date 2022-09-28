@@ -37,6 +37,7 @@ local u8 = encoding.UTF8
 local path = getWorkingDirectory() .. '\\config\\' 
 local cfg = path .. 'autobind.ini'
 local skinspath = getWorkingDirectory() .. '/resource/' .. 'skins/' 
+local script_path = thisScript().path
 local script_url = "https://raw.githubusercontent.com/akacross/autobind/main/autobind.lua"
 local update_url = "https://raw.githubusercontent.com/akacross/autobind/main/autobind.txt"
 local skins_url = "https://raw.githubusercontent.com/akacross/autobind/main/resource/skins/"
