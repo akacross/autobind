@@ -3,8 +3,8 @@ script_author("akacross", "spnKO", "Farid", "P-Greggy", "checkdasound")
 script_url("https://akacross.net/")
 script_tester = {"Taro"}
 
-local script_version = 1.6
-local script_version_text = '1.6'
+local script_version = 1.7
+local script_version_text = '1.7'
 
 if getMoonloaderVersion() >= 27 then
 	require 'libstd.deps' {
@@ -44,6 +44,7 @@ local skins_url = "https://raw.githubusercontent.com/akacross/autobind/main/reso
 
 local blank = {}
 local autobind = {}
+local _enabled = true
 local isIniLoaded = false
 local isGamePaused = false
 local menu = new.bool(false)
@@ -52,7 +53,6 @@ local skinmenu = new.bool(false)
 local bmmenu = new.bool(false)
 local factionlockermenu = new.bool(false)
 local helpmenu = new.bool(false)
-local _enabled = true
 local _you_are_not_bodyguard = true
 local autoaccepter = false
 local autoacceptertoggle = false
@@ -218,10 +218,6 @@ imgui.OnInitialize(function()
 	
 	imgui.GetIO().ConfigWindowsMoveFromTitleBarOnly = true
 	imgui.GetIO().IniFilename = nil
-	
-	for i = 0, 311 do
-		skinTexture[i] = imgui.CreateTextureFromFile("moonloader/resource/skins/Skin_"..i..".png")
-	end
 end)
 
 imgui.OnFrame(function() return isIniLoaded and (autobind.notification[1] or hide[1] or menu[0]) and not isGamePaused and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) end,
@@ -430,7 +426,7 @@ function()
 				imgui.ImVec4(0.40, 0.12, 0.12, 1), 
 				imgui.ImVec4(0.30, 0.08, 0.08, 1),  
 				imgui.ImVec2(75, 75)) then
-				update_script()
+				update_script(true)
 			end
 			if imgui.IsItemHovered() then
 				imgui.SetTooltip('Update the script')
@@ -527,28 +523,14 @@ function()
 						autoaccepter = not autoaccepter 
 					end
 					
-					imgui.Text('SprintBind:')
-					if imgui.Checkbox('Sprintbind', new.bool(autobind.SprintBind.tog[1])) then 
-						autobind.SprintBind.tog[1] = not autobind.SprintBind.tog[1] 
-					end
-					imgui.SameLine()
-					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					imgui.PushItemWidth(40) 
-					delay = new.int(autobind.SprintBind.delay)
-					if imgui.DragInt('Speed', delay, 0.5, 0, 200) then 
-						autobind.SprintBind.delay = delay[0] 
-					end
-					imgui.PopItemWidth()
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('[(0) Fastest]')
-					end
-					
-					imgui.PopItemWidth()
-					if imgui.Checkbox('Bikebind', new.bool(autobind.SprintBind.tog[2])) then 
-						autobind.SprintBind.tog[2] = not autobind.SprintBind.tog[2] 
-					end
-					
 					imgui.Text('AutoVest:')
+					imgui.PushItemWidth(290)
+					local text_skinsurl = new.char[256](autobind.skinsurl)
+					if imgui.InputText('##skinsurl', text_skinsurl, sizeof(text_skinsurl), imgui.InputTextFlags.EnterReturnsTrue) then
+						autobind.skinsurl = u8:decode(str(text_skinsurl))
+					end
+					imgui.PopItemWidth()
+					
 					if imgui.Checkbox("Diamond Donator", new.bool(autobind.ddmode)) then
 						autobind.ddmode = not autobind.ddmode
 						autobind.timer = autobind.ddmode and 7 or 12
@@ -835,7 +817,7 @@ function()
 						factionlockermenu[0] = not factionlockermenu[0]
 					end
 				
-					imgui.Text("Accept Bodyguard")
+					imgui.Text("Accept Bodyguard:")
 					if imgui.Checkbox("Dual Keybind##Accept", new.bool(autobind.Keybinds["Accept"].Dual)) then
 						local key_split = split(autobind.Keybinds["Accept"].Keybind, ",")
 						if autobind.Keybinds["Accept"].Dual then
@@ -852,9 +834,12 @@ function()
 							inuse_key = false
 						end
 					end
+					if imgui.Checkbox("Toggle Keybind##Accept", new.bool(autobind.Keybinds["Accept"].Toggle)) then
+						autobind.Keybinds["Accept"].Toggle = not autobind.Keybinds["Accept"].Toggle
+					end
 					keychange('Accept', autobind.Keybinds["Accept"].Dual)
 					
-					imgui.Text("Offer Bodyguard")
+					imgui.Text("Offer Bodyguard:")
 					if imgui.Checkbox("Dual Keybind##Offer", new.bool(autobind.Keybinds["Offer"].Dual)) then
 						local key_split = split(autobind.Keybinds["Offer"].Keybind, ",")
 						if autobind.Keybinds["Offer"].Dual then
@@ -871,9 +856,12 @@ function()
 							inuse_key = false
 						end
 					end
+					if imgui.Checkbox("Toggle Keybind##Offer", new.bool(autobind.Keybinds["Offer"].Toggle)) then
+						autobind.Keybinds["Offer"].Toggle = not autobind.Keybinds["Offer"].Toggle
+					end
 					keychange('Offer', autobind.Keybinds["Offer"].Dual)
 					
-					imgui.Text("Black Market")
+					imgui.Text("Black Market:")
 					if imgui.Checkbox("Dual Keybind##BlackMarket", new.bool(autobind.Keybinds["BlackMarket"].Dual)) then
 						local key_split = split(autobind.Keybinds["BlackMarket"].Keybind, ",")
 						if autobind.Keybinds["BlackMarket"].Dual then
@@ -890,9 +878,12 @@ function()
 							inuse_key = false
 						end
 					end
+					if imgui.Checkbox("Toggle Keybind##BlackMarket", new.bool(autobind.Keybinds["BlackMarket"].Toggle)) then
+						autobind.Keybinds["BlackMarket"].Toggle = not autobind.Keybinds["BlackMarket"].Toggle
+					end
 					keychange('BlackMarket', autobind.Keybinds["BlackMarket"].Dual)
 					
-					imgui.Text("Faction Locker")
+					imgui.Text("Faction Locker:")
 					if imgui.Checkbox("Dual Keybind##FactionLocker", new.bool(autobind.Keybinds["FactionLocker"].Dual)) then
 						local key_split = split(autobind.Keybinds["FactionLocker"].Keybind, ",")
 						if autobind.Keybinds["FactionLocker"].Dual then
@@ -909,9 +900,12 @@ function()
 							inuse_key = false
 						end
 					end
+					if imgui.Checkbox("Toggle Keybind##FactionLocker", new.bool(autobind.Keybinds["FactionLocker"].Toggle)) then
+						autobind.Keybinds["FactionLocker"].Toggle = not autobind.Keybinds["FactionLocker"].Toggle
+					end
 					keychange('FactionLocker', autobind.Keybinds["FactionLocker"].Dual)
 					
-					imgui.Text("BikeBind")
+					imgui.Text("BikeBind:")
 					if imgui.Checkbox("Dual Keybind##BikeBind", new.bool(autobind.Keybinds["BikeBind"].Dual)) then
 						local key_split = split(autobind.Keybinds["BikeBind"].Keybind, ",")
 						if autobind.Keybinds["BikeBind"].Dual then
@@ -928,9 +922,12 @@ function()
 							inuse_key = false
 						end
 					end
+					if imgui.Checkbox("Toggle Keybind##BikeBind", new.bool(autobind.Keybinds["BikeBind"].Toggle)) then
+						autobind.Keybinds["BikeBind"].Toggle = not autobind.Keybinds["BikeBind"].Toggle
+					end
 					keychange('BikeBind', autobind.Keybinds["BikeBind"].Dual)
 					
-					imgui.Text("Sprintbind Toggle")
+					imgui.Text("Sprintbind:")
 					if imgui.Checkbox("Dual Keybind##SprintBind", new.bool(autobind.Keybinds["SprintBind"].Dual)) then
 						local key_split = split(autobind.Keybinds["SprintBind"].Keybind, ",")
 						if autobind.Keybinds["SprintBind"].Dual then
@@ -947,9 +944,18 @@ function()
 							inuse_key = false
 						end
 					end
+					if imgui.Checkbox("Toggle Keybind##SprintBind", new.bool(autobind.Keybinds["SprintBind"].Toggle)) then
+						autobind.Keybinds["SprintBind"].Toggle = not autobind.Keybinds["SprintBind"].Toggle
+					end
+					imgui.PushItemWidth(40) 
+					delay = new.int(autobind.SprintBind.delay)
+					if imgui.DragInt('Speed', delay, 0.5, 0, 200) then 
+						autobind.SprintBind.delay = delay[0] 
+					end
+					imgui.PopItemWidth()
 					keychange('SprintBind', autobind.Keybinds["SprintBind"].Dual)
 					
-					imgui.Text("Frisk")
+					imgui.Text("Frisk:")
 					if imgui.Checkbox("Dual Keybind##Frisk", new.bool(autobind.Keybinds["Frisk"].Dual)) then
 						local key_split = split(autobind.Keybinds["Frisk"].Keybind, ",")
 						if autobind.Keybinds["Frisk"].Dual then
@@ -966,9 +972,12 @@ function()
 							inuse_key = false
 						end
 					end
+					if imgui.Checkbox("Toggle Keybind##Frisk", new.bool(autobind.Keybinds["Frisk"].Toggle)) then
+						autobind.Keybinds["Frisk"].Toggle = not autobind.Keybinds["Frisk"].Toggle
+					end
 					keychange('Frisk', autobind.Keybinds["Frisk"].Dual)
 					
-					imgui.Text("TakePills")
+					imgui.Text("TakePills:")
 					if imgui.Checkbox("Dual Keybind##TakePills", new.bool(autobind.Keybinds["TakePills"].Dual)) then
 						local key_split = split(autobind.Keybinds["TakePills"].Keybind, ",")
 						if autobind.Keybinds["TakePills"].Dual then
@@ -984,6 +993,9 @@ function()
 							autobind.Keybinds["TakePills"].Keybind = tostring(VK_MENU)..','..tostring(key_split[1])
 							inuse_key = false
 						end
+					end
+					if imgui.Checkbox("Toggle Keybind##TakePills", new.bool(autobind.Keybinds["TakePills"].Toggle)) then
+						autobind.Keybinds["TakePills"].Toggle = not autobind.Keybinds["TakePills"].Toggle
 					end
 					keychange('TakePills', autobind.Keybinds["TakePills"].Dual)
 				imgui.EndChild()
@@ -1093,8 +1105,15 @@ function()
 	imgui.End()
 end)
 
-imgui.OnFrame(function() return isIniLoaded and skinmenu[0] and not isGamePaused end,
+local frameDrawer = imgui.OnFrame(function() return isIniLoaded and skinmenu[0] and not isGamePaused end,
 function()
+	for i = 0, 311 do
+		if skinTexture[i] == nil then
+			skinTexture[i] = imgui.CreateTextureFromFile("moonloader/resource/skins/Skin_"..i..".png")
+		end
+	end
+end,
+function(self)
 	local width, height = getScreenResolution()
 	imgui.SetNextWindowPos(imgui.ImVec2(width / 2, height / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
 	imgui.SetNextWindowSize(imgui.ImVec2(505, 390), imgui.Cond.FirstUseEver)
@@ -1249,7 +1268,6 @@ function()
 
     imgui.Begin(string.format("Faction Locker", script.this.name, script.this.version), factionlockermenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize) 
 		imgui.Text('Locker Equipment:')
-		print(autobind.FactionLocker[1])
 		if imgui.Checkbox('Deagle', new.bool(autobind.FactionLocker[1])) then 
 			autobind.FactionLocker[1] = not autobind.FactionLocker[1] 
 		end
@@ -1317,11 +1335,11 @@ function main()
 	while not isSampAvailable() do wait(100) end
 	sampAddChatMessage("["..script.this.name..'] '.. "{FF1A74}(/autobind, autobind.help) Authors: " .. table.concat(thisScript().authors, ", ")..", Testers: ".. table.concat(script_tester, ", "), -1)
 	
-	skins_script()
-	
 	if autobind.autoupdate then
-		update_script()
+		update_script(false)
 	end
+	
+	skins_script()
 	
 	local res_aduty, aduty = getSampfuncsGlobalVar("aduty")
 	if res_aduty then
@@ -1355,144 +1373,172 @@ function main()
 	end)
 
 	sampRegisterChatCommand(autobind.vestnearcmd, function() 
-		for PlayerID = 0, sampGetMaxPlayerId(false) do
-			local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
-			if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
-				local myX, myY, myZ = getCharCoordinates(ped)
-				local playerX, playerY, playerZ = getCharCoordinates(playerped)
-				if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
-					local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
-					local pAnimId2 = sampGetPlayerAnimationId(playerid)
-					local aim, _ = getCharPlayerIsTargeting(h)
-					if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
-						sendGuard(PlayerID)
+		if _enabled then
+			for PlayerID = 0, sampGetMaxPlayerId(false) do
+				local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
+				if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
+					local myX, myY, myZ = getCharCoordinates(ped)
+					local playerX, playerY, playerZ = getCharCoordinates(playerped)
+					if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
+						local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
+						local pAnimId2 = sampGetPlayerAnimationId(playerid)
+						local aim, _ = getCharPlayerIsTargeting(h)
+						if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
+							sendGuard(PlayerID)
+						end
 					end
 				end
 			end
 		end
 	end)
 	sampRegisterChatCommand(autobind.sexnearcmd, function() 
-		local result, id = getClosestPlayerId(5, 2)
-		if result and isCharInAnyCar(ped) then
-			sampSendChat(string.format("/sex %d 1", id))
+		if _enabled then
+			local result, id = getClosestPlayerId(5, 2)
+			if result and isCharInAnyCar(ped) then
+				sampSendChat(string.format("/sex %d 1", id))
+			end
 		end
 	end)
 	sampRegisterChatCommand(autobind.repairnearcmd, function()
-		local result, id = getClosestPlayerId(5, 2)
-		if result then
-			sampSendChat(string.format("/repair %d 1", id))
+		if _enabled then
+			local result, id = getClosestPlayerId(5, 2)
+			if result then
+				sampSendChat(string.format("/repair %d 1", id))
+			end
 		end
 	end)
 	
 	sampRegisterChatCommand(autobind.hfindcmd, function(params) -- Scumbag Locator
-		lua_thread.create(function()
-			if string.len(params) > 0 then
-				local result, playerid, name = getTarget(params)
-				if result then
-					if not autofind then
-						target = playerid
-						autofind = true
-						sampAddChatMessage("FINDING: {00a2ff}"..name.."{ffffff}. /hfind again to toggle.", -1)
-						while autofind and not cooldown do
-							wait(10)
-							if sampIsPlayerConnected(target) then
-								cooldown = true
-								sampSendChat("/find "..target)
-								wait(19000)
-								cooldown = false
-							else
-								autofind = false
-								sampAddChatMessage("The player you were finding has disconnected, you are no longer finding anyone.", -1)
+		if _enabled then
+			lua_thread.create(function()
+				if string.len(params) > 0 then
+					local result, playerid, name = getTarget(params)
+					if result then
+						if not autofind then
+							target = playerid
+							autofind = true
+							sampAddChatMessage("FINDING: {00a2ff}"..name.."{ffffff}. /hfind again to toggle.", -1)
+							while autofind and not cooldown do
+								wait(10)
+								if sampIsPlayerConnected(target) then
+									cooldown = true
+									sampSendChat("/find "..target)
+									wait(19000)
+									cooldown = false
+								else
+									autofind = false
+									sampAddChatMessage("The player you were finding has disconnected, you are no longer finding anyone.", -1)
+								end
 							end
+						elseif autofind then
+							target = playerid
+							sampAddChatMessage("NOW FINDING: {00a2ff}"..name.."{ffffff}.", -1)
 						end
-					elseif autofind then
-						target = playerid
-						sampAddChatMessage("NOW FINDING: {00a2ff}"..name.."{ffffff}.", -1)
+					else
+						sampAddChatMessage("Invalid player specified.", 11645361)
 					end
+				elseif autofind and string.len(params) == 0 then
+					autofind = false
+					sampAddChatMessage("You are no longer finding anyone.", -1)
 				else
-					sampAddChatMessage("Invalid player specified.", 11645361)
+					sampAddChatMessage('USAGE: /hfind [playerid/partofname]', -1)
 				end
-			elseif autofind and string.len(params) == 0 then
-				autofind = false
-				sampAddChatMessage("You are no longer finding anyone.", -1)
-			else
-				sampAddChatMessage('USAGE: /hfind [playerid/partofname]', -1)
-			end
-		end)
+			end)
+		end
 	end)
 	
 	sampRegisterChatCommand(autobind.tcapcmd, function() 
-		captog = not captog 
+		if _enabled then
+			captog = not captog 
+		end
 	end)
 	
 	sampRegisterChatCommand(autobind.sprintbindcmd, function() 
-		autobind.SprintBind.tog[1] = not autobind.SprintBind.tog[1] 
-		sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.SprintBind.tog[1] and '{008000}on' or '{FF0000}off'), -1) 
+		if _enabled then
+			autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle 
+			sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'), -1) 
+		end
 	end)
 	
 	sampRegisterChatCommand(autobind.bikebindcmd, function() 
-		autobind.SprintBind.tog[2] = not autobind.SprintBind.tog[2] 
-		sampAddChatMessage('[Autobind]{ffff00} Bikebind: '..(autobind.SprintBind.tog[2] and '{008000}on' or '{FF0000}off'), -1) 
+		if _enabled then
+			autobind.Keybinds.BikeBind.Toggle = not autobind.Keybinds.BikeBind.Toggle
+			sampAddChatMessage('[Autobind]{ffff00} Bikebind: '..(autobind.Keybinds.BikeBind.Toggle and '{008000}on' or '{FF0000}off'), -1) 
+		end
 	end)
 	
 	sampRegisterChatCommand(autobind.autovestcmd, function() 
-		_enabled = not _enabled
-		sampAddChatMessage(string.format("[Autobind]{ffff00} Automatic vest %s.", _enabled and 'enabled' or 'disabled'), 1999280)
+		if _enabled then
+			_enabled = not _enabled
+			sampAddChatMessage(string.format("[Autobind]{ffff00} Automatic vest %s.", _enabled and 'enabled' or 'disabled'), 1999280)
+		end
 	end)
 	
 	sampRegisterChatCommand(autobind.autoacceptercmd, function() 
-		if autobind.vestmode == 0 then
-			autoaccepter = not autoaccepter
-			sampAddChatMessage(string.format("[Autobind]{ffff00} Autoaccepter is now %s.", autoaccepter and 'enabled' or 'disabled'), 1999280)
-		else
-			sampAddChatMessage("[Autobind]{ffff00} Autoaccepter is for families only.", 1999280)
+		if _enabled then
+			if autobind.vestmode == 0 then
+				autoaccepter = not autoaccepter
+				sampAddChatMessage(string.format("[Autobind]{ffff00} Autoaccepter is now %s.", autoaccepter and 'enabled' or 'disabled'), 1999280)
+			else
+				sampAddChatMessage("[Autobind]{ffff00} Autoaccepter is for families only.", 1999280)
+			end
 		end
 	end)
 	
 	sampRegisterChatCommand(autobind.ddmodecmd, function() 
-		autobind.ddmode = not autobind.ddmode
-		sampAddChatMessage(string.format("[Autobind]{ffff00} ddmode is now %s.", autobind.ddmode and 'enabled' or 'disabled'), 1999280)
-		
-		autobind.timer = autobind.ddmode and 7 or 12
+		if _enabled then
+			autobind.ddmode = not autobind.ddmode
+			sampAddChatMessage(string.format("[Autobind]{ffff00} ddmode is now %s.", autobind.ddmode and 'enabled' or 'disabled'), 1999280)
+			
+			autobind.timer = autobind.ddmode and 7 or 12
+		end
 	end)
 	
 	sampRegisterChatCommand(autobind.factionbothcmd, function() 
-		autobind.factionboth  = not autobind.factionboth
-		sampAddChatMessage(string.format("[Autobind]{ffff00} factionbothcmd is now %s.", autobind.factionboth and 'enabled' or 'disabled'), 1999280)
+		if _enabled then
+			autobind.factionboth  = not autobind.factionboth
+			sampAddChatMessage(string.format("[Autobind]{ffff00} factionbothcmd is now %s.", autobind.factionboth and 'enabled' or 'disabled'), 1999280)
+		end
 	end)
 	
 	sampRegisterChatCommand(autobind.vestmodecmd, function(params) 
-		if string.len(params) > 0 then 
-			if params == 'families' then
-				autobind.vestmode = 0
-				sampAddChatMessage("[Autobind]{ffff00} vestmode is now set to Families.", 1999280)
-			elseif params == 'factions' then
-				autobind.vestmode = 1
-				sampAddChatMessage("[Autobind]{ffff00} vestmode is now set to Factions.", 1999280)
-			elseif params == 'everyone' then
-				autobind.vestmode = 2
-				sampAddChatMessage("[Autobind]{ffff00} vestmode is now set to Everyone.", 1999280)
-			elseif params == 'names' then
-				autobind.vestmode = 3
-				sampAddChatMessage("[Autobind]{ffff00} vestmode is now set to Names.", 1999280)
+		if _enabled then
+			if string.len(params) > 0 then 
+				if params == 'families' then
+					autobind.vestmode = 0
+					sampAddChatMessage("[Autobind]{ffff00} vestmode is now set to Families.", 1999280)
+				elseif params == 'factions' then
+					autobind.vestmode = 1
+					sampAddChatMessage("[Autobind]{ffff00} vestmode is now set to Factions.", 1999280)
+				elseif params == 'everyone' then
+					autobind.vestmode = 2
+					sampAddChatMessage("[Autobind]{ffff00} vestmode is now set to Everyone.", 1999280)
+				elseif params == 'names' then
+					autobind.vestmode = 3
+					sampAddChatMessage("[Autobind]{ffff00} vestmode is now set to Names.", 1999280)
+				else
+					sampAddChatMessage("[Autobind]{ffff00} vestmode is currently set to "..vestmodename(autobind.vestmode)..".", 1999280)
+					sampAddChatMessage('USAGE: /'..autobind.vestmodecmd..' [families/factions/everyone/names]', -1)
+				end
 			else
 				sampAddChatMessage("[Autobind]{ffff00} vestmode is currently set to "..vestmodename(autobind.vestmode)..".", 1999280)
 				sampAddChatMessage('USAGE: /'..autobind.vestmodecmd..' [families/factions/everyone/names]', -1)
 			end
-		else
-			sampAddChatMessage("[Autobind]{ffff00} vestmode is currently set to "..vestmodename(autobind.vestmode)..".", 1999280)
-			sampAddChatMessage('USAGE: /'..autobind.vestmodecmd..' [families/factions/everyone/names]', -1)
 		end
 	end)
 	
 	sampRegisterChatCommand(autobind.pointmodecmd, function(params) 
-		sampAddChatMessage("[Autobind]{ffff00} pointmode enabled.", 1999280)
-		autobind.point_turf_mode = true
+		if _enabled then
+			sampAddChatMessage("[Autobind]{ffff00} pointmode enabled.", 1999280)
+			autobind.point_turf_mode = true
+		end
 	end)
 	
 	sampRegisterChatCommand(autobind.turfmodecmd, function(params) 
-		sampAddChatMessage("[Autobind]{ffff00} turfmode enabled.", 1999280)
-		autobind.point_turf_mode = false
+		if _enabled then
+			sampAddChatMessage("[Autobind]{ffff00} turfmode enabled.", 1999280)
+			autobind.point_turf_mode = false
+		end
 	end)
 	
 	if not autobind.enablebydefault then
@@ -1509,7 +1555,7 @@ function main()
 	
 	lua_thread.create(function() 
 		while true do wait(0)
-			if captog then 
+			if _enabled and captog then 
 				sampAddChatMessage("{FFFF00}Starting capture spam... (type /tcap to toggle)",-1)
 				while captog do
 					sampSendChat("/capturf")
@@ -1522,19 +1568,21 @@ function main()
 	
 	lua_thread.create(function() 
 		while true do wait(0)
-			if autobind.SprintBind.tog[1] and getPadState(h, keys.player.SPRINT) == 255 and (isCharOnFoot(ped) or isCharInWater(ped)) then
+			if _enabled and autobind.Keybinds.SprintBind.Toggle and getPadState(h, keys.player.SPRINT) == 255 and (isCharOnFoot(ped) or isCharInWater(ped)) then
 				setGameKeyUpDown(keys.player.SPRINT, 255, autobind.SprintBind.delay) 
 			end
 		end
 	end)
 	
 	while true do wait(0)
-		if getCharArmour(ped) > 49 and not autobind.showprevest then
-			sampname2 = 'Nobody'
-			playerid2 = -1
-			
-			if autobind.notification_hide[2] then
-				hide[2] = false
+		if _enabled then
+			if getCharArmour(ped) > 49 and not autobind.showprevest then
+				sampname2 = 'Nobody'
+				playerid2 = -1
+				
+				if autobind.notification_hide[2] then
+					hide[2] = false
+				end
 			end
 		end
 	
@@ -1627,183 +1675,185 @@ end
 
 function listenToKeybinds()
 	for k, v in pairs(autobind.Keybinds) do
-		if string.contains(v.Keybind, ',', true) then
-			local key_split = split(v.Keybind, ",")
-			if k == 'Accept' then
-				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
-					sampSendChat("/accept bodyguard")
-					wait(1000)
+		if _enabled then
+			if string.contains(v.Keybind, ',', true) then
+				local key_split = split(v.Keybind, ",")
+				if k == 'Accept' and v.Toggle then
+					if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+						sampSendChat("/accept bodyguard")
+						wait(1000)
+					end
 				end
-			end
-			if k == 'Offer' then
-				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
-					for PlayerID = 0, sampGetMaxPlayerId(false) do
-						local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
-						if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
-							local myX, myY, myZ = getCharCoordinates(ped)
-							local playerX, playerY, playerZ = getCharCoordinates(playerped)
-							if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
-								local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
-								local pAnimId2 = sampGetPlayerAnimationId(playerid)
-								local aim, _ = getCharPlayerIsTargeting(h)
-								if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
-									sendGuard(PlayerID)
-									wait(1000)
+				if k == 'Offer' and v.Toggle then
+					if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+						for PlayerID = 0, sampGetMaxPlayerId(false) do
+							local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
+							if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
+								local myX, myY, myZ = getCharCoordinates(ped)
+								local playerX, playerY, playerZ = getCharCoordinates(playerped)
+								if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
+									local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
+									local pAnimId2 = sampGetPlayerAnimationId(playerid)
+									local aim, _ = getCharPlayerIsTargeting(h)
+									if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
+										sendGuard(PlayerID)
+										wait(1000)
+									end
 								end
 							end
 						end
 					end
 				end
-			end
-			if k == "BlackMarket" then
-				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
-					if not bmbool then
-						bmbool = true
-						sendBMCmd()
-					end 
-				end
-			end
-			if k == "FactionLocker" then
-				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
-					if not lockerbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
-						lockerbool = true
-						sendLockerCmd()
+				if k == "BlackMarket" and v.Toggle then
+					if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+						if not bmbool then
+							bmbool = true
+							sendBMCmd()
+						end 
 					end
 				end
-			end
-			if k == "BikeBind" then
-				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyDown'}}) then
-					if not isPauseMenuActive() and not sampIsChatInputActive() and not sampIsDialogActive() and not isSampfuncsConsoleActive() and not sampIsScoreboardOpen() and autobind.SprintBind.tog[2] then
-						if isCharOnAnyBike(ped) then
-							local veh = storeCarCharIsInNoSave(ped)
-							if not isCarInAirProper(veh) then
-								if bike[getCarModel(veh)] then 
-									setGameKeyUpDown(keys.vehicle.ACCELERATE, 255, 0)
-								elseif moto[getCarModel(veh)] then 
-									setGameKeyUpDown(keys.vehicle.STEERUP_STEERDOWN, -128, 0)
-								end
-							end
-						end
-					end	
-				end
-			end
-			if k == "SprintBind" then
-				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
-					autobind.SprintBind.tog[1] = not autobind.SprintBind.tog[1] 
-					sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.SprintBind.tog[1] and '{008000}on' or '{FF0000}off'), -1) 
-				end
-			end
-			if k == "Frisk" then
-				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
-					local _, playerped = storeClosestEntities(ped)
-					local result, id = sampGetPlayerIdByCharHandle(playerped)
-					local result2, target = getCharPlayerIsTargeting(h)
-					if result then
-						if (result2 and autobind.Frisk[1]) or not autobind.Frisk[1] then
-							if (target == playerped and autobind.Frisk[1]) or not autobind.Frisk[1] then
-								if (isPlayerAiming(true, true) and autobind.Frisk[2]) or not autobind.Frisk[2] then
-									sampSendChat(string.format("/frisk %d", id))
-									wait(1000)
-								end
-							end
+				if k == "FactionLocker" and v.Toggle then
+					if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+						if not lockerbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
+							lockerbool = true
+							sendLockerCmd()
 						end
 					end
 				end
-			end
-			if k == 'TakePills' then
-				if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
-					sampSendChat("/takepills")
-					wait(1000)
+				if k == "BikeBind" then
+					if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyDown'}}) then
+						if not isPauseMenuActive() and not sampIsChatInputActive() and not sampIsDialogActive() and not isSampfuncsConsoleActive() and not sampIsScoreboardOpen() and autobind.Keybinds.BikeBind.Toggle then
+							if isCharOnAnyBike(ped) then
+								local veh = storeCarCharIsInNoSave(ped)
+								if not isCarInAirProper(veh) then
+									if bike[getCarModel(veh)] then 
+										setGameKeyUpDown(keys.vehicle.ACCELERATE, 255, 0)
+									elseif moto[getCarModel(veh)] then 
+										setGameKeyUpDown(keys.vehicle.STEERUP_STEERDOWN, -128, 0)
+									end
+								end
+							end
+						end	
+					end
 				end
-			end
-		else
-			if k == 'Accept' then
-				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
-					sampSendChat("/accept bodyguard")
-					wait(1000)
+				if k == "SprintBind" then
+					if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+						autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle 
+						sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'), -1) 
+					end
 				end
-			end
-				
-			if k == 'Offer' then
-				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
-					for PlayerID = 0, sampGetMaxPlayerId(false) do
-						local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
-						if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
-							local myX, myY, myZ = getCharCoordinates(ped)
-							local playerX, playerY, playerZ = getCharCoordinates(playerped)
-							if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
-								local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
-								local pAnimId2 = sampGetPlayerAnimationId(playerid)
-								local aim, _ = getCharPlayerIsTargeting(h)
-								if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
-									sendGuard(PlayerID)
-									wait(1000)
+				if k == "Frisk" and v.Toggle then
+					if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+						local _, playerped = storeClosestEntities(ped)
+						local result, id = sampGetPlayerIdByCharHandle(playerped)
+						local result2, target = getCharPlayerIsTargeting(h)
+						if result then
+							if (result2 and autobind.Frisk[1]) or not autobind.Frisk[1] then
+								if (target == playerped and autobind.Frisk[1]) or not autobind.Frisk[1] then
+									if (isPlayerAiming(true, true) and autobind.Frisk[2]) or not autobind.Frisk[2] then
+										sampSendChat(string.format("/frisk %d", id))
+										wait(1000)
+									end
 								end
 							end
 						end
 					end
 				end
-			end
-			if k == "BlackMarket" then
-				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
-					if not bmbool then
-						bmbool = true
-						sendBMCmd()
-					end 
-				end
-			end
-			if k == "FactionLocker" then
-				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
-					if not lockerbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
-						lockerbool = true
-						sendLockerCmd()
+				if k == 'TakePills' and v.Toggle then
+					if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+						sampSendChat("/takepills")
+						wait(1000)
 					end
 				end
-			end
-			if k == "BikeBind" then
-				if keycheck({k  = {v.Keybind}, t = {'KeyDown'}}) then
-					if not isPauseMenuActive() and not sampIsChatInputActive() and not sampIsDialogActive() and not isSampfuncsConsoleActive() and not sampIsScoreboardOpen() and autobind.SprintBind.tog[2] then
-						if isCharOnAnyBike(ped) then
-							local veh = storeCarCharIsInNoSave(ped)
-							if not isCarInAirProper(veh) then
-								if bike[getCarModel(veh)] then 
-									setGameKeyUpDown(keys.vehicle.ACCELERATE, 255, 0)
-								elseif moto[getCarModel(veh)] then 
-									setGameKeyUpDown(keys.vehicle.STEERUP_STEERDOWN, -128, 0)
-								end
-							end
-						end
-					end	
+			else
+				if k == 'Accept' and v.Toggle then
+					if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+						sampSendChat("/accept bodyguard")
+						wait(1000)
+					end
 				end
-			end
-			if k == "SprintBind" then
-				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
-					autobind.SprintBind.tog[1] = not autobind.SprintBind.tog[1] 
-					sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.SprintBind.tog[1] and '{008000}on' or '{FF0000}off'), -1)
-					wait(1000)
-				end
-			end
-			if k == "Frisk" then
-				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
-					local _, playerped = storeClosestEntities(ped)
-					local result, id = sampGetPlayerIdByCharHandle(playerped)
-					local result2, target = getCharPlayerIsTargeting(h)
-					if result then
-						if (result2 and autobind.Frisk[1]) or not autobind.Frisk[1] then
-							if (target == playerped and autobind.Frisk[1]) or not autobind.Frisk[1] then
-								if (isPlayerAiming(true, true) and autobind.Frisk[2]) or not autobind.Frisk[2] then
-									sampSendChat(string.format("/frisk %d", id))
-									wait(1000)
+					
+				if k == 'Offer' and v.Toggle then
+					if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+						for PlayerID = 0, sampGetMaxPlayerId(false) do
+							local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
+							if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
+								local myX, myY, myZ = getCharCoordinates(ped)
+								local playerX, playerY, playerZ = getCharCoordinates(playerped)
+								if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
+									local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
+									local pAnimId2 = sampGetPlayerAnimationId(playerid)
+									local aim, _ = getCharPlayerIsTargeting(h)
+									if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
+										sendGuard(PlayerID)
+										wait(1000)
+									end
 								end
 							end
 						end
 					end
 				end
-			end
-			if k == 'TakePills' then
-				if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
-					sampSendChat("/takepills")
-					wait(1000)
+				if k == "BlackMarket" and v.Toggle then
+					if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+						if not bmbool then
+							bmbool = true
+							sendBMCmd()
+						end 
+					end
+				end
+				if k == "FactionLocker" and v.Toggle then
+					if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+						if not lockerbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
+							lockerbool = true
+							sendLockerCmd()
+						end
+					end
+				end
+				if k == "BikeBind" then
+					if keycheck({k  = {v.Keybind}, t = {'KeyDown'}}) then
+						if not isPauseMenuActive() and not sampIsChatInputActive() and not sampIsDialogActive() and not isSampfuncsConsoleActive() and not sampIsScoreboardOpen() and autobind.Keybinds.BikeBind.Toggle then
+							if isCharOnAnyBike(ped) then
+								local veh = storeCarCharIsInNoSave(ped)
+								if not isCarInAirProper(veh) then
+									if bike[getCarModel(veh)] then 
+										setGameKeyUpDown(keys.vehicle.ACCELERATE, 255, 0)
+									elseif moto[getCarModel(veh)] then 
+										setGameKeyUpDown(keys.vehicle.STEERUP_STEERDOWN, -128, 0)
+									end
+								end
+							end
+						end	
+					end
+				end
+				if k == "SprintBind" then
+					if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+						autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle
+						sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'), -1)
+						wait(1000)
+					end
+				end
+				if k == "Frisk" and v.Toggle then
+					if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+						local _, playerped = storeClosestEntities(ped)
+						local result, id = sampGetPlayerIdByCharHandle(playerped)
+						local result2, target = getCharPlayerIsTargeting(h)
+						if result then
+							if (result2 and autobind.Frisk[1]) or not autobind.Frisk[1] then
+								if (target == playerped and autobind.Frisk[1]) or not autobind.Frisk[1] then
+									if (isPlayerAiming(true, true) and autobind.Frisk[2]) or not autobind.Frisk[2] then
+										sampSendChat(string.format("/frisk %d", id))
+										wait(1000)
+									end
+								end
+							end
+						end
+					end
+				end
+				if k == 'TakePills' and v.Toggle then
+					if keycheck({k  = {v.Keybind}, t = {'KeyPressed'}}) then
+						sampSendChat("/takepills")
+						wait(1000)
+					end
 				end
 			end
 		end
@@ -1832,31 +1882,6 @@ function sendGuard(id)
 	_last_vest = localClock()
 end
 
-function loadskinidsurl()
-	if not autobind.customskins then
-		urlstring = https.request(autobind.skinsurl)
-		if urlstring ~= nil then
-			for skinid in string.match(urlstring, "<body>(.+)</body>").gmatch(urlstring, "%d*") do
-				if string.len(skinid) > 0 then 
-					table.insert(skins, skinid)
-				end
-			end
-		end
-	end
-end
-
-function skins_script()
-	for i = 0, 311 do
-		if not doesFileExist(skinspath ..'Skin_'.. i ..'.png') then
-			downloadUrlToFile(skins_url ..'Skin_'.. i ..'.png', skinspath ..'Skin_'.. i..'.png', function(id, status)
-				if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-					sampAddChatMessage('Skin_'..i..'.png' .. ' Downloaded', -1)
-				end
-			end)
-		end
-	end
-end
-
 function onScriptTerminate(scr, quitGame) 
 	if scr == script.this then 
 		if autobind.autosave then 
@@ -1872,7 +1897,7 @@ function onWindowMessage(msg, wparam, lparam)
 		isGamePaused = false
 	end
 
-	if wparam == VK_ESCAPE and (menu[0] or skinmenu[0] or bmmenu[0] or factionlockermenu[0]) then
+	if wparam == VK_ESCAPE and (menu[0] or skinmenu[0] or bmmenu[0] or factionlockermenu[0] or helpmenu[0]) then
         if msg == wm.WM_KEYDOWN then
             consumeWindowMessage(true, false)
         end
@@ -1881,6 +1906,7 @@ function onWindowMessage(msg, wparam, lparam)
 			skinmenu[0] = false
 			bmmenu[0] = false
 			factionlockermenu[0] = false
+			helpmenu[0] = false
         end
     end
 end
@@ -1986,11 +2012,6 @@ function sampev.onServerMessage(color, text)
 			else
 				location, nickname, pointname, number = text:match("* (.+) | Capper: (.+) | Family: (.+) | Time left: Less than (.+) minute")
 			end
-			
-			print(location)
-			print(nickname)
-			print(pointname)
-			print(number)
 			
 			point_capper = pointname 
 			pointtime = number
@@ -2531,23 +2552,55 @@ function sampev.onTogglePlayerSpectating(state)
     specstate = state
 end
 
-function update_script()
-	update_text = https.request(update_url)
+function loadskinidsurl()
+	if not autobind.customskins then
+		urlstring = https.request(autobind.skinsurl)
+		if urlstring ~= nil then
+			for skinid in string.match(urlstring, "<body>(.+)</body>").gmatch(urlstring, "%d*") do
+				if string.len(skinid) > 0 then 
+					table.insert(skins, skinid)
+				end
+			end
+		end
+	end
+end
+
+function skins_script()
+	for i = 0, 311 do
+		if not doesFileExist(skinspath ..'Skin_'.. i ..'.png') then
+			downloadUrlToFile(skins_url ..'Skin_'.. i ..'.png', skinspath ..'Skin_'.. i..'.png', function(id, status)
+				if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+					sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} Skin_%d.png Downloaded", script.this.name, i), -1)
+				end
+			end)
+		end
+	end
+end
+
+function update_script(noupdatecheck)
+	local update_text = https.request(update_url)
 	if update_text ~= nil then
 		update_version = update_text:match("version: (.+)")
 		if tonumber(update_version) > script_version then
 			sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} New version found! The update is in progress..", script.this.name), -1)
 			downloadUrlToFile(script_url, script_path, function(id, status)
 				if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-					sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} The update was successful!", script.this.name), -1)
+					sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} The update was successful! Reloading the script in 20 seconds!", script.this.name), -1)
 					lua_thread.create(function() 
 						menu[0] = false
-						sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} Reloading the script in 20 seconds!", script.this.name), -1)
+						skinmenu[0] = false
+						bmmenu[0] = false
+						factionlockermenu[0] = false
+						helpmenu[0] = false
 						wait(20000) 
 						thisScript():reload()
 					end)
 				end
 			end)
+		else
+			if noupdatecheck then
+				sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} No new version found..", script.this.name), -1)
+			end
 		end
 	end
 end
@@ -2671,7 +2724,7 @@ function repairmissing()
 		autobind.turf_capper_timer = 17
 	end
 	if autobind.skinsurl == nil then
-		autobind.skinsurl = "https://dickwhitman.do.am/skins.html"
+		autobind.skinsurl = "https://akacross.net/skins.html"
 	end
 	if autobind.skins == nil then
 		autobind.skins = {}
@@ -2725,13 +2778,13 @@ function repairmissing()
 		autobind.pointmodecmd = 'pointmode'
 	end
 	if autobind.offerpos == nil then 
-		autobind.offerpos = {500, 500}
+		autobind.offerpos = {10, 273}
 	end
 	if autobind.offeredpos == nil then 
-		autobind.offeredpos = {700, 500}
+		autobind.offeredpos = {10, 348}
 	end
 	if autobind.capperpos == nil then 
-		autobind.capperpos = {900, 500}
+		autobind.capperpos = {10, 396}
 	end
 	if autobind.names == nil then 
 		autobind.names = {}
@@ -2830,7 +2883,7 @@ function repairmissing()
 		autobind.Keybinds.TakePills.Toggle = false
 	end
 	if autobind.Keybinds.TakePills.Keybind == nil then 
-		autobind.Keybinds.TakePills.Keybind = tostring(VK_F4)
+		autobind.Keybinds.TakePills.Keybind = tostring(VK_F3)
 	end
 	if autobind.Keybinds.TakePills.Dual == nil then 
 		autobind.Keybinds.TakePills.Dual = false
@@ -2919,18 +2972,6 @@ function repairmissing()
 	if autobind.SprintBind == nil then
 		autobind.SprintBind = {}
 	end
-	if autobind.SprintBind.tog == nil then 
-		autobind.SprintBind.tog = {}
-	end
-	
-	if autobind.SprintBind.tog[1] == nil then 
-		autobind.SprintBind.tog[1] = true
-	end
-	
-	if autobind.SprintBind.tog[2] == nil then 
-		autobind.SprintBind.tog[2] = false
-	end
-	
 	if autobind.SprintBind.delay == nil then 
 		autobind.SprintBind.delay = 10
 	end
