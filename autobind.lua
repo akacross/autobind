@@ -3,8 +3,8 @@ script_author("akacross", "spnKO", "Farid", "P-Greggy")
 script_url("https://akacross.net/")
 script_tester = {"Taro", "Marowan", "Adib"}
 
-local script_version = 1.7
-local script_version_text = '1.7'
+local script_version = 1.8
+local script_version_text = '1.8'
 
 require"lib.moonloader"
 require"lib.sampfuncs"
