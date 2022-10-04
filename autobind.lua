@@ -270,11 +270,16 @@ function()
 
 	imgui.SetNextWindowPos(imgui.ImVec2(autobind.offeredpos[1], autobind.offeredpos[2]))
 	imgui.Begin("offered", nil, imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize)
-		imgui.AnimProgressBar('##Timer', autobind.timer - (localClock() - _last_vest), autobind.timer, 50)
+		if autobind.progressbar.toggle then
+			imgui.AnimProgressBar('##Timer', autobind.timer - (localClock() - _last_vest), autobind.timer, 50, imgui.ImVec2(-1,15), 
+				imgui.ImVec4(autobind.progressbar.colorfade[1], autobind.progressbar.colorfade[2], autobind.progressbar.colorfade[3], autobind.progressbar.colorfade[4]), 
+				imgui.ImVec4(autobind.progressbar.color[1], autobind.progressbar.color[2], autobind.progressbar.color[3], autobind.progressbar.color[4])
+			)
+		end
 		if autobind.timer - (localClock() - _last_vest) > 0 then
-			imgui.Text(string.format("Next vest in: %d\nYou offered a vest to:\n%s[%s]\nVestmode: %s", autobind.timer - (localClock() - _last_vest), sampname, playerid, vestmodename(autobind.vestmode)))
+			imgui.Text(string.format("%sYou offered a vest to:\n%s[%s]\nVestmode: %s", autobind.timertext and string.format("Next vest in: %d\n", autobind.timer - (localClock() - _last_vest)) or '', sampname, playerid, vestmodename(autobind.vestmode)))
 		else
-			imgui.Text(string.format("Next vest in: 0\nYou offered a vest to:\n%s[%s]\nVestmode: %s", sampname, playerid, vestmodename(autobind.vestmode)))
+			imgui.Text(string.format("%sYou offered a vest to:\n%s[%s]\nVestmode: %s", autobind.timertext and "Next vest in: 0\n" or "", sampname, playerid, vestmodename(autobind.vestmode)))
 				
 			if autobind.notification[1] then
 				sampname = 'Nobody'
@@ -533,13 +538,18 @@ function()
 			
 			imgui.BeginChild("##3", imgui.ImVec2(500, 276), true)
 				if _menu == 1 then
-					imgui.SetCursorPos(imgui.ImVec2(5, 10))
+					imgui.SetCursorPos(imgui.ImVec2(5, 5))
 				
 					imgui.BeginChild("##config", imgui.ImVec2(330, 110), false)
 					
 						imgui.Text('AutoBind:')
 						if imgui.Checkbox('Cap Spam (Turfs)', new.bool(captog)) then 
 							captog = not captog 
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Spams /capturf every 1.5 seconds')
+							imgui.PopStyleVar()
 						end
 						
 						imgui.SameLine()
@@ -551,10 +561,19 @@ function()
 								autobind.capture = false
 							end
 						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Types /capturf when the message appears')
+							imgui.PopStyleVar()
+						end
 						if imgui.Checkbox('Disable after capping', new.bool(autobind.disableaftercapping)) then 
 							autobind.disableaftercapping = not autobind.disableaftercapping 
 						end
-						
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Disables /capture and /capturf at the end of the them')
+							imgui.PopStyleVar()
+						end
 						imgui.SameLine()
 						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
 						
@@ -565,22 +584,52 @@ function()
 								autobind.capturf = false
 							end
 						end
-						
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Types /capture when the message appears')
+							imgui.PopStyleVar()
+						end
 						if imgui.Checkbox('Auto Accept Repair', new.bool(autobind.autoacceptrepair)) then 
 							autobind.autoacceptrepair = not autobind.autoacceptrepair 
 						end
-						
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Auto accepts repair at 1 dollar')
+							imgui.PopStyleVar()
+						end
 						imgui.SameLine()
 						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
 						
 						if imgui.Checkbox('Auto Accept Sex', new.bool(autobind.autoacceptsex)) then 
 							autobind.autoacceptsex = not autobind.autoacceptsex 
 						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Auto accepts sex at any value')
+							imgui.PopStyleVar()
+						end
 						
 						if imgui.Checkbox('Auto Accept Vest', new.bool(autoaccepter)) then 
 							autoaccepter = not autoaccepter 
 						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Auto accepts vest')
+							imgui.PopStyleVar()
+						end
 						
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
+						
+						if imgui.Checkbox('Auto Badge', new.bool(autobind.badge)) then 
+							autobind.badge = not autobind.badge 
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Automatically enables /badge when going to the hopsital.')
+							imgui.PopStyleVar()
+						end
+					
 						imgui.Text('AutoVest:')
 						imgui.PushItemWidth(290)
 						local text_skinsurl = new.char[256](autobind.skinsurl)
@@ -614,13 +663,28 @@ function()
 						if imgui.Checkbox("Sound", new.bool(autobind.sound)) then
 							autobind.sound = not autobind.sound
 						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Play a sound when a vest is offered')
+							imgui.PopStyleVar()
+						end
 						imgui.SameLine()
 						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
 						if imgui.Checkbox("Timer fix", new.bool(autobind.timercorrection)) then
 							autobind.timercorrection = not autobind.timercorrection
 						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Corrects the timer, if a vest is missed')
+							imgui.PopStyleVar()
+						end
 						if imgui.Checkbox("Enabled by default", new.bool(autobind.enablebydefault)) then
 							autobind.enablebydefault = not autobind.enablebydefault
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Enables autovester by default if enabled')
+							imgui.PopStyleVar()
 						end
 						
 						imgui.SameLine()
@@ -685,6 +749,77 @@ function()
 							imgui.PopStyleVar()
 						end
 						
+						if imgui.Checkbox("Progress Bar", new.bool(autobind.progressbar.toggle)) then
+							autobind.progressbar.toggle = not autobind.progressbar.toggle
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Toggles progress bar from the menu')
+							imgui.PopStyleVar()
+						end
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
+						if imgui.Checkbox("Timer Text", new.bool(autobind.timertext)) then
+							autobind.timertext = not autobind.timertext
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Toggles timer text from the menu')
+							imgui.PopStyleVar()
+						end
+						
+						if imgui.Checkbox("Message Spam", new.bool(autobind.messages)) then
+							autobind.messages = not autobind.messages
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Disables messages sent by the server')
+							imgui.PopStyleVar()
+						end
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
+						imgui.PushItemWidth(100)
+						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+						if imgui.BeginCombo("##1", "Colors") then
+							local color1 = new.float[4](autobind.progressbar.colorfade[1], autobind.progressbar.colorfade[2], autobind.progressbar.colorfade[3], autobind.progressbar.colorfade[4])
+							if imgui.ColorEdit4('##Fade Color', color1, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
+								autobind.progressbar.colorfade[1] = color1[0]
+								autobind.progressbar.colorfade[2] = color1[1]
+								autobind.progressbar.colorfade[3] = color1[2]
+								autobind.progressbar.colorfade[4] = color1[3]
+							end
+							imgui.SameLine()
+							imgui.Text("Fade Color")
+							
+							local color2 = new.float[4](autobind.progressbar.color[1], autobind.progressbar.color[2], autobind.progressbar.color[3], autobind.progressbar.color[4])
+							if imgui.ColorEdit4('##Color', color2, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
+								autobind.progressbar.color[1] = color2[0]
+								autobind.progressbar.color[2] = color2[1]
+								autobind.progressbar.color[3] = color2[2]
+								autobind.progressbar.color[4] = color2[3]
+							end
+							imgui.SameLine()
+							imgui.Text("Color")
+							imgui.EndCombo()
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Progress Bar Colors')
+							imgui.PopStyleVar()
+						end
+						imgui.PopItemWidth()
+						imgui.PopStyleVar()
+						
+						if imgui.Checkbox("Auto FAid", new.bool(autobind.faid)) then
+							autobind.faid = not autobind.faid
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Auto renews after wearing off, and only works if autovester is enabled')
+							imgui.PopStyleVar()
+						end
+						
+						imgui.Text('Point/Turf Menu:')
 						if imgui.Checkbox("Always Point/Turf",  new.bool(autobind.notification_capper)) then
 							autobind.notification_capper = not autobind.notification_capper
 							if autobind.notification_capper then
@@ -709,18 +844,25 @@ function()
 								imgui.SetTooltip('Always Hide Turf/Point')
 							imgui.PopStyleVar()
 						end
-						if imgui.Checkbox("Message Spam", new.bool(autobind.messages)) then
-							autobind.messages = not autobind.messages
-						end
 						
 						imgui.Text('Frisk:')
 						if imgui.Checkbox("Player Target", new.bool(autobind.Frisk[1])) then
 							autobind.Frisk[1] = not autobind.Frisk[1]
 						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Checks if you are targeting a player')
+							imgui.PopStyleVar()
+						end
 						imgui.SameLine()
 						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
 						if imgui.Checkbox("Player Aim", new.bool(autobind.Frisk[2])) then
 							autobind.Frisk[2] = not autobind.Frisk[2]
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Checks if you are only aiming')
+							imgui.PopStyleVar()
 						end
 					imgui.EndChild()
 				
@@ -929,6 +1071,16 @@ function()
 						if not inuse_key then
 							keychange('TakePills')
 						end
+						
+						dualswitch("FAid:", "FAid")
+						if not inuse_key then
+							keychange('FAid')
+						end
+						
+						dualswitch("Accept Death:", "AcceptDeath")
+						if not inuse_key then
+							keychange('AcceptDeath')
+						end
 					imgui.EndChild()
 				end
 				
@@ -1039,21 +1191,23 @@ function()
 				
 				imgui.SameLine()
 				imgui.PushItemWidth(75)
+				imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
 				if imgui.BeginCombo("##1", "Lockers") then
 					if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
-							bmmenu[0] = not bmmenu[0]
-						end
+						bmmenu[0] = not bmmenu[0]
+					end
 						
-						if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
-							factionlockermenu[0] = not factionlockermenu[0]
-						end
-						
-						if imgui.Button(fa.CART_SHOPPING .. " Gang Locker") then
-							ganglockermenu[0] = not ganglockermenu[0]
-						end
+					if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
+						factionlockermenu[0] = not factionlockermenu[0]
+					end
+					
+					if imgui.Button(fa.CART_SHOPPING .. " Gang Locker") then
+						ganglockermenu[0] = not ganglockermenu[0]
+					end
 					imgui.EndCombo()
 				end
 				imgui.PopItemWidth()
+				imgui.PopStyleVar()
 				
 				imgui.SameLine()
 				if imgui.Button("ImGUI Settings") then
@@ -1666,28 +1820,32 @@ function main()
 					end
 				end
 			end
-			if autoaccepter and autoacceptertoggle then
-				local _, playerped = storeClosestEntities(ped)
-				local result, PlayerID = sampGetPlayerIdByCharHandle(playerped)
-				if result and playerped ~= ped then
-					if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
-						autoaccepternickname = sampGetPlayerNickname(PlayerID)
+			if autoaccepter then
+				if getCharHealth(ped) < 49 and autobind.faid then
+					sampSendChat("/faid")
+				end
+				if autoacceptertoggle then
+					local _, playerped = storeClosestEntities(ped)
+					local result, PlayerID = sampGetPlayerIdByCharHandle(playerped)
+					if result and playerped ~= ped then
+						if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
+							autoaccepternickname = sampGetPlayerNickname(PlayerID)
 
-						local playerx, playery, playerz = getCharCoordinates(ped)
-						local pedx, pedy, pedz = getCharCoordinates(playerped)
+							local playerx, playery, playerz = getCharCoordinates(ped)
+							local pedx, pedy, pedz = getCharCoordinates(playerped)
 
-						if getDistanceBetweenCoords3d(playerx, playery, playerz, pedx, pedy, pedz) < 4 then
-							if autoaccepternickname == autoaccepternick then
-								sampSendChat("/accept bodyguard")
-								
-								autoacceptertoggle = false
+							if getDistanceBetweenCoords3d(playerx, playery, playerz, pedx, pedy, pedz) < 4 then
+								if autoaccepternickname == autoaccepternick then
+									sampSendChat("/accept bodyguard")
+									
+									autoacceptertoggle = false
+								end
 							end
 						end
 					end
 				end
 			end
 		end
-
 		if _enabled and autobind.point_capper_timer <= localClock() - _last_point_capper_refresh then
 			if flashing[1] and not timeset[1] and not disablepointspam then
 				sampSendChat("/pointinfo")
@@ -1801,9 +1959,24 @@ function listenToKeybinds()
 							end
 						end
 					end
+					
 					if key == 'TakePills' and value.Toggle then
 						if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
 							sampSendChat("/takepills")
+							wait(1000)
+						end
+					end
+					
+					if key == 'AcceptDeath' and value.Toggle then
+						if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+							sampSendChat("/accept death")
+							wait(1000)
+						end
+					end
+					
+					if key == 'FAid' and value.Toggle then
+						if keycheck({k  = {key_split[1], key_split[2]}, t = {'KeyDown', 'KeyPressed'}}) then
+							sampSendChat("/faid")
 							wait(1000)
 						end
 					end
@@ -1836,6 +2009,7 @@ function listenToKeybinds()
 						end
 					end
 				end
+				
 				if key == "BlackMarket" and value.Toggle then
 					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
 						if not bmbool then
@@ -1844,6 +2018,7 @@ function listenToKeybinds()
 						end 
 					end
 				end
+				
 				if key == "FactionLocker" and value.Toggle then
 					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
 						if not lockerbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
@@ -1852,7 +2027,8 @@ function listenToKeybinds()
 						end
 					end
 				end
-				if key == "GangLocker" then
+				
+				if key == "GangLocker" and value.Toggle then
 					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
 						if not gangbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
 							gangbool = true
@@ -1860,14 +2036,7 @@ function listenToKeybinds()
 						end
 					end
 				end
-				if key == "GangLocker" then
-					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
-						if not gangbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
-							gangbool = true
-							sendGangCmd()
-						end
-					end
-				end
+				
 				if key == "BikeBind" then
 					if keycheck({k  = {value.Keybind}, t = {'KeyDown'}}) then
 						if not isPauseMenuActive() and not sampIsChatInputActive() and not sampIsDialogActive() and not isSampfuncsConsoleActive() and not sampIsScoreboardOpen() and autobind.Keybinds.BikeBind.Toggle then
@@ -1884,6 +2053,7 @@ function listenToKeybinds()
 						end	
 					end
 				end
+				
 				if key == "SprintBind" then
 					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
 						autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle
@@ -1891,6 +2061,7 @@ function listenToKeybinds()
 						wait(1000)
 					end
 				end
+				
 				if key == "Frisk" and value.Toggle then
 					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
 						local _, playerped = storeClosestEntities(ped)
@@ -1908,9 +2079,24 @@ function listenToKeybinds()
 						end
 					end
 				end
+				
 				if key == 'TakePills' and value.Toggle then
 					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
 						sampSendChat("/takepills")
+						wait(1000)
+					end
+				end
+				
+				if key == 'AcceptDeath' and value.Toggle then
+					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
+						sampSendChat("/accept death")
+						wait(1000)
+					end
+				end
+				
+				if key == 'FAid' and value.Toggle then
+					if keycheck({k  = {value.Keybind}, t = {'KeyPressed'}}) then
+						sampSendChat("/faid")
 						wait(1000)
 					end
 				end
@@ -2028,6 +2214,12 @@ function sampev.onSetSpawnInfo(team, skin, _unused, position, rotation, weapons,
 end
 
 function sampev.onServerMessage(color, text)
+	if text:find("Your hospital bill") and color == -8224086 then
+		if autobind.badge then
+			sampSendChat("/badge")
+		end
+	end
+
 	if text:find("The time is now") and color == -86 then 
 		if autobind.capturf then 
 			sampSendChat("/capturf") 
@@ -2771,7 +2963,7 @@ function dualswitch(title, key)
 	end
 end
 
-function imgui.AnimProgressBar(label, int, int2, duration, size)
+function imgui.AnimProgressBar(label, int, int2, duration, size, color, color2)
 	local function bringFloatTo(from, to, start_time, duration)
 		local timer = os.clock() - start_time
 		if timer >= 0.00 and timer <= duration then; local count = timer / (duration / int2); return from + (count * (to - from) / int2),timer,false
@@ -2794,13 +2986,12 @@ function imgui.AnimProgressBar(label, int, int2, duration, size)
         end
         p.int = d[1];
     end
-    --imgui.PushStyleVarVec2(6, 15)
-    imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0,0,0,0))
-    imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(1, 1, 1, 0.20)) -- background color progress bar
-    imgui.PushStyleColor(imgui.Col.PlotHistogram, imgui.ImVec4(1, 1, 1, 0.30)) -- fill color progress bar
+	local clr = imgui.Col
+    imgui.PushStyleColor(clr.Text, imgui.ImVec4(0,0,0,0))
+    imgui.PushStyleColor(clr.FrameBg, color) -- background color progress bar
+    imgui.PushStyleColor(clr.PlotHistogram, color2) -- fill color progress bar
     imgui.ProgressBar(p.int / int2,size or imgui.ImVec2(-1,15))
     imgui.PopStyleColor(3)
-    --imgui.PopStyleVar()
 end
 
 function loadskinidsurl()
@@ -3013,6 +3204,15 @@ function autobind_repairmissing()
 	if autobind.point_turf_mode == nil then 
 		autobind.point_turf_mode = false
 	end
+	
+	if autobind.badge == nil then
+		autobind.badge = true
+	end
+	
+	if autobind.faid == nil then
+		autobind.faid = false
+	end
+	
 	if autobind.vestmode == nil then 
 		autobind.vestmode = 2
 	end
@@ -3207,17 +3407,30 @@ function autobind_repairmissing()
 		autobind.Keybinds.TakePills.Dual = false
 	end
 	
-	if autobind.Keybinds.GangLocker == nil then
-		autobind.Keybinds.GangLocker = {}
+	if autobind.Keybinds.AcceptDeath == nil then
+		autobind.Keybinds.AcceptDeath = {}
 	end
-	if autobind.Keybinds.GangLocker.Toggle == nil then 
-		autobind.Keybinds.GangLocker.Toggle = false
+	if autobind.Keybinds.AcceptDeath.Toggle == nil then 
+		autobind.Keybinds.AcceptDeath.Toggle = true
 	end
-	if autobind.Keybinds.GangLocker.Keybind == nil then 
-		autobind.Keybinds.GangLocker.Keybind = tostring(VK_MENU)..','..tostring(VK_X)
+	if autobind.Keybinds.AcceptDeath.Keybind == nil then 
+		autobind.Keybinds.AcceptDeath.Keybind = tostring(VK_OEM_MINUS)
 	end
-	if autobind.Keybinds.GangLocker.Dual == nil then 
-		autobind.Keybinds.GangLocker.Dual = true
+	if autobind.Keybinds.AcceptDeath.Dual == nil then 
+		autobind.Keybinds.AcceptDeath.Dual = false
+	end
+	
+	if autobind.Keybinds.FAid == nil then
+		autobind.Keybinds.FAid = {}
+	end
+	if autobind.Keybinds.FAid.Toggle == nil then 
+		autobind.Keybinds.FAid.Toggle = false
+	end
+	if autobind.Keybinds.FAid.Keybind == nil then 
+		autobind.Keybinds.FAid.Keybind = tostring(VK_MENU)..','..tostring(VK_N)
+	end
+	if autobind.Keybinds.FAid.Dual == nil then 
+		autobind.Keybinds.FAid.Dual = true
 	end
 	
 	if autobind.BlackMarket == nil then
@@ -3363,6 +3576,53 @@ function autobind_repairmissing()
 	
 	if autobind.fa6 == nil then 
 		autobind.fa6 = 'regular'
+	end
+	
+	if autobind.progressbar == nil then 
+		autobind.progressbar = {}
+	end
+	if autobind.progressbar.toggle == nil then
+		autobind.progressbar.toggle = true
+	end
+	if autobind.progressbar.color == nil then 
+		autobind.progressbar.color = {}
+	end
+	if autobind.progressbar.color[1] == nil then 
+		autobind.progressbar.color[1] = 0.98
+	end
+	
+	if autobind.progressbar.color[2] == nil then 
+		autobind.progressbar.color[2] = 0.26
+	end
+	
+	if autobind.progressbar.color[3] == nil then 
+		autobind.progressbar.color[3] = 0.26
+	end
+	
+	if autobind.progressbar.color[4] == nil then 
+		autobind.progressbar.color[4] = 1.00
+	end
+	
+	if autobind.progressbar.colorfade == nil then 
+		autobind.progressbar.colorfade = {}
+	end
+	if autobind.progressbar.colorfade[1] == nil then 
+		autobind.progressbar.colorfade[1] = 0.98
+	end
+	
+	if autobind.progressbar.colorfade[2] == nil then 
+		autobind.progressbar.colorfade[2] = 0.26
+	end
+	
+	if autobind.progressbar.colorfade[3] == nil then 
+		autobind.progressbar.colorfade[3] = 0.26
+	end
+	
+	if autobind.progressbar.colorfade[4] == nil then 
+		autobind.progressbar.colorfade[4] = 0.50
+	end
+	if autobind.timertext == nil then 
+		autobind.timertext = false
 	end
 end
 
