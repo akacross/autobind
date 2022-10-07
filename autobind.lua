@@ -1,10 +1,10 @@
 script_name("Autobind")
 script_author("akacross", "spnKO", "Farid", "P-Greggy")
 script_url("https://akacross.net/")
-script_tester = {"Taro", "Marowan", "Adib", "Kobe"}
+script_tester = {"Taro", "Marowan", "Adib", "Kobe", "Liam", "Patsy"}
 
-local script_version = 2.0
-local script_version_text = '2.0'
+local script_version = 2.1
+local script_version_text = '2.1'
 
 require"lib.moonloader"
 require"lib.sampfuncs"
@@ -43,6 +43,7 @@ local blank = {}
 local help = {}
 local autobind = {}
 local _enabled = true
+local _autovest = true
 local isIniLoaded = false
 local isGamePaused = false
 local menu = new.bool(false)
@@ -259,7 +260,7 @@ imgui.OnInitialize(function()
 	imgui.GetIO().IniFilename = nil
 end)
 
-imgui.OnFrame(function() return isIniLoaded and (autobind.notification[1] or hide[1] or menu[0]) and not isGamePaused and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) and _enabled end,
+imgui.OnFrame(function() return isIniLoaded and (autobind.notification[1] or hide[1] or menu[0]) and not isGamePaused and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) and _enabled and _autovest end,
 function()
 	if menu[0] then
 		if mposX >= autobind.offeredpos[1] and 
@@ -314,7 +315,7 @@ function()
 	imgui.End()
 end).HideCursor = true
 
-imgui.OnFrame(function() return isIniLoaded and (autobind.notification[2] or hide[2] or menu[0]) and not isGamePaused and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) and _enabled end,
+imgui.OnFrame(function() return isIniLoaded and (autobind.notification[2] or hide[2] or menu[0]) and not isGamePaused and not isPauseMenuActive() and not sampIsScoreboardOpen() and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) and _enabled and _autovest end,
 function()
 	if menu[0] then
 		if mposX >= autobind.offerpos[1] and 
@@ -1807,6 +1808,7 @@ function main()
 
 	if not autobind.enablebydefault then
 		_enabled = false
+		_autovest = false
 	end
 	
 	if not autobind.gangcustomskins then
@@ -1820,7 +1822,7 @@ function main()
 	end)
 
 	sampRegisterChatCommand(autobind.vestnearcmd, function() 
-		if _enabled then
+		if _enabled and _autovest then
 			for PlayerID = 0, sampGetMaxPlayerId(false) do
 				local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
 				if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
@@ -1915,10 +1917,8 @@ function main()
 	end)
 	
 	sampRegisterChatCommand(autobind.autovestcmd, function() 
-		if _enabled then
-			_enabled = not _enabled
-			sampAddChatMessage(string.format("[Autobind]{ffff00} Automatic vest %s.", _enabled and 'enabled' or 'disabled'), 1999280)
-		end
+		_autovest = not _autovest
+		sampAddChatMessage(string.format("[Autobind]{ffff00} Automatic vest %s.", _autovest and 'enabled' or 'disabled'), 1999280)
 	end)
 	
 	sampRegisterChatCommand(autobind.autoacceptercmd, function() 
@@ -2033,7 +2033,7 @@ function main()
 	
 		local _, aduty = getSampfuncsGlobalVar("aduty")
 		local _, HideMe = getSampfuncsGlobalVar("HideMe_check")
-		if _enabled and autobind.timer <= localClock() - _last_vest and not specstate and HideMe == 0 and aduty == 0 then
+		if _enabled and _autovest and autobind.timer <= localClock() - _last_vest and not specstate and HideMe == 0 and aduty == 0 then
 			if _you_are_not_bodyguard then
 				autobind.timer = autobind.ddmode and 7 or 12
 				for PlayerID = 0, sampGetMaxPlayerId(false) do
