@@ -718,6 +718,10 @@ function()
 						if imgui.Checkbox("Diamond Donator", new.bool(autobind.ddmode)) then
 							autobind.ddmode = not autobind.ddmode
 							autobind.timer = autobind.ddmode and 7 or 12
+							
+							if autobind.ddmode then
+								_you_are_not_bodyguard = true
+							end
 						end
 						
 						if imgui.IsItemHovered() then
@@ -1934,6 +1938,10 @@ function main()
 			sampAddChatMessage(string.format("[Autobind]{ffff00} ddmode is now %s.", autobind.ddmode and 'enabled' or 'disabled'), 1999280)
 			
 			autobind.timer = autobind.ddmode and 7 or 12
+			
+			if autobind.ddmode then
+				_you_are_not_bodyguard = true
+			end
 		end
 	end)
 	
@@ -2041,7 +2049,9 @@ function main()
 					if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
 						local myX, myY, myZ = getCharCoordinates(ped)
 						local playerX, playerY, playerZ = getCharCoordinates(playerped)
-						if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
+						local dist = getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ)
+						print(dist, PlayerID)
+						if (autobind.ddmode and tostring(dist) or dist) < (autobind.ddmode and tostring(0.9) or 6) then
 							local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
 							local pAnimId2 = sampGetPlayerAnimationId(playerid)
 							local aim, _ = getCharPlayerIsTargeting(h)
@@ -2050,12 +2060,10 @@ function main()
 									if autobind.gangcustomskins then
 										if has_number(autobind.skins, getCharModel(playerped)) then
 											sendGuard(PlayerID)
-											break
 										end
 									else
 										if has_number(skins, getCharModel(playerped)) then
 											sendGuard(PlayerID)
-											break
 										end
 									end
 								end
@@ -2065,18 +2073,15 @@ function main()
 									color = join_argb_int(255, r, g, b)
 									if (autobind.factionboth and has_number(factions, getCharModel(playerped)) and has_number(factions_color, color)) or (not autobind.factionboth and has_number(factions, getCharModel(playerped)) or has_number(factions_color, color)) then
 										sendGuard(PlayerID)
-										break
 									end
 								end
 								if autobind.vestmode == 2 then
 									sendGuard(PlayerID)
-									break
 								end
 								if autobind.vestmode == 3 then
 									for k, v in pairs(autobind.names) do
 										if v == sampGetPlayerNickname(PlayerID) then
 											sendGuard(PlayerID)
-											break
 										end
 									end
 								end
@@ -2084,11 +2089,9 @@ function main()
 									if autobind.customskins then
 										if has_number(autobind.skins2, getCharModel(playerped)) then
 											sendGuard(PlayerID)
-											break
 										end
 									end
 								end
-								break
 							end
 						end
 					end
