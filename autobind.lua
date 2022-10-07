@@ -2000,6 +2000,11 @@ function main()
 			mposX, mposY = getCursorPos()
 			fontmove()
 			streamedplayers = "Streamed Players: " ..sampGetPlayerCount(true) - 1
+		end
+	end)
+	
+	lua_thread.create(function() 
+		while true do wait(15)
 			listenToKeybinds()
 		end
 	end)
@@ -2155,148 +2160,145 @@ end
 
 function listenToKeybinds()
 	if _enabled and not menu[0] and not inuse_key then
-		for key, value in pairs(autobind.Keybinds) do
-			if key == 'Accept' and value.Toggle then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					sampSendChat("/accept bodyguard")
-					wait(1000)
-				end
+		if autobind.Keybinds.Accept.Toggle then
+			local key, key2 = nil
+			if autobind.Keybinds.Accept.Dual then 
+				key, key2 = autobind.Keybinds.Accept.Keybind:match("(.+),(.+)") 
 			end
-			if key == 'Offer' and value.Toggle then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					for PlayerID = 0, sampGetMaxPlayerId(false) do
-						local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
-						if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
-							local myX, myY, myZ = getCharCoordinates(ped)
-							local playerX, playerY, playerZ = getCharCoordinates(playerped)
-							if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
-								local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
-								local pAnimId2 = sampGetPlayerAnimationId(playerid)
-								local aim, _ = getCharPlayerIsTargeting(h)
-								if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
-									sendGuard(PlayerID)
-									wait(1000)
-								end
+			if (key and key2 and autobind.Keybinds.Accept.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.Accept.Keybind}, t = {'KeyPressed'}})) then
+				sampSendChat("/accept bodyguard")
+				wait(1000)
+			end
+		end
+		if autobind.Keybinds.Offer.Toggle then
+			local key, key2 = nil
+			if autobind.Keybinds.Offer.Dual then 
+				key, key2 = autobind.Keybinds.Offer.Keybind:match("(.+),(.+)") 
+			end
+			if (key and key2 and autobind.Keybinds.Offer.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.Offer.Keybind}, t = {'KeyPressed'}})) then
+				for PlayerID = 0, sampGetMaxPlayerId(false) do
+					local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
+					if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
+						local myX, myY, myZ = getCharCoordinates(ped)
+						local playerX, playerY, playerZ = getCharCoordinates(playerped)
+						if getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ) < 6 then
+							local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
+							local pAnimId2 = sampGetPlayerAnimationId(playerid)
+							local aim, _ = getCharPlayerIsTargeting(h)
+							if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
+								sendGuard(PlayerID)
+								wait(1000)
 							end
 						end
 					end
 				end
 			end
-			if key == "BlackMarket" and value.Toggle then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					if not bmbool then
-						bmbool = true
-						sendBMCmd()
-					end 					
+		end
+		if autobind.Keybinds.BlackMarket.Toggle then
+			local key, key2 = nil
+			if autobind.Keybinds.BlackMarket.Dual then 
+				key, key2 = autobind.Keybinds.BlackMarket.Keybind:match("(.+),(.+)") 
+			end
+			if (key and key2 and autobind.Keybinds.BlackMarket.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.BlackMarket.Keybind}, t = {'KeyPressed'}})) then
+				if not bmbool then
+					bmbool = true
+					sendBMCmd()
+				end 					
+			end
+		end
+		if autobind.Keybinds.FactionLocker.Toggle then
+			local key, key2 = nil
+			if autobind.Keybinds.FactionLocker.Dual then 
+				key, key2 = autobind.Keybinds.FactionLocker.Keybind:match("(.+),(.+)") 
+			end
+			if (key and key2 and autobind.Keybinds.FactionLocker.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.FactionLocker.Keybind}, t = {'KeyPressed'}})) then
+				if not lockerbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
+					lockerbool = true
+					sendLockerCmd()
 				end
 			end
-			if key == "FactionLocker" and value.Toggle then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					if not lockerbool and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and not isSampfuncsConsoleActive() then
-						lockerbool = true
-						sendLockerCmd()
-					end
-				end
-			end
-			if key == "BikeBind" then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyDown'}}) or keycheck({k  = {value.Keybind}, t = {'KeyDown'}})) then
-					if not isPauseMenuActive() and not sampIsChatInputActive() and not sampIsDialogActive() and not isSampfuncsConsoleActive() and not sampIsScoreboardOpen() and autobind.Keybinds.BikeBind.Toggle then
-						if isCharOnAnyBike(ped) then
-							local veh = storeCarCharIsInNoSave(ped)
-							if not isCarInAirProper(veh) then
-								if bike[getCarModel(veh)] then 
-									setGameKeyUpDown(keys.vehicle.ACCELERATE, 255, 0)
-								elseif moto[getCarModel(veh)] then 
-									setGameKeyUpDown(keys.vehicle.STEERUP_STEERDOWN, -128, 0)
-								end
-							end
-						end
-					end	
-				end
-			end
-			if key == "SprintBind" then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle 
-					sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'), -1) 
-				end
-			end
-			if key == "Frisk" and value.Toggle then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					local _, playerped = storeClosestEntities(ped)
-					local result, id = sampGetPlayerIdByCharHandle(playerped)
-					local result2, target = getCharPlayerIsTargeting(h)
-					if result then
-						if result2 and autobind.Frisk[1] or not autobind.Frisk[1] then
-							if target == playerped and autobind.Frisk[1] or not autobind.Frisk[1] then
-								if isPlayerAiming(true, true) and autobind.Frisk[2] or not autobind.Frisk[2] then
-									sampSendChat(string.format("/frisk %d", id))
-									wait(1000)
-								end
-							end
+		end
+		
+		local key, key2 = nil
+		if autobind.Keybinds.BikeBind.Dual then 
+			key, key2 = autobind.Keybinds.BikeBind.Keybind:match("(.+),(.+)") 
+		end
+		if (key and key2 and autobind.Keybinds.BikeBind.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyDown'}}) or keycheck({k  = {autobind.Keybinds.BikeBind.Keybind}, t = {'KeyDown'}})) then
+			if not isPauseMenuActive() and not sampIsChatInputActive() and not sampIsDialogActive() and not isSampfuncsConsoleActive() and not sampIsScoreboardOpen() and autobind.Keybinds.BikeBind.Toggle then
+				if isCharOnAnyBike(ped) then
+					local veh = storeCarCharIsInNoSave(ped)
+					if not isCarInAirProper(veh) then
+						if bike[getCarModel(veh)] then 
+							setGameKeyUpDown(keys.vehicle.ACCELERATE, 255, 0)
+						elseif moto[getCarModel(veh)] then 
+							setGameKeyUpDown(keys.vehicle.STEERUP_STEERDOWN, -128, 0)
 						end
 					end
 				end
+			end	
+		end
+			
+		local key, key2 = nil
+		if autobind.Keybinds.SprintBind.Dual then 
+			key, key2 = autobind.Keybinds.SprintBind.Keybind:match("(.+),(.+)") 
+		end
+		if (key and key2 and autobind.Keybinds.SprintBind.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.SprintBind.Keybind}, t = {'KeyPressed'}})) then
+			autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle 
+			sampAddChatMessage('[Autobind]{ffff00} Sprintbind: '..(autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'), -1) 
+		end
+		
+		if autobind.Keybinds.Frisk.Toggle then
+			local key, key2 = nil
+			if autobind.Keybinds.Frisk.Dual then 
+				key, key2 = autobind.Keybinds.Frisk.Keybind:match("(.+),(.+)") 
 			end
-					
-			if key == 'TakePills' and value.Toggle then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					sampSendChat("/takepills")
-					wait(1000)
-				end
-			end
-					
-			if key == 'AcceptDeath' and value.Toggle then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					sampSendChat("/accept death")
-					wait(1000)
+			if (key and key2 and autobind.Keybinds.Frisk.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.Frisk.Keybind}, t = {'KeyPressed'}})) then
+				local _, playerped = storeClosestEntities(ped)
+				local result, id = sampGetPlayerIdByCharHandle(playerped)
+				local result2, target = getCharPlayerIsTargeting(h)
+				if result then
+					if result2 and autobind.Frisk[1] or not autobind.Frisk[1] then
+						if target == playerped and autobind.Frisk[1] or not autobind.Frisk[1] then
+							if isPlayerAiming(true, true) and autobind.Frisk[2] or not autobind.Frisk[2] then
+								sampSendChat(string.format("/frisk %d", id))
+								wait(1000)
+							end
+						end
+					end
 				end
 			end
-					
-			if key == 'FAid' and value.Toggle then
-				local key = nil
-				if value.Dual then 
-					key = split(value.Keybind, ",") 
-				end
-				if (key and value.Dual and keycheck({k  = {key[1], key[2]}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {value.Keybind}, t = {'KeyPressed'}})) then
-					sampSendChat("/faid")
-					wait(1000)
-				end
+		end
+				
+		if autobind.Keybinds.TakePills.Toggle then
+			local key, key2 = nil
+			if autobind.Keybinds.TakePills.Dual then 
+				key, key2 = autobind.Keybinds.TakePills.Keybind:match("(.+),(.+)") 
+			end
+			if (key and key2 and autobind.Keybinds.TakePills.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.TakePills.Keybind}, t = {'KeyPressed'}})) then
+				sampSendChat("/takepills")
+				wait(1000)
+			end
+		end
+				
+		if autobind.Keybinds.AcceptDeath.Toggle then
+			local key, key2 = nil
+			if autobind.Keybinds.AcceptDeath.Dual then 
+				key, key2 = autobind.Keybinds.AcceptDeath.Keybind:match("(.+),(.+)") 
+			end
+			if (key and key2 and autobind.Keybinds.AcceptDeath.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.AcceptDeath.Keybind}, t = {'KeyPressed'}})) then
+				sampSendChat("/accept death")
+				wait(1000)
+			end
+		end
+				
+		if autobind.Keybinds.FAid.Toggle then
+			local key, key2 = nil
+			if autobind.Keybinds.FAid.Dual then 
+				key, key2 = autobind.Keybinds.FAid.Keybind:match("(.+),(.+)") 
+			end
+			if (key and key2 and autobind.Keybinds.FAid.Dual and keycheck({k  = {key, key2}, t = {'KeyDown', 'KeyPressed'}}) or keycheck({k  = {autobind.Keybinds.FAid.Keybind}, t = {'KeyPressed'}})) then
+				sampSendChat("/faid")
+				wait(1000)
 			end
 		end
 	end
