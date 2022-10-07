@@ -2050,7 +2050,6 @@ function main()
 						local myX, myY, myZ = getCharCoordinates(ped)
 						local playerX, playerY, playerZ = getCharCoordinates(playerped)
 						local dist = getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ)
-						print(dist, PlayerID)
 						if (autobind.ddmode and tostring(dist) or dist) < (autobind.ddmode and tostring(0.9) or 6) then
 							local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
 							local pAnimId2 = sampGetPlayerAnimationId(playerid)
