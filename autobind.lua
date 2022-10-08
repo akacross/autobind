@@ -4258,7 +4258,7 @@ function has_value(tab, val)
     return false
 end
 
-function emul_rpc(onShowDialog, parameters)
+function emul_rpc(hook, parameters)
     local bs_io = require 'samp.events.bitstream_io'
     local handler = require 'samp.events.handlers'
     local extra_types = require 'samp.events.extra_types'
