@@ -32,15 +32,12 @@ local skinspath = resourcepath .. 'skins/'
 local audiopath =  resourcepath .. "audio/"
 local audiofolder =  audiopath .. thisScript().name .. "/"
 local autobind_cfg = path .. thisScript().name .. '.ini'
-local help_cfg = path .. 'help.ini'
 local script_path = thisScript().path
 local script_url = "https://raw.githubusercontent.com/akacross/autobind/main/autobind.lua"
 local update_url = "https://raw.githubusercontent.com/akacross/autobind/main/autobind.txt"
 local skins_url = "https://raw.githubusercontent.com/akacross/autobind/main/resource/skins/"
 local sounds_url = "https://raw.githubusercontent.com/akacross/autobind/main/resource/audio/Autobind/"
 
-local blank = {}
-local help = {}
 local autobind = {}
 local _enabled = true
 local _autovest = true
@@ -1714,12 +1711,12 @@ function()
 	end
 	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1] + (menusize[1] / 5), autobind.menupos[2]))
     imgui.Begin(fa.GEAR.." ImGUI Settings", imguisettings, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize) 
-		imgui.SetWindowFocus()
-		local color = new.float[3](autobind.imcolor[1], autobind.imcolor[2], autobind.imcolor[3])
-		if imgui.ColorEdit3('##Menu Color', color, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
-			autobind.imcolor[1] = color[0]
-			autobind.imcolor[2] = color[1]
-			autobind.imcolor[3] = color[2]
+		--imgui.SetWindowFocus()
+		local colormenu = new.float[3](autobind.imcolor[1], autobind.imcolor[2], autobind.imcolor[3])
+		if imgui.ColorEdit3('##Menu Color', colormenu, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
+			autobind.imcolor[1] = colormenu[0]
+			autobind.imcolor[2] = colormenu[1]
+			autobind.imcolor[3] = colormenu[2]
 		end
 		imgui.SameLine()
 		imgui.Text("Menu Color")
@@ -1774,7 +1771,6 @@ function main()
 	if not doesDirectoryExist(audiopath) then createDirectory(audiopath) end
 	if not doesDirectoryExist(audiofolder) then createDirectory(audiofolder) end
 	if doesFileExist(autobind_cfg) then autobind_loadIni() else autobind_blankIni() end
-	if doesFileExist(autobind_cfg) then help_loadIni() else help_blankIni() end
 	while not isSampAvailable() do wait(100) end
 	
 	if autobind.autoupdate then
@@ -1807,8 +1803,6 @@ function main()
 	end
 	
 	autobind.timer = autobind.ddmode and 7 or 12
-	
-	register_help_commands()
 
 	if not autobind.enablebydefault then
 		_enabled = false
@@ -2712,7 +2706,7 @@ function sampev.onServerMessage(color, text)
 		if text:find("You must wait") and text:find("seconds before selling another vest.") and autobind.timercorrection then
 			lua_thread.create(function()
 				wait(0)
-				cooldown = string.match (text, "%d+")
+				cooldown = text:find("wait %d+ seconds")
 				autobind.timer = cooldown + 0.5
 			end)
 			
@@ -2972,7 +2966,6 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
 		end
 		
 		if title:find('LSPD Equipment') or title:find('FBI Weapons') or title:find('ARES Equipment') then
-		
 			--Deagle
 			if lockerstate == 0 then
 				if hasCharGotWeapon(PLAYER_PED, 24) or autobind.FactionLocker[1] == false then
@@ -3375,56 +3368,6 @@ function update_script(noupdatecheck)
 	end
 end
 
-function help_blankIni()
-	help = {}
-	help_repairmissing()
-	help_saveIni()
-	isIniLoaded = true
-end
-
-function help_loadIni()
-	local f = io.open(help_cfg, "r")
-	if f then
-		help = decodeJson(f:read("*all"))
-		f:close()
-	end
-	help_repairmissing()
-	help_saveIni()
-	isIniLoaded = true
-end
-
-function help_saveIni()
-	if type(help) == "table" then
-		local f = io.open(help_cfg, "w")
-		f:close()
-		if f then
-			f = io.open(help_cfg, "r+")
-			f:write(encodeJson(help))
-			f:close()
-		end
-	end
-end
-
-function help_repairmissing()
-	if help.autosave == nil then 
-		help.autosave = true
-	end
-	local resX, resY = getScreenResolution()
-	if help.menupos == nil then 
-		help.menupos = {
-			string.format("%d", resX / 2), 
-			string.format("%d", resY / 2)
-		}
-		help.menupos = {
-			tonumber(help.menupos[1]), 
-			tonumber(help.menupos[2])
-		}
-	end
-	if help.commands == nil then
-		help.commands = {}
-	end
-end
-
 function autobind_blankIni()
 	autobind = {}
 	autobind_repairmissing()
@@ -3579,9 +3522,6 @@ function autobind_repairmissing()
 	end
 	if autobind.autovestsettingscmd == nil then 
 		autobind.autovestsettingscmd = "autobind"
-	end
-	if autobind.helpcmd == nil then 
-		autobind.helpcmd = "autobind.help"
 	end
 	if autobind.vestnearcmd == nil then 
 		autobind.vestnearcmd = "vestnear"
@@ -4318,27 +4258,7 @@ function has_value(tab, val)
     return false
 end
 
-function register_help_commands()
-	for i = 0, #help.commands do
-		if help.commands[i] ~= nil then
-			if help.commands[i]:find("*** AUTOBIND ***") then
-				table.remove(help.commands, i)
-			end
-			if help.commands[i]:find("*** AUTOVEST ***") then
-				table.remove(help.commands, i)
-			end
-		end
-	end
-	
-	lua_thread.create(function() 
-		help.commands[#help.commands + 1] = string.format("*** AUTOBIND *** /%s /%s /%s /%s /%s /%s /%s /%s", autobind.autovestsettingscmd, autobind.vestnearcmd,autobind.sexnearcmd,autobind.repairnearcmd,autobind.hfindcmd,autobind.tcapcmd,autobind.sprintbindcmd,autobind.bikebindcmd)
-		help.commands[#help.commands + 1] = string.format("*** AUTOVEST *** /%s /%s /%s /%s /%s /%s, /%s", autobind.autoacceptercmd,autobind.ddmodecmd,autobind.vestmodecmd,autobind.factionbothcmd,autobind.autovestcmd,autobind.turfmodecmd,autobind.pointmodecmd)
-		wait(500)
-		help_saveIni()
-	end)
-end
-
-function emul_rpc(hook, parameters)
+function emul_rpc(onShowDialog, parameters)
     local bs_io = require 'samp.events.bitstream_io'
     local handler = require 'samp.events.handlers'
     local extra_types = require 'samp.events.extra_types'
