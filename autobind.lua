@@ -5,8 +5,8 @@ script_tester = {"Taro", "Marowan", "Adib", "Kobe", "Liam", "Patsy"}
 
 --[[Special thanks to Farid(Faction Locker) and P-Greggy(Autofind)]]
 
-local script_version = 2.7
-local script_version_text = '2.7'
+local script_version = 2.8
+local script_version_text = '2.8'
 
 require"lib.moonloader"
 require"lib.sampfuncs"
@@ -34,7 +34,7 @@ local audiopath =  resourcepath .. "audio/"
 local audiofolder =  audiopath .. thisScript().name .. "/"
 local autobind_cfg = path .. thisScript().name .. '.ini'
 local script_path = thisScript().path
-local script_url = "https://cdn.akacross.net/autobiaand/autobind.lua"
+local script_url = "https://cdn.akacross.net/autobind/autobind.lua"
 local update_url = "https://cdn.akacross.net/autobind/autobind.txt"
 local skins_url = "https://cdn.akacross.net/autobind/resource/skins/"
 local sounds_url = "https://cdn.akacross.net/autobind/resource/audio/Autobind/"
