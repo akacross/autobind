@@ -1,23 +1,24 @@
 script_name("Autobind")
-script_author("akacross", "spnKO", "Farid", "P-Greggy")
+script_author("akacross", "spnKO", "Adib")
 script_url("https://akacross.net/")
 script_tester = {"Taro", "Marowan", "Adib", "Kobe", "Liam", "Patsy"}
 
-local script_version = 2.4
-local script_version_text = '2.4'
+--[[Special thanks to Farid(Faction Locker) and P-Greggy(Autofind)]]
+
+local script_version = 2.7
+local script_version_text = '2.7'
 
 require"lib.moonloader"
 require"lib.sampfuncs"
 
-local imgui, ffi = require 'mimgui', require 'ffi'
+local imgui, ffi, effil = require 'mimgui', require 'ffi', require 'effil'
 local new, str, sizeof = imgui.new, ffi.string, ffi.sizeof
 local mainc = imgui.ImVec4(0.98, 0.26, 0.26, 1.00)
 local ped, h = playerPed, playerHandle
 local sampev = require 'lib.samp.events'
 local mem = require 'memory'
-local https = require 'ssl.https'
-local dlstatus = require('moonloader').download_status
 local lfs = require 'lfs'
+local dlstatus = require('moonloader').download_status
 local flag = require ('moonloader').font_flag
 local vk = require 'vkeys'
 local keys  = require 'game.keys'
@@ -33,10 +34,10 @@ local audiopath =  resourcepath .. "audio/"
 local audiofolder =  audiopath .. thisScript().name .. "/"
 local autobind_cfg = path .. thisScript().name .. '.ini'
 local script_path = thisScript().path
-local script_url = "https://raw.githubusercontent.com/akacross/autobind/main/autobind.lua"
-local update_url = "https://raw.githubusercontent.com/akacross/autobind/main/autobind.txt"
-local skins_url = "https://raw.githubusercontent.com/akacross/autobind/main/resource/skins/"
-local sounds_url = "https://raw.githubusercontent.com/akacross/autobind/main/resource/audio/Autobind/"
+local script_url = "https://cdn.akacross.net/autobiaand/autobind.lua"
+local update_url = "https://cdn.akacross.net/autobind/autobind.txt"
+local skins_url = "https://cdn.akacross.net/autobind/resource/skins/"
+local sounds_url = "https://cdn.akacross.net/autobind/resource/audio/Autobind/"
 
 local autobind = {}
 local _enabled = true
@@ -44,8 +45,24 @@ local _autovest = true
 local isIniLoaded = false
 local isGamePaused = false
 local menu = new.bool(false)
+local menu2 = new.bool(false)
+local menuactive = false
+local menu2active = false
+local bmactive = false
+local factionactive = false
+local gangactive = false
+local frisk_menu = new.bool(false)
+local pointturf_menu = new.bool(false)
+local streamedplayers_menu = new.bool(false)
+local menuname = {
+	"Commands",
+	"Autovest",
+	"Autobind"
+}
+local cursorposx = 1.9
 local imguisettings = new.bool(false)
-local _menu = 1
+local _menu = 2
+local _submenu = 1
 local skinmenu = new.bool(false)
 local bmmenu = new.bool(false)
 local factionlockermenu = new.bool(false)
@@ -117,7 +134,7 @@ local size = {
 	{x = 0, y = 0},
 	{x = 0, y = 0}
 }
-local menusize = {580, 410}
+local menusize = {190, 325}
 local selectedbox = {false, false, false,false}
 local skinTexture = {}
 local selected = -1
@@ -402,11 +419,16 @@ function()
 	imgui.End()
 end).HideCursor = true
 
+
 imgui.OnFrame(function() return isIniLoaded and menu[0] and not isGamePaused end,
 function()
+	if not menu2[0] then
+		menu[0] = false
+	end
+
 	if menu[0] then
-		if mposX >= autobind.menupos[1] and 
-		   mposX <= autobind.menupos[1] + menusize[1] - 20 and 
+		if mposX >= autobind.menupos[1] - 190 and 
+		   mposX <= autobind.menupos[1] + (455 - 190) + menusize[1] + ((bmmenu[0] and 165 or 0) + (factionlockermenu[0] and 129 or 0) + (ganglockermenu[0] and 113 or 0)) and 
 		   mposY >= autobind.menupos[2] and 
 		   mposY <= autobind.menupos[2] + 20 then
 			if imgui.IsMouseClicked(0) and not inuse_move then
@@ -426,18 +448,31 @@ function()
 			end
 		end
 	end 
-	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1], autobind.menupos[2]))
+	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1] - 190, autobind.menupos[2]))
 	imgui.SetNextWindowSize(imgui.ImVec2(menusize[1], menusize[2]))
 	imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
-		imgui.Begin(fa.SHIELD_PLUS..script.this.name.." Settings - Version: " .. script_version_text, menu, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse)
-			imgui.BeginChild("##1", imgui.ImVec2(85, 392), true)
+	
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+	else
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+	end
+		imgui.Begin(fa.SHIELD_PLUS.." "..script.this.name.." - Version: " .. script_version_text, nil, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse)
+			if imgui.IsWindowFocused() then
+				menuactive = true
+			else
+				menuactive = false
+			end
+			imgui.BeginChild("##1", imgui.ImVec2(85, 262), true)
 				imgui.SetCursorPos(imgui.ImVec2(5, 5))
 				if imgui.CustomButton(
 					fa.POWER_OFF, 
 					_enabled and imgui.ImVec4(0.15, 0.59, 0.18, 0.7) or imgui.ImVec4(1, 0.19, 0.19, 0.5), 
 					_enabled and imgui.ImVec4(0.15, 0.59, 0.18, 0.5) or imgui.ImVec4(1, 0.19, 0.19, 0.3), 
 					_enabled and imgui.ImVec4(0.15, 0.59, 0.18, 0.4) or imgui.ImVec4(1, 0.19, 0.19, 0.2), 
-					imgui.ImVec2(75, 75)) then
+					imgui.ImVec2(75, 37.5)) then
 					_enabled = not _enabled
 				end
 				if imgui.IsItemHovered() then
@@ -446,14 +481,14 @@ function()
 					imgui.PopStyleVar()
 				end
 			
-				imgui.SetCursorPos(imgui.ImVec2(5, 81))
+				imgui.SetCursorPos(imgui.ImVec2(5, 43))
 				
 				if imgui.CustomButton(
 					fa.FLOPPY_DISK,
 					imgui.ImVec4(0.16, 0.16, 0.16, 0.9), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
-					imgui.ImVec2(75, 75)) then
+					imgui.ImVec2(75, 37.5)) then
 					autobind_saveIni()
 				end
 				if imgui.IsItemHovered() then
@@ -462,14 +497,14 @@ function()
 					imgui.PopStyleVar()
 				end
 		  
-				imgui.SetCursorPos(imgui.ImVec2(5, 157))
+				imgui.SetCursorPos(imgui.ImVec2(5, 81))
 
 				if imgui.CustomButton(
 					fa.REPEAT, 
 					imgui.ImVec4(0.16, 0.16, 0.16, 0.9), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
-					imgui.ImVec2(75, 75)) then
+					imgui.ImVec2(75, 37.5)) then
 					autobind_loadIni()
 				end
 				if imgui.IsItemHovered() then
@@ -478,14 +513,14 @@ function()
 					imgui.PopStyleVar()
 				end
 
-				imgui.SetCursorPos(imgui.ImVec2(5, 233))
+				imgui.SetCursorPos(imgui.ImVec2(5, 119))
 
 				if imgui.CustomButton(
 					fa.ERASER, 
 					imgui.ImVec4(0.16, 0.16, 0.16, 0.9), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
-					imgui.ImVec2(75, 75)) then
+					imgui.ImVec2(75, 37.5)) then
 					autobind_blankIni()
 				end
 				if imgui.IsItemHovered() then
@@ -494,605 +529,405 @@ function()
 					imgui.PopStyleVar()
 				end
 
-				imgui.SetCursorPos(imgui.ImVec2(5, 309))
+				imgui.SetCursorPos(imgui.ImVec2(5, 157))
 
 				if imgui.CustomButton(
 					fa.RETWEET .. ' Update',
 					imgui.ImVec4(0.16, 0.16, 0.16, 0.9), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1),  
-					imgui.ImVec2(75, 75)) then
-					update_script(true)
+					imgui.ImVec2(75, 37.5)) then
+					update_script(true, true)
 				end
 				if imgui.IsItemHovered() then
 					imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
 						imgui.SetTooltip('Update the script')
 					imgui.PopStyleVar()
 				end
-		  
 			imgui.EndChild()
 			
-			imgui.SetCursorPos(imgui.ImVec2(75, 20))
-
-			imgui.BeginChild("##2", imgui.ImVec2(500, 88), true)
-		  
-				imgui.SetCursorPos(imgui.ImVec2(5,5))
-				if imgui.CustomButton(fa.GEAR .. '  Settings',
+			imgui.SetCursorPos(imgui.ImVec2(80, 20))
+			
+			imgui.BeginChild("##3", imgui.ImVec2(105, 392), true)
+				imgui.SetCursorPos(imgui.ImVec2(5, 5))
+				if imgui.CustomButton(
+					"Commands",
 					_menu == 1 and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
-					imgui.ImVec2(165, 75)) then
+					imgui.ImVec2(100, 37.5)) then
 					_menu = 1
 				end
-
-				imgui.SetCursorPos(imgui.ImVec2(170, 5))
-				  
-				if imgui.CustomButton(fa.PERSON_BOOTH .. '  Skins',
+			
+				imgui.SetCursorPos(imgui.ImVec2(5, 43))
+				
+				if imgui.CustomButton(
+					"Autovest",
 					_menu == 2 and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
-					imgui.ImVec2(165, 75)) then
-				  
+					imgui.ImVec2(100, 37.5)) then
 					_menu = 2
 				end
-				
-				imgui.SetCursorPos(imgui.ImVec2(335, 5))
-				
-				if imgui.CustomButton(fa.PERSON_BOOTH .. '  Names',
+		  
+				imgui.SetCursorPos(imgui.ImVec2(5, 81))
+
+				if imgui.CustomButton(
+					"Autobind", 
 					_menu == 3 and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
 					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
-					imgui.ImVec2(165, 75)) then
-				  
+					imgui.ImVec2(100, 37.5)) then
 					_menu = 3
 				end
+
+				imgui.SetCursorPos(imgui.ImVec2(5, 119))
+
+				if imgui.CustomButton(
+					"Frisk",  
+					frisk_menu[0] and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+					imgui.ImVec2(100, 37.5)) then
+					frisk_menu[0] = not frisk_menu[0]
+				end
+
+				imgui.SetCursorPos(imgui.ImVec2(5, 157))
+
+				if imgui.CustomButton(
+					"Point/Turf",
+					pointturf_menu[0] and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1),  
+					imgui.ImVec2(100, 37.5)) then
+					pointturf_menu[0] = not pointturf_menu[0]
+				end
 			imgui.EndChild()
-
-			imgui.SetCursorPos(imgui.ImVec2(85, 102))
 			
-			imgui.BeginChild("##3", imgui.ImVec2(500, 290), true)
-				if _menu == 1 then
-					imgui.SetCursorPos(imgui.ImVec2(5, 2))
+			imgui.SetCursorPos(imgui.ImVec2(0, 214))
+			
+			imgui.BeginChild("##4", imgui.ImVec2(185, 392), true)
+				imgui.SetCursorPos(imgui.ImVec2(5, 5))
+				if imgui.CustomButton(
+					"Streamed Players",
+					streamedplayers_menu[0] and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+					imgui.ImVec2(180, 37.5)) then
+					streamedplayers_menu[0] = not streamedplayers_menu[0]
+				end
 				
-					imgui.BeginChild("##config", imgui.ImVec2(330, 275), false)
+				imgui.SetCursorPos(imgui.ImVec2(5, 43))
+				if imgui.CustomButton(
+					"Autosave",
+					autobind.autosave and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+					imgui.ImVec2(89, 20)) then
+					autobind.autosave = not autobind.autosave 
+					autobind_saveIni() 
+				end
+				if imgui.IsItemHovered() then
+					imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+						imgui.SetTooltip('Autosave')
+					imgui.PopStyleVar()
+				end
+				
+				imgui.SetCursorPos(imgui.ImVec2(95, 43))
+				if imgui.CustomButton(
+					"Autoupdate",
+					autobind.autoupdate and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+					imgui.ImVec2(89, 20)) then
+					autobind.autoupdate = not autobind.autoupdate 
+				end
+				if imgui.IsItemHovered() then
+					imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+						imgui.SetTooltip('Auto-Update')
+					imgui.PopStyleVar()
+				end
+				
+				imgui.SetCursorPos(imgui.ImVec2(5, 64))
+				if imgui.CustomButton(
+					vestmodename(autobind.vestmode),
+					imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+					imgui.ImVec2(89, 20)) then
+					if autobind.vestmode == 4 then
+						autobind.vestmode = 0
+					else
+						autobind.vestmode = autobind.vestmode + 1
+					end
+				end
+				
+				imgui.SetCursorPos(imgui.ImVec2(95, 64))
+				if imgui.CustomButton(
+					autobind.point_turf_mode and 'Point' or 'Turf',
+					imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+					imgui.ImVec2(89, 20)) then
+					autobind.point_turf_mode = not autobind.point_turf_mode
+				end
+				if imgui.IsItemHovered() then
+					imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+						imgui.SetTooltip('Toggles between point and turf mode')
+					imgui.PopStyleVar()
+				end
+				
+				imgui.SetCursorPos(imgui.ImVec2(5, 85))
+				imgui.PushItemWidth(89)
+				imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+				if imgui.BeginCombo("##1", "Lockers") then
+					if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
+						bmmenu[0] = not bmmenu[0]
+						factionlockermenu[0] = false
+						ganglockermenu[0] = false
+					end
+						
+					if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
+						factionlockermenu[0] = not factionlockermenu[0]
+						bmmenu[0] = false
+						ganglockermenu[0] = false
+					end
 					
-						imgui.Text('AutoBind:')
-						if imgui.Checkbox('Cap Spam (Turfs)', new.bool(captog)) then 
-							captog = not captog 
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Spams /capturf every 1.5 seconds')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						if imgui.Checkbox('Capturf (Turfs)', new.bool(autobind.capturf)) then 
-							autobind.capturf = not autobind.capturf
-							if autobind.capturf then
-								autobind.capture = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Types /capturf when the message appears')
-							imgui.PopStyleVar()
-						end
-						if imgui.Checkbox('Disable after capping', new.bool(autobind.disableaftercapping)) then 
-							autobind.disableaftercapping = not autobind.disableaftercapping 
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Disables /capture and /capturf at the end of the them')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						
-						if imgui.Checkbox('Capture (Points)', new.bool(autobind.capture)) then 
-							autobind.capture = not autobind.capture 
-							if autobind.capture then
-								autobind.capturf = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Types /capture when the message appears')
-							imgui.PopStyleVar()
-						end
-						if imgui.Checkbox('Auto Accept Repair', new.bool(autobind.autoacceptrepair)) then 
-							autobind.autoacceptrepair = not autobind.autoacceptrepair 
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Auto accepts repair at 1 dollar')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						if imgui.Checkbox('Auto Accept Sex', new.bool(autobind.autoacceptsex)) then 
-							autobind.autoacceptsex = not autobind.autoacceptsex 
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Auto accepts sex at any value')
-							imgui.PopStyleVar()
-						end
-						
-						if imgui.Checkbox('Auto Accept Vest', new.bool(autoaccepter)) then 
-							autoaccepter = not autoaccepter 
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Auto accepts vest')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						if imgui.Checkbox('Auto Badge', new.bool(autobind.badge)) then 
-							autobind.badge = not autobind.badge 
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Automatically enables /badge when going to the hopsital.')
-							imgui.PopStyleVar()
-						end
-						if imgui.Checkbox("Auto FAid", new.bool(autobind.faid)) then
-							autobind.faid = not autobind.faid
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Automatically enables firstaid kit')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						imgui.PushItemWidth(40) 
-						local faidnumber = new.int(autobind.faidnumber)
-						if imgui.DragInt('Faid Number', faidnumber, 1, 15, 99) then 
-							autobind.faidnumber = faidnumber[0] 
-						end
-						imgui.PopItemWidth()
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Specifies ammount of HP to use faid')
-							imgui.PopStyleVar()
-						end
-						
-						if imgui.Checkbox("Renew FAid", new.bool(autobind.renewfaid)) then
-							autobind.renewfaid = not autobind.renewfaid
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Auto renews after wearing off')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						imgui.PushItemWidth(40)
-						if imgui.Checkbox("FAid Only AV", new.bool(not autobind.faidautovestonly)) then
-							autobind.faidautovestonly = not autobind.faidautovestonly
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('If enabled auto firstaid only works if autovester is enabled')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.PushItemWidth(120)
-						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-						if imgui.BeginCombo("##Message Spam", "Message Spam") then
-							if imgui.Checkbox("Wear off", new.bool(autobind.messages.noeffect)) then
-								autobind.messages.noeffect = not autobind.messages.noeffect
-							end
-							if imgui.Checkbox("No Firstaid", new.bool(autobind.messages.nofaid)) then
-								autobind.messages.nofaid = not autobind.messages.nofaid
-							end
-							imgui.EndCombo()
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Disables messages sent by the server')
-							imgui.PopStyleVar()
-						end
-						imgui.PopItemWidth()
-						imgui.PopStyleVar()
-					
-						imgui.Text('AutoVest:')
-						imgui.PushItemWidth(290)
-						local text_skinsurl = new.char[256](autobind.skinsurl)
-						if imgui.InputText('##skinsurl', text_skinsurl, sizeof(text_skinsurl), imgui.InputTextFlags.EnterReturnsTrue) then
-							autobind.skinsurl = u8:decode(str(text_skinsurl))
-						end
-						imgui.PopItemWidth()
-						
-						if imgui.Checkbox("Diamond Donator", new.bool(autobind.ddmode)) then
-							autobind.ddmode = not autobind.ddmode
-							autobind.timer = autobind.ddmode and 7 or 12
-							
-							if autobind.ddmode then
-								_you_are_not_bodyguard = true
-							end
-						end
-						
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('If you are Diamond Donator toggle this on.')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						
-						if imgui.Checkbox("Timer fix", new.bool(autobind.timercorrection)) then
-							autobind.timercorrection = not autobind.timercorrection
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Corrects the timer, if a vest is missed')
-							imgui.PopStyleVar()
-						end
-						
-						if imgui.Checkbox("Show Preoffered",  new.bool(autobind.showpreoffered)) then
-							autobind.showpreoffered = not autobind.showpreoffered
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
-								imgui.SetTooltip('If disabled it will erase the offered value to "Nobody", at the end of the timer')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						if imgui.Checkbox("Show Prevest",  new.bool(autobind.showprevest)) then
-							autobind.showprevest = not autobind.showprevest
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
-								imgui.SetTooltip('If vest is below 49 it will disable prevest show')
-							imgui.PopStyleVar()
-						end
-						if imgui.Checkbox("Enabled by default", new.bool(autobind.enablebydefault)) then
-							autobind.enablebydefault = not autobind.enablebydefault
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Enables autovester by default if enabled')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						if imgui.Checkbox("Compare Both", new.bool(autobind.factionboth)) then
-							autobind.factionboth = not autobind.factionboth
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
-								imgui.SetTooltip('Compare faction (ticked color and skin) or (unticked color or skin)')
-							imgui.PopStyleVar()
-						end
-						
-						if imgui.Checkbox("Always Offered",  new.bool(autobind.notification[1])) then
-							autobind.notification[1] = not autobind.notification[1]
-							if autobind.notification[1] then
-								autobind.notification_hide[1] = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
-								imgui.SetTooltip('Always Display Offered')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						if imgui.Checkbox("Hide Offered",  new.bool(autobind.notification_hide[1])) then
-							autobind.notification_hide[1] = not autobind.notification_hide[1]
-							if autobind.notification_hide[1] then
-								autobind.notification[1] = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
-								imgui.SetTooltip('Always Hide Offered')
-							imgui.PopStyleVar()
-						end
+					if imgui.Button(fa.CART_SHOPPING .. " Gang Locker") then
+						ganglockermenu[0] = not ganglockermenu[0]
+						bmmenu[0] = false
+						factionlockermenu[0] = false
+					end
+					imgui.EndCombo()
+				end
+				imgui.PopItemWidth()
+				imgui.PopStyleVar()
+				
+				imgui.SetCursorPos(imgui.ImVec2(95, 85))
+				if imgui.CustomButton(
+					"ImGUI",
+					imguisettings[0] and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+					imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+					imgui.ImVec2(89, 20)) then
+					imguisettings[0] = not imguisettings[0]
+				end
+				if imgui.IsItemHovered() then
+					imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+						imgui.SetTooltip('ImGui Settings')
+					imgui.PopStyleVar()
+				end
 
-						if imgui.Checkbox("Always Offer",  new.bool(autobind.notification[2])) then
-							autobind.notification[2] = not autobind.notification[2]
-							if autobind.notification[2] then
-								autobind.notification_hide[2] = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Always Display Offer')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						if imgui.Checkbox("Hide Offer",  new.bool(autobind.notification_hide[2])) then
-							autobind.notification_hide[2] = not autobind.notification_hide[2]
-							if autobind.notification_hide[2] then
-								autobind.notification[2] = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Always Hide Offer')
-							imgui.PopStyleVar()
-						end
-						
-						if imgui.Checkbox("Progress Bar", new.bool(autobind.progressbar.toggle)) then
-							autobind.progressbar.toggle = not autobind.progressbar.toggle
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Toggles progress bar from the menu')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						if imgui.Checkbox("Timer Text", new.bool(autobind.timertext)) then
-							autobind.timertext = not autobind.timertext
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Toggles timer text from the menu')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.PushItemWidth(120)
-						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-						if imgui.BeginCombo("##Message Spam2", "Message Spam##2") then
-							if imgui.Checkbox("Offered Vest", new.bool(autobind.messages.offered)) then
-								autobind.messages.offered = not autobind.messages.offered
-							end
-							if imgui.Checkbox("Offer Vest", new.bool(autobind.messages.bodyguard)) then
-								autobind.messages.bodyguard = not autobind.messages.bodyguard
-							end
-							if imgui.Checkbox("Accepted Your Vest", new.bool(autobind.messages.acceptedyour)) then
-								autobind.messages.acceptedyour = not autobind.messages.acceptedyour
-							end
-							if imgui.Checkbox("Accepted There Vest", new.bool(autobind.messages.accepted)) then
-								autobind.messages.accepted = not autobind.messages.accepted
-							end
-							
-							if imgui.Checkbox("You Must Wait", new.bool(autobind.messages.youmustwait)) then
-								autobind.messages.youmustwait = not autobind.messages.youmustwait
-							end
-							if imgui.Checkbox("Aiming", new.bool(autobind.messages.aiming)) then
-								autobind.messages.aiming = not autobind.messages.aiming
-							end
-							if imgui.Checkbox("Player Not Near", new.bool(autobind.messages.playnotnear)) then
-								autobind.messages.playnotnear = not autobind.messages.playnotnear
-							end
-							imgui.EndCombo()
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Disables messages sent by the server')
-							imgui.PopStyleVar()
-						end
-						imgui.PopItemWidth()
-						imgui.PopStyleVar()
+			imgui.EndChild()
+		imgui.End()
+	imgui.PopStyleVar(1)
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PopStyleColor()
+		imgui.PopStyleColor()
+	end
+end)
+
+imgui.OnFrame(function() return isIniLoaded and menu2[0] and not isGamePaused end,
+function()
+	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1], autobind.menupos[2]))
+	imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+	else
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+	end
+		imgui.Begin(menuname[_menu] .. (_menu == 3 and (frisk_menu[0] and " - Frisk" or "") or "") .. (_menu == 3 and (pointturf_menu[0] and " - Point/Turf" or "") or "").. (_menu == 3 and (streamedplayers_menu[0] and " - Streamed Players" or "") or ""), menu2, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse)
+			
+			if imgui.IsWindowFocused() then
+				menu2active = true
+			else
+				menu2active = false
+			end
+			
+			if _menu == 1 then
+				imgui.SetWindowSizeVec2(imgui.ImVec2(455, 440))
+			end
+			
+			if _menu == 2 then
+				if autobind.advancedview then
+					imgui.SetWindowSizeVec2(imgui.ImVec2(455, 350))
+				else
+					imgui.SetWindowSizeVec2(imgui.ImVec2(455, 185))
+				end	
+			end
+			
+			if _menu == 3 then
+				if not pointturf_menu[0] and not streamedplayers_menu[0] and frisk_menu[0] then
+					if frisk_menu[0] then
+						imgui.SetWindowSizeVec2(imgui.ImVec2(455, 270))
+					else
+						imgui.SetWindowSizeVec2(imgui.ImVec2(455, 210))
+					end
+				end
 				
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						imgui.PushItemWidth(120)
-						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-						if imgui.BeginCombo("##ColorsProgressBar", "Progressbar") then
-							local color2 = new.float[4](autobind.progressbar.color[1], autobind.progressbar.color[2], autobind.progressbar.color[3], autobind.progressbar.color[4])
-							if imgui.ColorEdit4('##Color', color2, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
-								autobind.progressbar.color[1] = color2[0]
-								autobind.progressbar.color[2] = color2[1]
-								autobind.progressbar.color[3] = color2[2]
-								autobind.progressbar.color[4] = color2[3]
-							end
-							imgui.SameLine()
-							imgui.Text("Color")
-							local color1 = new.float[4](autobind.progressbar.colorfade[1], autobind.progressbar.colorfade[2], autobind.progressbar.colorfade[3], autobind.progressbar.colorfade[4])
-							if imgui.ColorEdit4('##Fade Color', color1, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
-								autobind.progressbar.colorfade[1] = color1[0]
-								autobind.progressbar.colorfade[2] = color1[1]
-								autobind.progressbar.colorfade[3] = color1[2]
-								autobind.progressbar.colorfade[4] = color1[3]
-							end
-							imgui.SameLine()
-							imgui.Text("Fade Color")
-							imgui.EndCombo()
+				if not frisk_menu[0] and not streamedplayers_menu[0] and pointturf_menu[0] then
+					if pointturf_menu[0] then
+						imgui.SetWindowSizeVec2(imgui.ImVec2(455, 245))
+					else
+						imgui.SetWindowSizeVec2(imgui.ImVec2(455, 210))
+					end
+				end
+				
+				if not frisk_menu[0] and not pointturf_menu[0] and streamedplayers_menu[0] then
+					if streamedplayers_menu[0] then
+						imgui.SetWindowSizeVec2(imgui.ImVec2(455, 295))
+					else
+						imgui.SetWindowSizeVec2(imgui.ImVec2(455, 210))
+					end
+				end
+				
+				if pointturf_menu[0] and frisk_menu[0] and not streamedplayers_menu[0] then
+					imgui.SetWindowSizeVec2(imgui.ImVec2(455, 310))
+				end
+				
+				if pointturf_menu[0] and not frisk_menu[0] and streamedplayers_menu[0] then
+					imgui.SetWindowSizeVec2(imgui.ImVec2(455, 335))
+				end
+				
+				if not pointturf_menu[0] and frisk_menu[0] and streamedplayers_menu[0] then
+					imgui.SetWindowSizeVec2(imgui.ImVec2(455, 360))
+				end
+				
+				if pointturf_menu[0] and frisk_menu[0] and streamedplayers_menu[0] then
+					imgui.SetWindowSizeVec2(imgui.ImVec2(455, 400))
+				end
+				
+				if not pointturf_menu[0] and not frisk_menu[0] and not streamedplayers_menu[0] then
+					imgui.SetWindowSizeVec2(imgui.ImVec2(455, 210))
+				end
+			end
+			
+			if _menu == 2 and autobind.advancedview then
+				imgui.SetCursorPos(imgui.ImVec2(0, 25))
+
+				imgui.BeginChild("##menuskins/names", imgui.ImVec2(455, 88), false)
+			  
+					imgui.SetCursorPos(imgui.ImVec2(0,0))
+					if imgui.CustomButton(fa.GEAR .. '  Settings',
+						_submenu == 1 and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+						imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+						imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+						imgui.ImVec2(149, 75)) then
+						_submenu = 1
+					end
+
+					imgui.SetCursorPos(imgui.ImVec2(150, 0))
+					  
+					if imgui.CustomButton(fa.PERSON_BOOTH .. '  Skins',
+						_submenu == 2 and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+						imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+						imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+						imgui.ImVec2(149, 75)) then
+						_submenu = 2
+					end
+					
+					imgui.SetCursorPos(imgui.ImVec2(300, 0))
+					
+					if imgui.CustomButton(fa.PERSON_BOOTH .. '  Names',
+						_submenu == 3 and imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+						imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.5), 
+						imgui.ImVec4(mainc.x, mainc.y, mainc.z, 1), 
+						imgui.ImVec2(149, 75)) then
+						_submenu = 3
+					end
+				imgui.EndChild()
+			end
+			
+			if _submenu == 1 and (_menu == 1 or _menu == 2 or _menu == 3) then
+				if _menu == 2 then
+					if autobind.advancedview then
+						if frisk_menu[0] then
+							imgui.SetCursorPos(imgui.ImVec2(300, 105))
+							imgui.BeginChild("##keybindsadv", imgui.ImVec2(151, 285), false)
+						else
+							imgui.SetCursorPos(imgui.ImVec2(300, 105))
+							imgui.BeginChild("##keybindsadv", imgui.ImVec2(151, 245), false)
 						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Progress Bar Colors')
-							imgui.PopStyleVar()
+					else
+						if frisk_menu[0] then
+							imgui.SetCursorPos(imgui.ImVec2(300, 25))
+							imgui.BeginChild("##keybindsbasic", imgui.ImVec2(151, 195), false)
+						else
+							imgui.SetCursorPos(imgui.ImVec2(300, 25))
+							imgui.BeginChild("##keybindsbasic", imgui.ImVec2(151, 155), false)
 						end
-						imgui.PopItemWidth()
-						imgui.PopStyleVar()
+					end
+				else
+					if _menu == 3 then
+						if frisk_menu[0] then
+							imgui.SetCursorPos(imgui.ImVec2(300, 25))
+							imgui.BeginChild("##keybindsautobind1", imgui.ImVec2(151, 220), true)
+						else
+							imgui.SetCursorPos(imgui.ImVec2(300, 25))
+							imgui.BeginChild("##keybindsautobind2", imgui.ImVec2(151, 180), true)
+						end
+					elseif _menu == 1 then
+						imgui.SetCursorPos(imgui.ImVec2(300, 25))
+						imgui.BeginChild("##keybindsautobind3", imgui.ImVec2(151, 400), true)
+					end
+				end
+
+					dualswitch("Accept Bodyguard:", "Accept", true)
+					keychange('Accept')
 						
-						imgui.PushItemWidth(120)
-						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-						if imgui.BeginCombo("##Offered Sound", "Offered Sound") then
-							sound_dropdownmenu(1)
-							imgui.EndCombo()
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Plays a sound if you offered a vest to someone')
-							imgui.PopStyleVar()
-						end
-						imgui.PopItemWidth()
-						imgui.PopStyleVar()
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						imgui.PushItemWidth(120)
-						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-						if imgui.BeginCombo("##Offer Sound", "Offered Sound") then
-							sound_dropdownmenu(2)
-							imgui.EndCombo()
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Plays a sound if you get a offer from someone')
-							imgui.PopStyleVar()
-						end
-						imgui.PopItemWidth()
-						imgui.PopStyleVar()
-						
-						imgui.Text('Point/Turf Menu:')
-						if imgui.Checkbox("Always Point/Turf",  new.bool(autobind.notification_capper)) then
-							autobind.notification_capper = not autobind.notification_capper
-							if autobind.notification_capper then
-								autobind.notification_capper_hide = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Always Display Turf/Point')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						if imgui.Checkbox("Hide Point/Turf",  new.bool(autobind.notification_capper_hide)) then
-							autobind.notification_capper_hide = not autobind.notification_capper_hide
-							if autobind.notification_capper_hide then
-								autobind.notification_capper = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Always Hide Turf/Point')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.Text('Frisk:')
-						if imgui.Checkbox("Player Target", new.bool(autobind.Frisk[1])) then
-							autobind.Frisk[1] = not autobind.Frisk[1]
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Checks if you are targeting a player')
-							imgui.PopStyleVar()
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						if imgui.Checkbox("Player Aim", new.bool(autobind.Frisk[2])) then
-							autobind.Frisk[2] = not autobind.Frisk[2]
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Checks if you are only aiming')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.PushItemWidth(120)
-						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-						if imgui.BeginCombo("##Sniper Sound", "Sniper Sound") then
-							sound_dropdownmenu(3)
-							imgui.EndCombo()
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Plays a sound the player has a sniper rifle')
-							imgui.PopStyleVar()
-						end
-						imgui.PopItemWidth()
-						imgui.PopStyleVar()
-						
-						imgui.Text('Streamed Players:')
-						
-						local choices = {'Left', 'Center', 'Right'}
-						imgui.PushItemWidth(120)
-						if imgui.BeginCombo("##align", choices[autobind.streamedplayers.alignfont]) then
-							for i = 1, #choices do
-								if imgui.Selectable(choices[i]..'##'..i, autobind.streamedplayers.alignfont == i) then
-									autobind.streamedplayers.alignfont = i
-								end
-							end
-							imgui.EndCombo()
-						end
-						imgui.PopItemWidth()
-						
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						local choices2 = {'Bold', 'Italics', 'Border', 'Shadow'}
-						imgui.PushItemWidth(120)
-						if imgui.BeginCombo("##flags", 'Flags') then
-							for i = 1, #choices2 do
-								if imgui.Checkbox(choices2[i], new.bool(autobind.streamedplayers.fontflag[i])) then
-									autobind.streamedplayers.fontflag[i] = not autobind.streamedplayers.fontflag[i] 
-									createfont() 
-								end
-							end
-							imgui.EndCombo()
-						end
-						imgui.PopItemWidth()
-						
-						imgui.PushItemWidth(120) 
-						local text = new.char[30](autobind.streamedplayers.font)
-						if imgui.InputText('##font', text, sizeof(text), imgui.InputTextFlags.EnterReturnsTrue) then
-							autobind.streamedplayers.font = u8:decode(str(text))
-							createfont() 
-						end
-						imgui.PopItemWidth()
-						
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						imgui.BeginGroup()
-							if imgui.Button('+##1') and autobind.streamedplayers.fontsize < 72 then 
-								autobind.streamedplayers.fontsize = autobind.streamedplayers.fontsize + 1 
-								createfont()
-							end
+					dualswitch("Offer Bodyguard:", "Offer", true)
+					keychange('Offer')
 							
-							imgui.SameLine()
-							imgui.Text(tostring(autobind.streamedplayers.fontsize))
-							imgui.SameLine()
+					dualswitch("Black Market:", "BlackMarket", true)
+					keychange('BlackMarket')
 							
-							if imgui.Button('-##1') and autobind.streamedplayers.fontsize > 4 then 
-								autobind.streamedplayers.fontsize = autobind.streamedplayers.fontsize - 1 
-								createfont()
-							end
-							imgui.SameLine()
-							imgui.Text('FontSize')
-						imgui.EndGroup()
-						
-						
-						imgui.PushItemWidth(95) 
-						tcolor = new.float[4](hex2rgba(autobind.streamedplayers.color))
-						if imgui.ColorEdit4('##color', tcolor, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
-							autobind.streamedplayers.color = join_argb(tcolor[3] * 255, tcolor[0] * 255, tcolor[1] * 255, tcolor[2] * 255) 
-						end 
-						imgui.PopItemWidth()
-						imgui.SameLine()
-						imgui.Text('Color')
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						
-						if imgui.Checkbox("Toggle",  new.bool(autobind.streamedplayers.toggle)) then
-							autobind.streamedplayers.toggle = not autobind.streamedplayers.toggle
-							if autobind.streamedplayers.toggle then
-								autobind.notification_capper_hide = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-								imgui.SetTooltip('Toggles streamed players')
-							imgui.PopStyleVar()
-						end
-						
-						imgui.Text('Commands:')
-						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(4, 4))
-						imgui.PushItemWidth(120)
-						if imgui.BeginCombo("##cmds", 'Commands') then
+					dualswitch("Faction Locker:", "FactionLocker", true)
+					keychange('FactionLocker')
+							
+					dualswitch("Gang Locker:", "GangLocker", true)
+					keychange('GangLocker')
+							
+					dualswitch("BikeBind:", "BikeBind", true)
+					keychange('BikeBind')
+							
+					dualswitch("Sprintbind:", "SprintBind", true)
+					imgui.PushItemWidth(40) 
+					delay = new.int(autobind.SprintBind.delay)
+					if imgui.DragInt('Speed', delay, 0.5, 0, 200) then 
+						autobind.SprintBind.delay = delay[0] 
+					end
+					imgui.PopItemWidth()
+					keychange('SprintBind')
+							
+					dualswitch("Frisk:", "Frisk", true)
+					keychange('Frisk')
+							
+					dualswitch("TakePills:", "TakePills", true)
+					keychange('TakePills')
+							
+					dualswitch("FAid:", "FAid", true)
+					keychange('FAid')
+							
+					dualswitch("Accept Death:", "AcceptDeath", true)
+					keychange('AcceptDeath')
+				imgui.EndChild()
+			end
+
+			if _menu == 2 then
+				if autobind.advancedview then
+					imgui.SetCursorPos(imgui.ImVec2(0, 105))
+				else
+					imgui.SetCursorPos(imgui.ImVec2(0, 25))
+				end
+			else
+				imgui.SetCursorPos(imgui.ImVec2(0, 25))
+			end
+			if _menu == 1 then
+				imgui.BeginChild("##menu", imgui.ImVec2(435, 415), true)
+					imgui.SetCursorPos(imgui.ImVec2(5, 5))
+					imgui.BeginChild("##commands", imgui.ImVec2(435, 410), true)
 							imgui.Text("Settings Command:")
 							imgui.SameLine()
 							imgui.PushItemWidth(125)
@@ -1236,60 +1071,415 @@ function()
 								autobind_saveIni()
 								thisScript():reload()
 							end
-							imgui.EndCombo()
-						end
-						imgui.PopItemWidth()
-						imgui.PopStyleVar()
-						
+							
 					imgui.EndChild()
+				imgui.EndChild()
+			end
+			if _menu == 2 then
+				if _submenu == 1 then
+					imgui.BeginChild("##menu", imgui.ImVec2(280, 265), false)
+						imgui.SetCursorPos(imgui.ImVec2(5, 5))
+						imgui.BeginChild("##config", imgui.ImVec2(290, 255), false)
+							if autobind.advancedview then
+								imgui.PushItemWidth(290)
+								local text_skinsurl = new.char[256](autobind.skinsurl)
+								if imgui.InputText('##skinsurl', text_skinsurl, sizeof(text_skinsurl), imgui.InputTextFlags.EnterReturnsTrue) then
+									autobind.skinsurl = u8:decode(str(text_skinsurl))
+								end
+								imgui.PopItemWidth()
+								
+								if imgui.Checkbox("Diamond Donator", new.bool(autobind.ddmode)) then
+									autobind.ddmode = not autobind.ddmode
+									autobind.timer = autobind.ddmode and 7 or 12
+									
+									if autobind.ddmode then
+										_you_are_not_bodyguard = true
+									end
+								end
+								
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('If you are Diamond Donator toggle this on.')
+									imgui.PopStyleVar()
+								end
+								
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								
+								
+								if imgui.Checkbox("Timer fix", new.bool(autobind.timercorrection)) then
+									autobind.timercorrection = not autobind.timercorrection
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Corrects the timer, if a vest is missed')
+									imgui.PopStyleVar()
+								end
+								
+								if imgui.Checkbox("Show Preoffered",  new.bool(autobind.showpreoffered)) then
+									autobind.showpreoffered = not autobind.showpreoffered
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
+										imgui.SetTooltip('If disabled it will erase the offered value to "Nobody", at the end of the timer')
+									imgui.PopStyleVar()
+								end
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								
+								if imgui.Checkbox("Show Prevest",  new.bool(autobind.showprevest)) then
+									autobind.showprevest = not autobind.showprevest
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
+										imgui.SetTooltip('If vest is below 49 it will disable prevest show')
+									imgui.PopStyleVar()
+								end
+								if imgui.Checkbox("Enabled by default", new.bool(autobind.enablebydefault)) then
+									autobind.enablebydefault = not autobind.enablebydefault
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Enables autovester by default if enabled')
+									imgui.PopStyleVar()
+								end
+								
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								if imgui.Checkbox("Compare Both", new.bool(autobind.factionboth)) then
+									autobind.factionboth = not autobind.factionboth
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
+										imgui.SetTooltip('Compare faction (ticked color and skin) or (unticked color or skin)')
+									imgui.PopStyleVar()
+								end
+								
+								if imgui.Checkbox("Always Offered",  new.bool(autobind.notification[1])) then
+									autobind.notification[1] = not autobind.notification[1]
+									if autobind.notification[1] then
+										autobind.notification_hide[1] = false
+									end
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
+										imgui.SetTooltip('Always Display Offered')
+									imgui.PopStyleVar()
+								end
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								if imgui.Checkbox("Hide Offered",  new.bool(autobind.notification_hide[1])) then
+									autobind.notification_hide[1] = not autobind.notification_hide[1]
+									if autobind.notification_hide[1] then
+										autobind.notification[1] = false
+									end
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
+										imgui.SetTooltip('Always Hide Offered')
+									imgui.PopStyleVar()
+								end
 
-					imgui.SetCursorPos(imgui.ImVec2(340, 5))
+								if imgui.Checkbox("Always Offer",  new.bool(autobind.notification[2])) then
+									autobind.notification[2] = not autobind.notification[2]
+									if autobind.notification[2] then
+										autobind.notification_hide[2] = false
+									end
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Always Display Offer')
+									imgui.PopStyleVar()
+								end
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								
+								if imgui.Checkbox("Hide Offer",  new.bool(autobind.notification_hide[2])) then
+									autobind.notification_hide[2] = not autobind.notification_hide[2]
+									if autobind.notification_hide[2] then
+										autobind.notification[2] = false
+									end
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Always Hide Offer')
+									imgui.PopStyleVar()
+								end
+								
+								if imgui.Checkbox("Progress Bar", new.bool(autobind.progressbar.toggle)) then
+									autobind.progressbar.toggle = not autobind.progressbar.toggle
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Toggles progress bar from the menu')
+									imgui.PopStyleVar()
+								end
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								if imgui.Checkbox("Timer Text", new.bool(autobind.timertext)) then
+									autobind.timertext = not autobind.timertext
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Toggles timer text from the menu')
+									imgui.PopStyleVar()
+								end
+								
+								imgui.PushItemWidth(120)
+								imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								if imgui.BeginCombo("##Message Spam2", "Message Spam##2") then
+									if imgui.Checkbox("Offered Vest", new.bool(autobind.messages.offered)) then
+										autobind.messages.offered = not autobind.messages.offered
+									end
+									if imgui.Checkbox("Offer Vest", new.bool(autobind.messages.bodyguard)) then
+										autobind.messages.bodyguard = not autobind.messages.bodyguard
+									end
+									if imgui.Checkbox("Accepted Your Vest", new.bool(autobind.messages.acceptedyour)) then
+										autobind.messages.acceptedyour = not autobind.messages.acceptedyour
+									end
+									if imgui.Checkbox("Accepted There Vest", new.bool(autobind.messages.accepted)) then
+										autobind.messages.accepted = not autobind.messages.accepted
+									end
+									
+									if imgui.Checkbox("You Must Wait", new.bool(autobind.messages.youmustwait)) then
+										autobind.messages.youmustwait = not autobind.messages.youmustwait
+									end
+									if imgui.Checkbox("Aiming", new.bool(autobind.messages.aiming)) then
+										autobind.messages.aiming = not autobind.messages.aiming
+									end
+									if imgui.Checkbox("Player Not Near", new.bool(autobind.messages.playnotnear)) then
+										autobind.messages.playnotnear = not autobind.messages.playnotnear
+									end
+									imgui.EndCombo()
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Disables messages sent by the server')
+									imgui.PopStyleVar()
+								end
+								imgui.PopItemWidth()
+								imgui.PopStyleVar()
+						
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								imgui.PushItemWidth(120)
+								imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								if imgui.BeginCombo("##ColorsProgressBar", "Progressbar") then
+									local color2 = new.float[4](autobind.progressbar.color[1], autobind.progressbar.color[2], autobind.progressbar.color[3], autobind.progressbar.color[4])
+									if imgui.ColorEdit4('##Color', color2, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
+										autobind.progressbar.color[1] = color2[0]
+										autobind.progressbar.color[2] = color2[1]
+										autobind.progressbar.color[3] = color2[2]
+										autobind.progressbar.color[4] = color2[3]
+									end
+									imgui.SameLine()
+									imgui.Text("Color")
+									local color1 = new.float[4](autobind.progressbar.colorfade[1], autobind.progressbar.colorfade[2], autobind.progressbar.colorfade[3], autobind.progressbar.colorfade[4])
+									if imgui.ColorEdit4('##Fade Color', color1, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
+										autobind.progressbar.colorfade[1] = color1[0]
+										autobind.progressbar.colorfade[2] = color1[1]
+										autobind.progressbar.colorfade[3] = color1[2]
+										autobind.progressbar.colorfade[4] = color1[3]
+									end
+									imgui.SameLine()
+									imgui.Text("Fade Color")
+									imgui.EndCombo()
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Progress Bar Colors')
+									imgui.PopStyleVar()
+								end
+								imgui.PopItemWidth()
+								imgui.PopStyleVar()
+								
+								imgui.PushItemWidth(120)
+								imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								if imgui.BeginCombo("##Offered Sound", "Offered Sound") then
+									sound_dropdownmenu(1)
+									imgui.EndCombo()
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Plays a sound if you offered a vest to someone')
+									imgui.PopStyleVar()
+								end
+								imgui.PopItemWidth()
+								imgui.PopStyleVar()
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								imgui.PushItemWidth(120)
+								imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								if imgui.BeginCombo("##Offer Sound", "Offered Sound") then
+									sound_dropdownmenu(2)
+									imgui.EndCombo()
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Plays a sound if you get a offer from someone')
+									imgui.PopStyleVar()
+								end
+								imgui.PopItemWidth()
+								imgui.PopStyleVar()
+							
+								if imgui.Checkbox(autobind.advancedview and "Advanced View" or "Basic View", new.bool(autobind.advancedview)) then
+									autobind.advancedview = not autobind.advancedview
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Switches between advanced view and basic view')
+									imgui.PopStyleVar()
+								end
+							else				
+								if imgui.Checkbox("Diamond Donator", new.bool(autobind.ddmode)) then
+									autobind.ddmode = not autobind.ddmode
+									autobind.timer = autobind.ddmode and 7 or 12
+									
+									if autobind.ddmode then
+										_you_are_not_bodyguard = true
+									end
+								end
+								
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('If you are Diamond Donator toggle this on.')
+									imgui.PopStyleVar()
+								end
+								
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								
+								
+								if imgui.Checkbox("Timer fix", new.bool(autobind.timercorrection)) then
+									autobind.timercorrection = not autobind.timercorrection
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Corrects the timer, if a vest is missed')
+									imgui.PopStyleVar()
+								end
+								
+								if imgui.Checkbox("Enabled by default", new.bool(autobind.enablebydefault)) then
+									autobind.enablebydefault = not autobind.enablebydefault
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Enables autovester by default if enabled')
+									imgui.PopStyleVar()
+								end
+								
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								if imgui.Checkbox("Compare Both", new.bool(autobind.factionboth)) then
+									autobind.factionboth = not autobind.factionboth
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
+										imgui.SetTooltip('Compare faction (ticked color and skin) or (unticked color or skin)')
+									imgui.PopStyleVar()
+								end
+								
+								if imgui.Checkbox("Always Offered",  new.bool(autobind.notification[1])) then
+									autobind.notification[1] = not autobind.notification[1]
+									if autobind.notification[1] then
+										autobind.notification_hide[1] = false
+									end
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
+										imgui.SetTooltip('Always Display Offered')
+									imgui.PopStyleVar()
+								end
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								if imgui.Checkbox("Hide Offered",  new.bool(autobind.notification_hide[1])) then
+									autobind.notification_hide[1] = not autobind.notification_hide[1]
+									if autobind.notification_hide[1] then
+										autobind.notification[1] = false
+									end
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))	
+										imgui.SetTooltip('Always Hide Offered')
+									imgui.PopStyleVar()
+								end
 
-					imgui.BeginChild("##keybinds", imgui.ImVec2(151, 270), true)
-						dualswitch("Accept Bodyguard:", "Accept", true)
-						keychange('Accept')
-						
-						dualswitch("Offer Bodyguard:", "Offer", true)
-						keychange('Offer')
-						
-						dualswitch("Black Market:", "BlackMarket", true)
-						keychange('BlackMarket')
-						
-						dualswitch("Faction Locker:", "FactionLocker", true)
-						keychange('FactionLocker')
-						
-						dualswitch("Gang Locker:", "GangLocker", true)
-						keychange('GangLocker')
-						
-						dualswitch("BikeBind:", "BikeBind", true)
-						keychange('BikeBind')
-						
-						dualswitch("Sprintbind:", "SprintBind", true)
-						imgui.PushItemWidth(40) 
-						delay = new.int(autobind.SprintBind.delay)
-						if imgui.DragInt('Speed', delay, 0.5, 0, 200) then 
-							autobind.SprintBind.delay = delay[0] 
-						end
-						imgui.PopItemWidth()
-						keychange('SprintBind')
-						
-						dualswitch("Frisk:", "Frisk", true)
-						keychange('Frisk')
-						
-						dualswitch("TakePills:", "TakePills", true)
-						keychange('TakePills')
-						
-						dualswitch("FAid:", "FAid", true)
-						keychange('FAid')
-						
-						dualswitch("Accept Death:", "AcceptDeath", true)
-						keychange('AcceptDeath')
-					imgui.EndChild()
+								if imgui.Checkbox("Always Offer",  new.bool(autobind.notification[2])) then
+									autobind.notification[2] = not autobind.notification[2]
+									if autobind.notification[2] then
+										autobind.notification_hide[2] = false
+									end
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Always Display Offer')
+									imgui.PopStyleVar()
+								end
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								
+								if imgui.Checkbox("Hide Offer",  new.bool(autobind.notification_hide[2])) then
+									autobind.notification_hide[2] = not autobind.notification_hide[2]
+									if autobind.notification_hide[2] then
+										autobind.notification[2] = false
+									end
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Always Hide Offer')
+									imgui.PopStyleVar()
+								end
+								
+								imgui.PushItemWidth(120)
+								imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								if imgui.BeginCombo("##Offered Sound", "Offered Sound") then
+									sound_dropdownmenu(1)
+									imgui.EndCombo()
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Plays a sound if you offered a vest to someone')
+									imgui.PopStyleVar()
+								end
+								imgui.PopItemWidth()
+								imgui.PopStyleVar()
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								imgui.PushItemWidth(120)
+								imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								if imgui.BeginCombo("##Offer Sound", "Offered Sound") then
+									sound_dropdownmenu(2)
+									imgui.EndCombo()
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Plays a sound if you get a offer from someone')
+									imgui.PopStyleVar()
+								end
+								imgui.PopItemWidth()
+								imgui.PopStyleVar()
+							
+								if imgui.Checkbox(autobind.advancedview and "Advanced View" or "Basic View", new.bool(autobind.advancedview)) then
+									autobind.advancedview = not autobind.advancedview
+								end
+								if imgui.IsItemHovered() then
+									imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+										imgui.SetTooltip('Switches between advanced view and basic view')
+									imgui.PopStyleVar()
+								end
+								imgui.SameLine()
+								imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+								
+								if imgui.Button("Update URL") then
+									loadskinidsurl()
+								end
+							end
+						imgui.EndChild()	
+					imgui.EndChild()	
 				end
-				
-				if _menu == 2 then
+				if _submenu == 2 then
 					if autobind.customskins then
-						if imgui.Checkbox("Custom Skins", new.bool(autobind.customskins)) then
+						if imgui.Checkbox("Skin Mode", new.bool(autobind.customskins)) then
 							autobind.customskins = not autobind.customskins
 						end
 						imgui.SameLine()
@@ -1314,13 +1504,13 @@ function()
 							end
 						end
 					else
-						if imgui.Checkbox("Custom Skins", new.bool(autobind.customskins)) then
+						if imgui.Checkbox("Gang Mode", new.bool(autobind.customskins)) then
 							autobind.customskins = not autobind.customskins
 						end
 						imgui.SameLine()
 						if imgui.Checkbox("Custom Gang Skins", new.bool(autobind.gangcustomskins)) then
 							autobind.gangcustomskins = not autobind.gangcustomskins
-							if not autobind.gangcustomskins and not updateskin then
+							if not autobind.gangcustomskins then
 								loadskinidsurl()
 							end
 						end
@@ -1329,13 +1519,8 @@ function()
 							autobind.skins[#autobind.skins + 1] = 0
 						end
 						imgui.SameLine()
-						if imgui.Button("Update Gang Skins URL") and not updateskin then
-							lua_thread.create(function()
-								updateskin = true
-								loadskinidsurl()
-								wait(5000)
-								updateskin = false
-							end)
+						if imgui.Button("Update URL") then
+							loadskinidsurl()
 						end
 						for k, v in ipairs(autobind.skins) do
 							local skinid = new.int[1](v)
@@ -1356,8 +1541,8 @@ function()
 						end
 					end
 				end
-				
-				if _menu == 3 then
+					
+				if _submenu == 3 then
 					if imgui.Button(u8"Add Name") then
 						autobind.names[#autobind.names + 1] = "Firstname_Lastname"
 					end
@@ -1384,72 +1569,380 @@ function()
 						end
 					end
 				end
-			imgui.EndChild()
-			imgui.SetCursorPos(imgui.ImVec2(90, 384))
-			
-			imgui.BeginChild("##5", imgui.ImVec2(500, 36), true)
-				
-				if imgui.Checkbox('Autosave', new.bool(autobind.autosave)) then 
-					autobind.autosave = not autobind.autosave 
-					autobind_saveIni() 
-				end
-				if imgui.IsItemHovered() then
-					imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-						imgui.SetTooltip('Autosave')
-					imgui.PopStyleVar()
-				end
-				imgui.SameLine()
-				if imgui.Checkbox('Auto-Update', new.bool(autobind.autoupdate)) then 
-					autobind.autoupdate = not autobind.autoupdate 
-				end
-				if imgui.IsItemHovered() then
-					imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-						imgui.SetTooltip('Auto-Update')
-					imgui.PopStyleVar()
-				end
-				
-				imgui.SameLine()
-				
-				if imgui.Button(vestmodename(autobind.vestmode)) then
-					if autobind.vestmode == 4 then
-						autobind.vestmode = 0
-					else
-						autobind.vestmode = autobind.vestmode + 1
-					end
-				end
-				imgui.SameLine()
-				
-				if imgui.Button(autobind.point_turf_mode and 'Point' or 'Turf') then
-					autobind.point_turf_mode = not autobind.point_turf_mode
-				end
-				
-				imgui.SameLine()
-				imgui.PushItemWidth(75)
-				imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-				if imgui.BeginCombo("##1", "Lockers") then
-					if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
-						bmmenu[0] = not bmmenu[0]
-					end
+			end
+			if _menu == 3 then
+				imgui.BeginChild("##menu", imgui.ImVec2(285, 180), false)
+					imgui.SetCursorPos(imgui.ImVec2(5, 5))
+					imgui.BeginChild("##config", imgui.ImVec2(290, 170), false)
+						if imgui.Checkbox('Cap Spam (Turfs)', new.bool(captog)) then 
+							captog = not captog 
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Spams /capturf every 1.5 seconds')
+							imgui.PopStyleVar()
+						end
 						
-					if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
-						factionlockermenu[0] = not factionlockermenu[0]
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						
+						if imgui.Checkbox('Capturf (Turfs)', new.bool(autobind.capturf)) then 
+							autobind.capturf = not autobind.capturf
+							if autobind.capturf then
+								autobind.capture = false
+							end
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Types /capturf when the message appears')
+							imgui.PopStyleVar()
+						end
+						if imgui.Checkbox('Disable after capping', new.bool(autobind.disableaftercapping)) then 
+							autobind.disableaftercapping = not autobind.disableaftercapping 
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Disables /capture and /capturf at the end of the them')
+							imgui.PopStyleVar()
+						end
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						
+						
+						if imgui.Checkbox('Capture (Points)', new.bool(autobind.capture)) then 
+							autobind.capture = not autobind.capture 
+							if autobind.capture then
+								autobind.capturf = false
+							end
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Types /capture when the message appears')
+							imgui.PopStyleVar()
+						end
+						if imgui.Checkbox('Auto Accept Repair', new.bool(autobind.autoacceptrepair)) then 
+							autobind.autoacceptrepair = not autobind.autoacceptrepair 
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Auto accepts repair at 1 dollar')
+							imgui.PopStyleVar()
+						end
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						
+						if imgui.Checkbox('Auto Accept Sex', new.bool(autobind.autoacceptsex)) then 
+							autobind.autoacceptsex = not autobind.autoacceptsex 
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Auto accepts sex at any value')
+							imgui.PopStyleVar()
+						end
+						
+						if imgui.Checkbox('Auto Accept Vest', new.bool(autoaccepter)) then 
+							autoaccepter = not autoaccepter 
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Auto accepts vest')
+							imgui.PopStyleVar()
+						end
+						
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						
+						if imgui.Checkbox('Auto Badge', new.bool(autobind.badge)) then 
+							autobind.badge = not autobind.badge 
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Automatically enables /badge when going to the hopsital.')
+							imgui.PopStyleVar()
+						end
+						if imgui.Checkbox("Auto FAid", new.bool(autobind.faid)) then
+							autobind.faid = not autobind.faid
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Automatically enables firstaid kit')
+							imgui.PopStyleVar()
+						end
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						imgui.PushItemWidth(40) 
+						local faidnumber = new.int(autobind.faidnumber)
+						if imgui.DragInt('Faid Number', faidnumber, 1, 15, 99) then 
+							autobind.faidnumber = faidnumber[0] 
+						end
+						imgui.PopItemWidth()
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Specifies ammount of HP to use faid')
+							imgui.PopStyleVar()
+						end
+						
+						if imgui.Checkbox("Renew FAid", new.bool(autobind.renewfaid)) then
+							autobind.renewfaid = not autobind.renewfaid
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Auto renews after wearing off')
+							imgui.PopStyleVar()
+						end
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						imgui.PushItemWidth(40)
+						if imgui.Checkbox("FAid Only AV", new.bool(not autobind.faidautovestonly)) then
+							autobind.faidautovestonly = not autobind.faidautovestonly
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('If enabled auto firstaid only works if autovester is enabled')
+							imgui.PopStyleVar()
+						end
+						
+						imgui.PushItemWidth(120)
+						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+						if imgui.BeginCombo("##Message Spam", "Message Spam") then
+							if imgui.Checkbox("Wear off", new.bool(autobind.messages.noeffect)) then
+								autobind.messages.noeffect = not autobind.messages.noeffect
+							end
+							if imgui.Checkbox("No Firstaid", new.bool(autobind.messages.nofaid)) then
+								autobind.messages.nofaid = not autobind.messages.nofaid
+							end
+							imgui.EndCombo()
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Disables messages sent by the server')
+							imgui.PopStyleVar()
+						end
+						imgui.PopItemWidth()
+						imgui.PopStyleVar()
+					imgui.EndChild()
+				imgui.EndChild()
+			end
+			if _menu == 3 and frisk_menu[0] then
+				if not pointturf_menu[0] and not streamedplayers_menu[0] and frisk_menu[0] then
+					if frisk_menu[0] then
+						imgui.SetCursorPos(imgui.ImVec2(6, 200))
+					else
+						imgui.SetCursorPos(imgui.ImVec2(6, 200))
+					end
+				end
+				
+				if pointturf_menu[0] and frisk_menu[0] and not streamedplayers_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 200))
+				end
+				
+				if not pointturf_menu[0] and frisk_menu[0] and streamedplayers_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 200))
+				end
+				
+				if pointturf_menu[0] and frisk_menu[0] and streamedplayers_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 200))
+				end
+				
+				imgui.BeginChild("##config1", imgui.ImVec2(290, 150), false)
+					imgui.Text("Frisk:")
+					if imgui.Checkbox("Player Target", new.bool(autobind.Frisk[1])) then
+						autobind.Frisk[1] = not autobind.Frisk[1]
+					end
+					if imgui.IsItemHovered() then
+						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+							imgui.SetTooltip('Checks if you are targeting a player')
+						imgui.PopStyleVar()
+					end
+					imgui.SameLine()
+					imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+					if imgui.Checkbox("Player Aim", new.bool(autobind.Frisk[2])) then
+						autobind.Frisk[2] = not autobind.Frisk[2]
+						end
+					if imgui.IsItemHovered() then
+						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+							imgui.SetTooltip('Checks if you are only aiming')
+						imgui.PopStyleVar()
 					end
 					
-					if imgui.Button(fa.CART_SHOPPING .. " Gang Locker") then
-						ganglockermenu[0] = not ganglockermenu[0]
+					imgui.PushItemWidth(120)
+					imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+					if imgui.BeginCombo("##Sniper Sound", "Sniper Sound") then
+						sound_dropdownmenu(3)
+						imgui.EndCombo()
 					end
-					imgui.EndCombo()
+					if imgui.IsItemHovered() then
+						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+							imgui.SetTooltip('Plays a sound the player has a sniper rifle')
+						imgui.PopStyleVar()
+					end
+					imgui.PopItemWidth()
+					imgui.PopStyleVar()
+				imgui.EndChild()
+			end
+			
+			if _menu == 3 and pointturf_menu[0] then
+				if not frisk_menu[0] and not streamedplayers_menu[0] and pointturf_menu[0] then
+					if pointturf_menu[0] then
+						imgui.SetCursorPos(imgui.ImVec2(6, 200))
+					else
+						imgui.SetCursorPos(imgui.ImVec2(6, 200))
+					end
 				end
-				imgui.PopItemWidth()
-				imgui.PopStyleVar()
 				
-				imgui.SameLine()
-				if imgui.Button("ImGUI Settings") then
-					imguisettings[0] = not imguisettings[0]
+				if pointturf_menu[0] and streamedplayers_menu[0] and not frisk_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 200))
 				end
-			imgui.EndChild()
+				
+				if pointturf_menu[0] and frisk_menu[0] and not streamedplayers_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 265))
+				end
+				
+				if pointturf_menu[0] and frisk_menu[0] and streamedplayers_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 265))
+				end
+				
+				imgui.BeginChild("##config2", imgui.ImVec2(290, 150), false)
+					imgui.Text('Point/Turf Menu:')
+					if imgui.Checkbox("Always Point/Turf",  new.bool(autobind.notification_capper)) then
+						autobind.notification_capper = not autobind.notification_capper
+						if autobind.notification_capper then
+							autobind.notification_capper_hide = false
+						end
+					end
+					if imgui.IsItemHovered() then
+						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+							imgui.SetTooltip('Always Display Turf/Point')
+						imgui.PopStyleVar()
+					end
+					imgui.SameLine()
+					imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+					if imgui.Checkbox("Hide Point/Turf",  new.bool(autobind.notification_capper_hide)) then
+						autobind.notification_capper_hide = not autobind.notification_capper_hide
+						if autobind.notification_capper_hide then
+							autobind.notification_capper = false
+						end
+					end
+					if imgui.IsItemHovered() then
+						imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+							imgui.SetTooltip('Always Hide Turf/Point')
+						imgui.PopStyleVar()
+					end
+				imgui.EndChild()
+			end
+			
+			if _menu == 3 and streamedplayers_menu[0] then	
+				if not frisk_menu[0] and not pointturf_menu[0] and streamedplayers_menu[0] then
+					if streamedplayers_menu[0] then
+						imgui.SetCursorPos(imgui.ImVec2(6, 200))
+					end
+				end
+				
+				if not pointturf_menu[0] and frisk_menu[0] and streamedplayers_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 265))
+				end
+				
+				if pointturf_menu[0] and streamedplayers_menu[0] and not frisk_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 240))
+				end
+				
+				if pointturf_menu[0] and frisk_menu[0] and streamedplayers_menu[0] then
+					imgui.SetCursorPos(imgui.ImVec2(6, 305))
+				end
+				
+				imgui.BeginChild("##config3", imgui.ImVec2(290, 150), false)
+					if streamedplayers_menu[0] and _menu ~= 1 then
+						imgui.Text('Streamed Players:')
+						
+						local choices = {'Left', 'Center', 'Right'}
+						imgui.PushItemWidth(120)
+						if imgui.BeginCombo("##align", choices[autobind.streamedplayers.alignfont]) then
+							for i = 1, #choices do
+								if imgui.Selectable(choices[i]..'##'..i, autobind.streamedplayers.alignfont == i) then
+									autobind.streamedplayers.alignfont = i
+								end
+							end
+							imgui.EndCombo()
+						end
+						imgui.PopItemWidth()
+						
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						
+						local choices2 = {'Bold', 'Italics', 'Border', 'Shadow'}
+						imgui.PushItemWidth(120)
+						if imgui.BeginCombo("##flags", 'Flags') then
+							for i = 1, #choices2 do
+								if imgui.Checkbox(choices2[i], new.bool(autobind.streamedplayers.fontflag[i])) then
+									autobind.streamedplayers.fontflag[i] = not autobind.streamedplayers.fontflag[i] 
+									createfont() 
+								end
+							end
+							imgui.EndCombo()
+						end
+						imgui.PopItemWidth()
+						
+						imgui.PushItemWidth(120) 
+						local text = new.char[30](autobind.streamedplayers.font)
+						if imgui.InputText('##font', text, sizeof(text), imgui.InputTextFlags.EnterReturnsTrue) then
+							autobind.streamedplayers.font = u8:decode(str(text))
+							createfont() 
+						end
+						imgui.PopItemWidth()
+						
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						
+						imgui.BeginGroup()
+							if imgui.Button('+##1') and autobind.streamedplayers.fontsize < 72 then 
+								autobind.streamedplayers.fontsize = autobind.streamedplayers.fontsize + 1 
+								createfont()
+							end
+							
+							imgui.SameLine()
+							imgui.Text(tostring(autobind.streamedplayers.fontsize))
+							imgui.SameLine()
+							
+							if imgui.Button('-##1') and autobind.streamedplayers.fontsize > 4 then 
+								autobind.streamedplayers.fontsize = autobind.streamedplayers.fontsize - 1 
+								createfont()
+							end
+							imgui.SameLine()
+							imgui.Text('FontSize')
+						imgui.EndGroup()
+						
+						
+						imgui.PushItemWidth(95) 
+						tcolor = new.float[4](hex2rgba(autobind.streamedplayers.color))
+						if imgui.ColorEdit4('##color', tcolor, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then 
+							autobind.streamedplayers.color = join_argb(tcolor[3] * 255, tcolor[0] * 255, tcolor[1] * 255, tcolor[2] * 255) 
+						end 
+						imgui.PopItemWidth()
+						imgui.SameLine()
+						imgui.Text('Color')
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / cursorposx)
+						
+						if imgui.Checkbox("Toggle",  new.bool(autobind.streamedplayers.toggle)) then
+							autobind.streamedplayers.toggle = not autobind.streamedplayers.toggle
+							if autobind.streamedplayers.toggle then
+								autobind.notification_capper_hide = false
+							end
+						end
+						if imgui.IsItemHovered() then
+							imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+								imgui.SetTooltip('Toggles streamed players')
+							imgui.PopStyleVar()
+						end
+					end
+				imgui.EndChild()
+			end
 		imgui.End()
 	imgui.PopStyleVar(1)
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PopStyleColor()
+		imgui.PopStyleColor()
+	end
 end)
 
 local frameDrawer = imgui.OnFrame(function() return isIniLoaded and skinmenu[0] and not isGamePaused end,
@@ -1517,103 +2010,121 @@ function()
 	if not menu[0] then
 		bmmenu[0] = false
 	end
-	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1] - 164, autobind.menupos[2]))
-    imgui.Begin(string.format("BM Settings", script.this.name, script.this.version), bmmenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize) 
-	
-		imgui.Text('Black-Market Equipment:')
+	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1] + 455, autobind.menupos[2]))
+	imgui.SetNextWindowSize(imgui.ImVec2(165, 362), imgui.Cond.FirstUseEver)
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+	else
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+	end
+		imgui.Begin(string.format("BM Settings", script.this.name, script.this.version), bmmenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar) 
 		
-		if imgui.Checkbox('Full Health and Armor', new.bool(autobind.BlackMarket[1])) then 
-			autobind.BlackMarket[1] = not autobind.BlackMarket[1] 
-		end
+			if imgui.IsWindowFocused() then
+				bmactive = true
+			else
+				bmactive = false
+			end
 		
-		if imgui.Checkbox('Silenced Pistol', new.bool(autobind.BlackMarket[2])) then 
-			autobind.BlackMarket[2] = not autobind.BlackMarket[2]
-			if autobind.BlackMarket[2] then
-				autobind.BlackMarket[3] = false
-				autobind.BlackMarket[9] = false
+			imgui.Text('Black-Market Equipment:')
+			
+			if imgui.Checkbox('Full Health and Armor', new.bool(autobind.BlackMarket[1])) then 
+				autobind.BlackMarket[1] = not autobind.BlackMarket[1] 
 			end
-		end
-		
-		if imgui.Checkbox('9mm Pistol', new.bool(autobind.BlackMarket[3])) then 
-			autobind.BlackMarket[3] = not autobind.BlackMarket[3] 
-			if autobind.BlackMarket[3] then
-				autobind.BlackMarket[2] = false
-				autobind.BlackMarket[9] = false
+			
+			if imgui.Checkbox('Silenced Pistol', new.bool(autobind.BlackMarket[2])) then 
+				autobind.BlackMarket[2] = not autobind.BlackMarket[2]
+				if autobind.BlackMarket[2] then
+					autobind.BlackMarket[3] = false
+					autobind.BlackMarket[9] = false
+				end
 			end
-		end
-		
-		if imgui.Checkbox('Shotgun', new.bool(autobind.BlackMarket[4])) then 
-			autobind.BlackMarket[4] = not autobind.BlackMarket[4] 
-			if autobind.BlackMarket[4] then
-				autobind.BlackMarket[12] = false
+			
+			if imgui.Checkbox('9mm Pistol', new.bool(autobind.BlackMarket[3])) then 
+				autobind.BlackMarket[3] = not autobind.BlackMarket[3] 
+				if autobind.BlackMarket[3] then
+					autobind.BlackMarket[2] = false
+					autobind.BlackMarket[9] = false
+				end
 			end
-		end
-		if imgui.Checkbox('MP5', new.bool(autobind.BlackMarket[5])) then 
-			autobind.BlackMarket[5] = not autobind.BlackMarket[5]
-			if autobind.BlackMarket[5] then
-				autobind.BlackMarket[6] = false
-				autobind.BlackMarket[7] = false
+			
+			if imgui.Checkbox('Shotgun', new.bool(autobind.BlackMarket[4])) then 
+				autobind.BlackMarket[4] = not autobind.BlackMarket[4] 
+				if autobind.BlackMarket[4] then
+					autobind.BlackMarket[12] = false
+				end
 			end
-		end
-		
-		if imgui.Checkbox('UZI', new.bool(autobind.BlackMarket[6])) then 
-			autobind.BlackMarket[6] = not autobind.BlackMarket[6]
-			if autobind.BlackMarket[6] then
-				autobind.BlackMarket[5] = false
-				autobind.BlackMarket[7] = false
+			if imgui.Checkbox('MP5', new.bool(autobind.BlackMarket[5])) then 
+				autobind.BlackMarket[5] = not autobind.BlackMarket[5]
+				if autobind.BlackMarket[5] then
+					autobind.BlackMarket[6] = false
+					autobind.BlackMarket[7] = false
+				end
 			end
-		end
-		
-		if imgui.Checkbox('Tec-9', new.bool(autobind.BlackMarket[7])) then 
-			autobind.BlackMarket[7] = not autobind.BlackMarket[7] 
-			if autobind.BlackMarket[7] then
-				autobind.BlackMarket[5] = false
-				autobind.BlackMarket[6] = false
+			
+			if imgui.Checkbox('UZI', new.bool(autobind.BlackMarket[6])) then 
+				autobind.BlackMarket[6] = not autobind.BlackMarket[6]
+				if autobind.BlackMarket[6] then
+					autobind.BlackMarket[5] = false
+					autobind.BlackMarket[7] = false
+				end
 			end
-		end
-		
-		if imgui.Checkbox('Country Rifle', new.bool(autobind.BlackMarket[8])) then 
-			autobind.BlackMarket[8] = not autobind.BlackMarket[8] 
-			if autobind.BlackMarket[8] then
-				autobind.BlackMarket[13] = false
+			
+			if imgui.Checkbox('Tec-9', new.bool(autobind.BlackMarket[7])) then 
+				autobind.BlackMarket[7] = not autobind.BlackMarket[7] 
+				if autobind.BlackMarket[7] then
+					autobind.BlackMarket[5] = false
+					autobind.BlackMarket[6] = false
+				end
 			end
-		end
-		
-		if imgui.Checkbox('Deagle', new.bool(autobind.BlackMarket[9])) then 
-			autobind.BlackMarket[9] = not autobind.BlackMarket[9]
-			if autobind.BlackMarket[9] then
-				autobind.BlackMarket[2] = false
-				autobind.BlackMarket[3] = false
+			
+			if imgui.Checkbox('Country Rifle', new.bool(autobind.BlackMarket[8])) then 
+				autobind.BlackMarket[8] = not autobind.BlackMarket[8] 
+				if autobind.BlackMarket[8] then
+					autobind.BlackMarket[13] = false
+				end
 			end
-		end
-		
-		if imgui.Checkbox('AK-47', new.bool(autobind.BlackMarket[10])) then 
-			autobind.BlackMarket[10] = not autobind.BlackMarket[10]
-			if autobind.BlackMarket[10] then
-				autobind.BlackMarket[11] = false
+			
+			if imgui.Checkbox('Deagle', new.bool(autobind.BlackMarket[9])) then 
+				autobind.BlackMarket[9] = not autobind.BlackMarket[9]
+				if autobind.BlackMarket[9] then
+					autobind.BlackMarket[2] = false
+					autobind.BlackMarket[3] = false
+				end
 			end
-		end
-		if imgui.Checkbox('M4', new.bool(autobind.BlackMarket[11])) then 
-			autobind.BlackMarket[11] = not autobind.BlackMarket[11]
-			if autobind.BlackMarket[11] then
-				autobind.BlackMarket[10] = false
+			
+			if imgui.Checkbox('AK-47', new.bool(autobind.BlackMarket[10])) then 
+				autobind.BlackMarket[10] = not autobind.BlackMarket[10]
+				if autobind.BlackMarket[10] then
+					autobind.BlackMarket[11] = false
+				end
 			end
-		end
-		
-		if imgui.Checkbox('Spas-12', new.bool(autobind.BlackMarket[12])) then 
-			autobind.BlackMarket[12] = not autobind.BlackMarket[12]
-			if autobind.BlackMarket[12] then
-				autobind.BlackMarket[4] = false
+			if imgui.Checkbox('M4', new.bool(autobind.BlackMarket[11])) then 
+				autobind.BlackMarket[11] = not autobind.BlackMarket[11]
+				if autobind.BlackMarket[11] then
+					autobind.BlackMarket[10] = false
+				end
 			end
-		end
-		
-		if imgui.Checkbox('Sniper Rifle', new.bool(autobind.BlackMarket[13])) then 
-			autobind.BlackMarket[13] = not autobind.BlackMarket[13] 
-			if autobind.BlackMarket[13] then
-				autobind.BlackMarket[8] = false
+			
+			if imgui.Checkbox('Spas-12', new.bool(autobind.BlackMarket[12])) then 
+				autobind.BlackMarket[12] = not autobind.BlackMarket[12]
+				if autobind.BlackMarket[12] then
+					autobind.BlackMarket[4] = false
+				end
 			end
-		end
-    imgui.End()
+			
+			if imgui.Checkbox('Sniper Rifle', new.bool(autobind.BlackMarket[13])) then 
+				autobind.BlackMarket[13] = not autobind.BlackMarket[13] 
+				if autobind.BlackMarket[13] then
+					autobind.BlackMarket[8] = false
+				end
+			end
+		imgui.End()
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PopStyleColor()
+		imgui.PopStyleColor()
+	end
 end)
 
 imgui.OnFrame(function() return isIniLoaded and factionlockermenu[0] and not isGamePaused end,
@@ -1621,55 +2132,72 @@ function()
 	if not menu[0] then
 		factionlockermenu[0] = false
 	end
-	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1] + 579, autobind.menupos[2]))
-    imgui.Begin("Faction Locker", factionlockermenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize) 
-		imgui.Text('Locker Equipment:')
-		if imgui.Checkbox('Deagle', new.bool(autobind.FactionLocker[1])) then 
-			autobind.FactionLocker[1] = not autobind.FactionLocker[1] 
-		end
-		if imgui.Checkbox('Shotgun', new.bool(autobind.FactionLocker[2])) then 
-			autobind.FactionLocker[2] = not autobind.FactionLocker[2] 
-			if autobind.FactionLocker[2] then
-				autobind.FactionLocker[3] = false
+	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1] + 455, autobind.menupos[2]))
+	imgui.SetNextWindowSize(imgui.ImVec2(129, 314), imgui.Cond.FirstUseEver)
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+	else
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+	end
+		imgui.Begin("Faction Locker", factionlockermenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar) 
+			if imgui.IsWindowFocused() then
+				factionactive = true
+			else
+				factionactive = false
 			end
-		end 
-		if imgui.Checkbox('SPAS-12', new.bool(autobind.FactionLocker[3])) then 
-			autobind.FactionLocker[3] = not autobind.FactionLocker[3] 
-			if autobind.FactionLocker[3] then
-				autobind.FactionLocker[2] = false
+			imgui.Text('Locker Equipment:')
+			if imgui.Checkbox('Deagle', new.bool(autobind.FactionLocker[1])) then 
+				autobind.FactionLocker[1] = not autobind.FactionLocker[1] 
 			end
-		end 
-		if imgui.Checkbox('MP5', new.bool(autobind.FactionLocker[4])) then 
-			autobind.FactionLocker[4] = not autobind.FactionLocker[4] 
-		end 
-		if imgui.Checkbox('M4', new.bool(autobind.FactionLocker[5])) then 
-			autobind.FactionLocker[5] = not autobind.FactionLocker[5] 
-			if autobind.FactionLocker[5] then
-				autobind.FactionLocker[6] = false
+			if imgui.Checkbox('Shotgun', new.bool(autobind.FactionLocker[2])) then 
+				autobind.FactionLocker[2] = not autobind.FactionLocker[2] 
+				if autobind.FactionLocker[2] then
+					autobind.FactionLocker[3] = false
+				end
+			end 
+			if imgui.Checkbox('SPAS-12', new.bool(autobind.FactionLocker[3])) then 
+				autobind.FactionLocker[3] = not autobind.FactionLocker[3] 
+				if autobind.FactionLocker[3] then
+					autobind.FactionLocker[2] = false
+				end
+			end 
+			if imgui.Checkbox('MP5', new.bool(autobind.FactionLocker[4])) then 
+				autobind.FactionLocker[4] = not autobind.FactionLocker[4] 
+			end 
+			if imgui.Checkbox('M4', new.bool(autobind.FactionLocker[5])) then 
+				autobind.FactionLocker[5] = not autobind.FactionLocker[5] 
+				if autobind.FactionLocker[5] then
+					autobind.FactionLocker[6] = false
+				end
 			end
-		end
-		if imgui.Checkbox('AK-47', new.bool(autobind.FactionLocker[6])) then 
-			autobind.FactionLocker[6] = not autobind.FactionLocker[6] 
-			if autobind.FactionLocker[6] then
-				autobind.FactionLocker[5] = false
+			if imgui.Checkbox('AK-47', new.bool(autobind.FactionLocker[6])) then 
+				autobind.FactionLocker[6] = not autobind.FactionLocker[6] 
+				if autobind.FactionLocker[6] then
+					autobind.FactionLocker[5] = false
+				end
 			end
-		end
-		if imgui.Checkbox('Smoke Grenade', new.bool(autobind.FactionLocker[7])) then 
-			autobind.FactionLocker[7] = not autobind.FactionLocker[7] 
-		end
-		if imgui.Checkbox('Camera', new.bool(autobind.FactionLocker[8])) then 
-			autobind.FactionLocker[8] = not autobind.FactionLocker[8] 
-		end
-		if imgui.Checkbox('Sniper', new.bool(autobind.FactionLocker[9])) then 
-			autobind.FactionLocker[9] = not autobind.FactionLocker[9]
-		end
-		if imgui.Checkbox('Vest', new.bool(autobind.FactionLocker[10])) then 
-			autobind.FactionLocker[10] = not autobind.FactionLocker[10] 
-		end
-		if imgui.Checkbox('First Aid Kit', new.bool(autobind.FactionLocker[11])) then 
-			autobind.FactionLocker[11] = not autobind.FactionLocker[11] 
-		end
-	imgui.End()
+			if imgui.Checkbox('Smoke Grenade', new.bool(autobind.FactionLocker[7])) then 
+				autobind.FactionLocker[7] = not autobind.FactionLocker[7] 
+			end
+			if imgui.Checkbox('Camera', new.bool(autobind.FactionLocker[8])) then 
+				autobind.FactionLocker[8] = not autobind.FactionLocker[8] 
+			end
+			if imgui.Checkbox('Sniper', new.bool(autobind.FactionLocker[9])) then 
+				autobind.FactionLocker[9] = not autobind.FactionLocker[9]
+			end
+			if imgui.Checkbox('Vest', new.bool(autobind.FactionLocker[10])) then 
+				autobind.FactionLocker[10] = not autobind.FactionLocker[10] 
+			end
+			if imgui.Checkbox('First Aid Kit', new.bool(autobind.FactionLocker[11])) then 
+				autobind.FactionLocker[11] = not autobind.FactionLocker[11] 
+			end
+		imgui.End()
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PopStyleColor()
+		imgui.PopStyleColor()
+	end
 end)
 
 imgui.OnFrame(function() return isIniLoaded and ganglockermenu[0] and not isGamePaused end,
@@ -1677,31 +2205,48 @@ function()
 	if not menu[0] then
 		ganglockermenu[0] = false
 	end
-	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1] + 579, autobind.menupos[2]))
-    imgui.Begin("Gang Locker", ganglockermenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize) 
-		imgui.Text('Gang Equipment:')
-		if imgui.Checkbox('Shotgun', new.bool(autobind.GangLocker[1])) then 
-			autobind.GangLocker[1] = not autobind.GangLocker[1] 
-		end
-		if imgui.Checkbox('MP5', new.bool(autobind.GangLocker[2])) then 
-			autobind.GangLocker[2] = not autobind.GangLocker[2] 
-		end 
-		if imgui.Checkbox('Deagle', new.bool(autobind.GangLocker[3])) then 
-			autobind.GangLocker[3] = not autobind.GangLocker[3] 
-		end 
-		if imgui.Checkbox('AK-47', new.bool(autobind.GangLocker[4])) then 
-			autobind.GangLocker[4] = not autobind.GangLocker[4] 
-		end 
-		if imgui.Checkbox('M4', new.bool(autobind.GangLocker[5])) then 
-			autobind.GangLocker[5] = not autobind.GangLocker[5] 
-		end
-		if imgui.Checkbox('Spas-12', new.bool(autobind.GangLocker[6])) then 
-			autobind.GangLocker[6] = not autobind.GangLocker[6] 
-		end
-		if imgui.Checkbox('Sniper', new.bool(autobind.GangLocker[7])) then 
-			autobind.GangLocker[7] = not autobind.GangLocker[7] 
-		end
-	imgui.End()
+	imgui.SetNextWindowPos(imgui.ImVec2(autobind.menupos[1] + 455, autobind.menupos[2]))
+	imgui.SetNextWindowSize(imgui.ImVec2(113, 218), imgui.Cond.FirstUseEver)
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.8))
+	else
+		imgui.PushStyleColor(imgui.Col.TitleBg, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+		imgui.PushStyleColor(imgui.Col.TitleBgActive, imgui.ImVec4(mainc.x, mainc.y, mainc.z, 0.6))
+	end
+		imgui.Begin("Gang Locker", ganglockermenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar) 
+			if imgui.IsWindowFocused() then
+				gangactive = true
+			else
+				gangactive = false
+			end
+			imgui.Text('Gang Equipment:')
+			if imgui.Checkbox('Shotgun', new.bool(autobind.GangLocker[1])) then 
+				autobind.GangLocker[1] = not autobind.GangLocker[1] 
+			end
+			if imgui.Checkbox('MP5', new.bool(autobind.GangLocker[2])) then 
+				autobind.GangLocker[2] = not autobind.GangLocker[2] 
+			end 
+			if imgui.Checkbox('Deagle', new.bool(autobind.GangLocker[3])) then 
+				autobind.GangLocker[3] = not autobind.GangLocker[3] 
+			end 
+			if imgui.Checkbox('AK-47', new.bool(autobind.GangLocker[4])) then 
+				autobind.GangLocker[4] = not autobind.GangLocker[4] 
+			end 
+			if imgui.Checkbox('M4', new.bool(autobind.GangLocker[5])) then 
+				autobind.GangLocker[5] = not autobind.GangLocker[5] 
+			end
+			if imgui.Checkbox('Spas-12', new.bool(autobind.GangLocker[6])) then 
+				autobind.GangLocker[6] = not autobind.GangLocker[6] 
+			end
+			if imgui.Checkbox('Sniper', new.bool(autobind.GangLocker[7])) then 
+				autobind.GangLocker[7] = not autobind.GangLocker[7] 
+			end
+		imgui.End()
+	if menuactive or menu2active or bmactive or factionactive or gangactive then
+		imgui.PopStyleColor()
+		imgui.PopStyleColor()
+	end
 end)
 
 imgui.OnFrame(function() return isIniLoaded and imguisettings[0] and not isGamePaused end,
@@ -1773,11 +2318,6 @@ function main()
 	if doesFileExist(autobind_cfg) then autobind_loadIni() else autobind_blankIni() end
 	while not isSampAvailable() do wait(100) end
 	
-	if autobind.autoupdate then
-		wait(5000)
-		update_script(false)
-	end
-	
 	createfont()
 	skins_script()
 	sounds_script()
@@ -1809,14 +2349,18 @@ function main()
 		_autovest = false
 	end
 	
+	if autobind.autoupdate then
+		update_script(false, false)
+	end
+	
 	if not autobind.gangcustomskins then
-		wait(5000)
 		loadskinidsurl()
 	end
 
 	sampRegisterChatCommand(autobind.autovestsettingscmd, function() 
-		_menu = 1
+		_menu = 2
 		menu[0] = not menu[0]
+		menu2[0] = not menu2[0]
 	end)
 
 	sampRegisterChatCommand(autobind.vestnearcmd, function() 
@@ -2045,48 +2589,50 @@ function main()
 				autobind.timer = autobind.ddmode and 7 or 12
 				for PlayerID = 0, sampGetMaxPlayerId(false) do
 					local result, playerped = sampGetCharHandleBySampPlayerId(PlayerID)
-					if result and not sampIsPlayerPaused(PlayerID) and sampGetPlayerArmor(PlayerID) < 49 then
+					if result and not sampIsPlayerPaused(PlayerID) then
 						local myX, myY, myZ = getCharCoordinates(ped)
 						local playerX, playerY, playerZ = getCharCoordinates(playerped)
 						local dist = getDistanceBetweenCoords3d(myX, myY, myZ, playerX, playerY, playerZ)
 						if (autobind.ddmode and tostring(dist) or dist) < (autobind.ddmode and tostring(0.9) or 6) then
-							local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
-							local pAnimId2 = sampGetPlayerAnimationId(playerid)
-							local aim, _ = getCharPlayerIsTargeting(h)
-							if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
-								if autobind.vestmode == 0 then
-									if autobind.gangcustomskins then
-										if has_number(autobind.skins, getCharModel(playerped)) then
-											sendGuard(PlayerID)
+							if sampGetPlayerArmor(PlayerID) < 49 then
+								local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
+								local pAnimId2 = sampGetPlayerAnimationId(playerid)
+								local aim, _ = getCharPlayerIsTargeting(h)
+								if pAnimId ~= 1158 and pAnimId ~= 1159 and pAnimId ~= 1160 and pAnimId ~= 1161 and pAnimId ~= 1162 and pAnimId ~= 1163 and pAnimId ~= 1164 and pAnimId ~= 1165 and pAnimId ~= 1166 and pAnimId ~= 1167 and pAnimId ~= 1069 and pAnimId ~= 1070 and pAnimId2 ~= 746 and not aim then
+									if autobind.vestmode == 0 then
+										if autobind.gangcustomskins then
+											if has_number(autobind.skins, getCharModel(playerped)) then
+												sendGuard(PlayerID)
+											end
+										else
+											if has_number(skins, getCharModel(playerped)) then
+												sendGuard(PlayerID)
+											end
 										end
-									else
-										if has_number(skins, getCharModel(playerped)) then
+									end
+									if autobind.vestmode == 1 then
+										local color = sampGetPlayerColor(PlayerID)
+										local r, g, b = hex2rgb(color)
+										color = join_argb_int(255, r, g, b)
+										if (autobind.factionboth and has_number(factions, getCharModel(playerped)) and has_number(factions_color, color)) or (not autobind.factionboth and has_number(factions, getCharModel(playerped)) or has_number(factions_color, color)) then
 											sendGuard(PlayerID)
 										end
 									end
-								end
-								if autobind.vestmode == 1 then
-									local color = sampGetPlayerColor(PlayerID)
-									local r, g, b = hex2rgb(color)
-									color = join_argb_int(255, r, g, b)
-									if (autobind.factionboth and has_number(factions, getCharModel(playerped)) and has_number(factions_color, color)) or (not autobind.factionboth and has_number(factions, getCharModel(playerped)) or has_number(factions_color, color)) then
+									if autobind.vestmode == 2 then
 										sendGuard(PlayerID)
 									end
-								end
-								if autobind.vestmode == 2 then
-									sendGuard(PlayerID)
-								end
-								if autobind.vestmode == 3 then
-									for k, v in pairs(autobind.names) do
-										if v == sampGetPlayerNickname(PlayerID) then
-											sendGuard(PlayerID)
+									if autobind.vestmode == 3 then
+										for k, v in pairs(autobind.names) do
+											if v == sampGetPlayerNickname(PlayerID) then
+												sendGuard(PlayerID)
+											end
 										end
 									end
-								end
-								if autobind.vestmode == 4 then
-									if autobind.customskins then
-										if has_number(autobind.skins2, getCharModel(playerped)) then
-											sendGuard(PlayerID)
+									if autobind.vestmode == 4 then
+										if autobind.customskins then
+											if has_number(autobind.skins2, getCharModel(playerped)) then
+												sendGuard(PlayerID)
+											end
 										end
 									end
 								end
@@ -2338,6 +2884,7 @@ function onWindowMessage(msg, wparam, lparam)
         end
         if msg == wm.WM_KEYUP then
             menu[0] = false
+			menu2[0] = false
 			skinmenu[0] = false
 			bmmenu[0] = false
 			factionlockermenu[0] = false
@@ -3304,14 +3851,20 @@ function playsound(id)
 end
 
 function loadskinidsurl()
-	urlstring = https.request(autobind.skinsurl)
-	if urlstring ~= nil then
-		for skinid in string.match(urlstring, "<body>(.+)</body>").gmatch(urlstring, "%d*") do
-			if string.len(skinid) > 0 then 
-				table.insert(skins, skinid)
+	asyncHttpRequest('GET', autobind.skinsurl, nil,
+		function(response)
+			if response.text ~= nil then
+				for skinid in string.match(response.text, "<body>(.+)</body>").gmatch(response.text, "%d*") do
+					if string.len(skinid) > 0 then 
+						table.insert(skins, skinid)
+					end
+				end
 			end
+		end,
+		function(err)
+			sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} %s", script.this.name, err), -1)
 		end
-	end
+	)
 end
 
 function skins_script()
@@ -3339,33 +3892,35 @@ function sounds_script()
 	end
 end
 
-function update_script(noupdatecheck)
-	local update_text = https.request(update_url)
-	if update_text ~= nil then
-		update_version = update_text:match("version: (.+)")
-		if update_version ~= nil then
-			if tonumber(update_version) > script_version then
-				sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} New version found! The update is in progress..", script.this.name), -1)
-				downloadUrlToFile(script_url, script_path, function(id, status)
-					if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-						sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} The update was successful!", script.this.name), -1)
-						lua_thread.create(function() 
-							menu[0] = false
-							skinmenu[0] = false
-							bmmenu[0] = false
-							factionlockermenu[0] = false
-							wait(500) 
-							thisScript():reload()
+function update_script(noupdatecheck, noerrorcheck)
+	asyncHttpRequest('GET', update_url, nil,
+		function(response)
+			if response.text ~= nil then
+				update_version = response.text:match("version: (.+)")
+				if update_version ~= nil then
+					if tonumber(update_version) > script_version then
+						sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} New version found! The update is in progress..", script.this.name), -1)
+						downloadUrlToFile(script_url, script_path, function(id, status)
+							if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+								sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} The update was successful! Reloading the script now..", script.this.name), -1)
+								wait(500) 
+								thisScript():reload()
+							end
 						end)
+					else
+						if noupdatecheck then
+							sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} No new version found..", script.this.name), -1)
+						end
 					end
-				end)
-			else
-				if noupdatecheck then
-					sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} No new version found..", script.this.name), -1)
 				end
 			end
+		end,
+		function(err)
+			if noerrorcheck then
+				sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} %s", script.this.name, err), -1)
+			end
 		end
-	end
+	)
 end
 
 function autobind_blankIni()
@@ -3509,7 +4064,7 @@ function autobind_repairmissing()
 		autobind.turf_capper_timer = 17
 	end
 	if autobind.skinsurl == nil then
-		autobind.skinsurl = "https://thesoupkitchen.akacross.net/skins.html"
+		autobind.skinsurl = "https://cdn.akacross.net/autobind/skins.html"
 	end
 	if autobind.skins == nil then
 		autobind.skins = {}
@@ -3519,6 +4074,9 @@ function autobind_repairmissing()
 	end
 	if autobind.customskins == nil then
 		autobind.customskins = false
+	end
+	if autobind.advancedview == nil then
+		autobind.advancedview = false
 	end
 	if autobind.autovestsettingscmd == nil then 
 		autobind.autovestsettingscmd = "autobind"
@@ -3574,12 +4132,11 @@ function autobind_repairmissing()
 	if autobind.capperpos == nil then 
 		autobind.capperpos = {10, 435}
 	end
-	
 	local resX, resY = getScreenResolution()
 	if autobind.menupos == nil then 
 		autobind.menupos = {
-			string.format("%d", (resX / 2) - menusize[1] / 2), 
-			string.format("%d", (resY / 2) - menusize[2] / 2)
+			string.format("%d", (resX / 2) - 455 / 2), 
+			string.format("%d", (resY / 2) - 185 / 2)
 		}
 		autobind.menupos = {
 			tonumber(autobind.menupos[1]), 
@@ -3933,10 +4490,10 @@ function autobind_repairmissing()
 		autobind.audio.toggle = {}
 	end
 	if autobind.audio.toggle[1] == nil then 
-		autobind.audio.toggle[1] = true
+		autobind.audio.toggle[1] = false
 	end
 	if autobind.audio.toggle[2] == nil then 
-		autobind.audio.toggle[2] = true
+		autobind.audio.toggle[2] = false
 	end
 	if autobind.audio.toggle[3] == nil then 
 		autobind.audio.toggle[3] = false
@@ -4658,6 +5215,46 @@ function join_argb_int(a, r, g, b)
     argb = bit.bor(argb, bit.lshift(a, 24))
     return argb
 end
+
+function asyncHttpRequest(method, url, args, resolve, reject)
+   local request_thread = effil.thread(function (method, url, args)
+      local requests = require 'requests'
+      local result, response = pcall(requests.request, method, url, args)
+      if result then
+         response.json, response.xml = nil, nil
+         return true, response
+      else
+         return false, response
+      end
+   end)(method, url, args)
+   -- Если запрос без функций обработки ответа и ошибок.
+   if not resolve then resolve = function() end end
+   if not reject then reject = function() end end
+   -- Проверка выполнения потока
+   lua_thread.create(function()
+      local runner = request_thread
+      while true do
+         local status, err = runner:status()
+         if not err then
+            if status == 'completed' then
+               local result, response = runner:get()
+               if result then
+                  resolve(response)
+               else
+                  reject(response)
+               end
+               return
+            elseif status == 'canceled' then
+               return reject(status)
+            end
+         else
+            return reject(err)
+         end
+         wait(0)
+      end
+   end)
+end
+
 
 function apply_custom_style()
 	imgui.SwitchContext()
