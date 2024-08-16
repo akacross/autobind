@@ -991,16 +991,16 @@ function sampev.onServerMessage(color, text)
 	if text:find("The time is now") and color == -86 then
 		lua_thread.create(function()
 			wait(0)
-			if autobind.AutoVest.captureTurf then
+			if autobind.Settings.captureTurf then
 				sampSendChat("/capturf")
-				if autobind.AutoVest.disableAfterCapturing then
-					autobind.AutoVest.captureTurf = false
+				if autobind.Settings.disableAfterCapturing then
+					autobind.Settings.captureTurf = false
 				end
 			end
-			if autobind.AutoVest.capturePoint then
+			if autobind.Settings.capturePoint then
 				sampSendChat("/capture")
-				if autobind.AutoVest.disableAfterCapturing  then
-					autobind.AutoVest.capturePoint = false
+				if autobind.Settings.disableAfterCapturing  then
+					autobind.Settings.capturePoint = false
 				end
 			end
 		end)
