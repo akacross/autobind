@@ -170,7 +170,7 @@ local autobind = {
 	Settings = {},
 	AutoBind = {},
 	AutoVest = {},
-	
+	Window = {},
 	Keybinds = {},
 	BlackMarket = {},
 	FactionLocker = {}
