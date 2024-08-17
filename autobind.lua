@@ -1,8 +1,17 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.09")
+script_version("1.8.10")
 script_authors("akacross")
 script_url("https://akacross.net/")
+
+local changelog = {
+	["1.8.10"] = {
+		"Improved: Autovest is much more reliable now and responsive. (I am going to start changelog from here on.)",
+	},
+	["1.8.09"] = {
+		"Initial Rerelease."
+	}
+}
 
 -- Script Information
 local scriptPath = thisScript().path
@@ -84,7 +93,8 @@ local function getFile(type)
     local files = {
         settings = getPath('settings') .. 'autobind.json',
         update = getPath('settings') .. 'update.txt',
-        skins = getPath('settings') .. 'skins.json'
+        skins = getPath('settings') .. 'skins.json',
+		names = getPath('settings') .. 'names.json'
     }
     return files[type] or error("Invalid file type")
 end
@@ -117,53 +127,6 @@ local threads = {
 
 -- Screen Resolution
 local resX, resY = getScreenResolution()
-
--- Timers
-local timers = {
-	Vest = {timer = 0, last = 0},
-	Find = {timer = 19, last = 0}
-}
-
--- Guard
-local guardTime = 12.8
-local ddguardTime = 6
-local isBodyguard = true
-
--- Keybinds
-local lastKeyPressTime = {}
-
--- Frequency
-local currentFamilyFreq = 0
-local currentFactionFreq = 0
-
--- Auto Accept
-local autoaccepter = false
-local autoacceptertoggle = false
-local autoaccepternick = ""
-
--- Factions
-local factions_skins = {61, 71, 73, 141, 163, 164, 165, 166, 179, 191, 206, 253, 255, 265, 266, 267, 280, 281, 282, 283, 284, 285, 286, 287, 288, 294, 300, 301, 306, 309, 310, 311, 120, 253}
-local factions_color = {-14269954, -7500289, -14911565, -3368653}
-
--- Auto Find
-local autofind = false
-local cooldown_bool = false
-
--- Capture Spam
-local captog = false
-
--- Commands
-local commands = {
-	vestnear = "vestnear",
-	repairnear = "repairnear",
-	sprintbind = "sprintbind",
-	bikebind = "bikebind",
-	find = "find",
-	tcap = "tcap",
-	autovest = "autovest",
-	autoaccept = "av",
-	ddmode = "ddmode",
-}
 
 -- Autobind Config
 local autobind = {
@@ -227,6 +190,62 @@ local autobind_defaultSettings = {
 	FactionLocker = {true, true, false, true, false, false, false, false, false, true, true}
 }
 
+-- Commands
+local commands = {
+	vestnear = "vestnear",
+	repairnear = "repairnear",
+	sprintbind = "sprintbind",
+	bikebind = "bikebind",
+	find = "find",
+	tcap = "tcap",
+	autovest = "autovest",
+	autoaccept = "av",
+	ddmode = "ddmode",
+}
+
+-- Auto Find
+local autofind = false
+local cooldown_bool = false
+
+-- Capture Spam
+local captog = false
+
+-- Keybinds
+local lastKeyPressTime = {}
+
+-- Timers
+local timers = {
+	Vest = {timer = 0, last = 0},
+	Accept = {timer = 0.5, last = 0},
+	Heal = {timer = 12, last = 0},
+	Find = {timer = 19, last = 0}
+}
+
+-- Guard
+local guardTime = 12.8
+local ddguardTime = 6
+local isBodyguard = true
+
+-- Frequency
+local currentFamilyFreq = 0
+local currentFactionFreq = 0
+
+-- Auto Accept
+local autoaccepter = false
+local autoacceptertoggle = false
+local autoaccepternick = ""
+
+-- Factions
+local factions = {
+	skins = {
+		61, 71, 73, 141, 163, 164, 165, 166, 179, 191, 206, 253, 255, 265, 266, 267, 280, 281, 
+		282, 283, 284, 285, 286, 287, 288, 294, 300, 301, 306, 309, 310, 311, 120, 253
+	},
+	colors = {
+		-14269954, -7500289, -14911565, -3368653
+	}
+}
+
 -- Menu Variables
 local menu = new.bool(false)
 local _menu = 1
@@ -238,10 +257,7 @@ local changekey = {}
 -- Dragging Box
 local selectedbox = false
 local size = {
-	{x = 0, y = 0},
-	{x = 0, y = 0},
-	{x = 0, y = 0},
-	{x = 0, y = 0}
+    {x = 0, y = 0}
 }
 
 -- Skin Editor
@@ -252,14 +268,7 @@ local skinEditor = {
 }
 
 -- Spec State
-local specstate = false
-
--- Invalid Animations
-local invalidAnimsSet = {
-    [1158] = true, [1159] = true, [1160] = true, [1161] = true, [1162] = true,
-    [1163] = true, [1164] = true, [1165] = true, [1166] = true, [1167] = true,
-    [1069] = true, [1070] = true, [746] = true
-}
+local specState = false
 
 -- Bike
 local bike = {[481] = true, [509] = true, [510] = true}
@@ -270,18 +279,25 @@ local moto = {
 	[521] = true, [522] = true, [523] = true, [581] = true, [586] = true
 }
 
+-- Invalid Animations
+local invalidAnimsSet = {
+    [1158] = true, [1159] = true, [1160] = true, [1161] = true, [1162] = true,
+    [1163] = true, [1164] = true, [1165] = true, [1166] = true, [1167] = true,
+    [1069] = true, [1070] = true, [746] = true
+}
+
 -- Flashing Zones
-local flashing = {false, false}
+--[[local flashing = {turf = false, point = false}
 
--- Point Zone IDs
-local pointzoneids = {
-	30, 31, 38, 32, 36, 37, 34, 35, 39
-}
-
--- Turf Zone IDs
-local turfzoneids = {
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
-}
+-- Zone IDs
+local zoneIds = {
+	turf = {
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+	},
+	point = {
+		30, 31, 38, 32, 36, 37, 34, 35, 39
+	}
+}]]
 
 -- Command Data
 local cmdData = {
@@ -402,7 +418,7 @@ end
 local function checkGlobalConditions()
     local _, aduty = getSampfuncsGlobalVar("aduty")
     local _, HideMe = getSampfuncsGlobalVar("HideMe_check")
-    return not (specstate or HideMe == 1 or aduty == 1)
+    return not (specState or HideMe == 1 or aduty == 1)
 end
 
 local function checkBodyguardCondition()
@@ -437,8 +453,8 @@ local function checkVestMode(playerId)
 	elseif autobind.Settings.mode == "Factions" then
 		local color = sampGetPlayerColor(playerId)
 		local r, g, b = hex2rgb(color)
-		return has_number(factions_color, join_argb_int(255, r, g, b)) and 
-			(not autobind.AutoVest.useSkins or has_number(factions_skins, getCharModel(peds)))
+		return has_number(factions.colors, join_argb_int(255, r, g, b)) and 
+			(not autobind.AutoVest.useSkins or has_number(factions.skins, getCharModel(peds)))
 	end
     return false
 end
@@ -483,16 +499,18 @@ local function createAutovestThread()
     end)
 end
 
-local acceptGuardLast = 0
-
 -- Autoaccept
-function checkAndAcceptGuard(autoaccept)
+function checkAndAcceptVest(autoaccept)
 	if not autobind.Settings.enable then
 		return false
 	end
 
 	local currentTime = localClock()
-	if currentTime - acceptGuardLast < 0.5 then
+	if currentTime - timers.Accept.last < timers.Accept.timer then
+		return false
+	end
+
+	if currentTime - timers.Heal.last < timers.Heal.timer then
 		return false
 	end
 
@@ -502,7 +520,7 @@ function checkAndAcceptGuard(autoaccept)
 				if sampGetPlayerNickname(player.playerId) == autoaccepternick then
 					autoacceptertoggle = false
 					sampSendChat("/accept bodyguard")
-					acceptGuardLast = currentTime
+					timers.Accept.last = currentTime
 					return true
 				end
 			end
@@ -514,9 +532,9 @@ end
 local function createAutoacceptThread()
 	threads.autoaccept = coroutine.create(function()
 		while true do
-			local success, error = pcall(checkAndAcceptGuard, autoaccepter)
+			local success, error = pcall(checkAndAcceptVest, autoaccepter)
             if not success then
-                print("Error in checkAndAcceptGuard: " .. tostring(error))
+                print("Error in checkAndAcceptVest: " .. tostring(error))
             end
 			coroutine.yield()
 		end
@@ -525,7 +543,7 @@ end
 
 -- Keybinds
 local function acceptBodyguard()
-    checkAndAcceptGuard(true)
+    checkAndAcceptVest(true)
 end
 
 local function offerGuard()
@@ -850,12 +868,8 @@ function registerChatCommands()
 
 	sampRegisterChatCommand(commands.autoaccept, function()
 		if autobind.Settings.enable then
-			if autobind.Settings.mode == "Family" then
-				autoaccepter = not autoaccepter
-				formattedAddChatMessage(string.format("Auto Accept is now %s.", autoaccepter and 'enabled' or 'disabled'))
-			else
-				formattedAddChatMessage(string.format("/%s is for families only.", commands.autoaccept))
-			end
+			autoaccepter = not autoaccepter
+			formattedAddChatMessage(string.format("Auto Accept is now %s.", autoaccepter and 'enabled' or 'disabled'))
 		end
 	end)
 
@@ -895,34 +909,32 @@ end
 --[[function sampev.onGangZoneFlash(zoneId, color)
 	lua_thread.create(function()
 		wait(0)
-		for k, v in pairs(pointzoneids) do
-			if v == zoneId then
-				flashing[1] = true
-			end
-		end
-		for k, v in pairs(turfzoneids) do
-			if v == zoneId then
-				flashing[2] = true
+		for k, v in pairs(zoneIds) do
+			if v.point[k] == zoneId then
+				flashing.point = true
+				break
+			elseif v.turf[k] == zoneId then
+				flashing.turf = true
+				break
 			end
 		end
 	end)
 end
+
 function sampev.onGangZoneStopFlash(zoneId)
 	lua_thread.create(function()
 		wait(0)
-		for k, v in pairs(pointzoneids) do
-			if v == zoneId then
-				flashing[1] = false
-			end
-		end
-		for k, v in pairs(turfzoneids) do
-			if v == zoneId then
-				flashing[2] = false
+		for k, v in pairs(zoneIds) do
+			if v.point[k] == zoneId then
+				flashing.point = false
+				break
+			elseif v.turf[k] == zoneId then
+				flashing.turf = false
+				break
 			end
 		end
 	end)
 end]]
-
 
 --Family MOTD: Freq: -86656 , Allies: BHT/NAS, Read Announcement..
 function sampev.onServerMessage(color, text)
@@ -1093,6 +1105,13 @@ function sampev.onServerMessage(color, text)
 	end
 end
 
+function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
+	if senderID ~= 65535 and damage > 0 then
+		print(senderID, damage, weapon, Bodypart)
+		timers.Heal.last = localClock()  -- Start the heal timer
+	end
+end
+
 function sampev.onShowDialog(id, style, title, button1, button2, text)
 	if bmbool then
 		local bmItems = {
@@ -1202,7 +1221,7 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
 end
 
 function sampev.onTogglePlayerSpectating(state)
-    specstate = state
+    specState = state
 end
 
 imgui.OnInitialize(function()
@@ -1464,22 +1483,22 @@ function()
 				imgui.SetCursorPos(imgui.ImVec2(340, 5))
 
 				imgui.BeginChild("##keybinds", imgui.ImVec2(155, 263), true)
-					if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
-						bmmenu[0] = not bmmenu[0]
-					end
-
-					if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
-						factionlockermenu[0] = not factionlockermenu[0]
-					end
-
 					keychange('Accept')
 					keychange('Offer')
 					keychange('BlackMarket')
-					keychange('FactionLocker')
+					if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
+						bmmenu[0] = not bmmenu[0]
+					end
+					keychange('TakePills')
+					if faction then
+						keychange('FactionLocker')
+						if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
+							factionlockermenu[0] = not factionlockermenu[0]
+						end
+					end
 					keychange('BikeBind')
 					keychange('SprintBind')
 					keychange('Frisk')
-					keychange('TakePills')
 				imgui.EndChild()
 			end
 
@@ -1568,7 +1587,7 @@ function()
 					local spacing = 11.2  -- Spacing between images
 					local start = imgui.GetCursorPos()  -- Starting position
 				
-					for i, skinId in ipairs(factions_skins) do
+					for i, skinId in ipairs(factions.skins) do
 						if skinTexture[skinId] == nil then
 							skinTexture[skinId] = imgui.CreateTextureFromFile("moonloader/resource/skins/Skin_"..skinId..".png")
 						end
@@ -1590,6 +1609,30 @@ function()
 			end
 
 			if _menu == 3 then
+				imgui.PushItemWidth(334)
+				local url = new.char[128](autobind.AutoVest.namesUrl)
+				if imgui.InputText('##names_url', url, sizeof(url)) then
+					autobind.AutoVest.namesUrl = u8:decode(str(url))
+				end
+				if imgui.IsItemHovered() then
+					imgui.SetTooltip("URL to fetch names from, must be a JSON array of names")
+				end
+				imgui.SameLine()
+				imgui.PopItemWidth()
+				if imgui.Button("Fetch") then
+					fetchNamesFromURL()
+				end
+				if imgui.IsItemHovered() then
+					imgui.SetTooltip("Fetches names from provided URL")
+				end
+				--[[imgui.SameLine()
+				if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetch)) then
+					autobind.AutoVest.autoFetch = not autobind.AutoVest.autoFetch
+				end
+				if imgui.IsItemHovered() then
+					imgui.SetTooltip("Fetch names at startup")
+				end]]
+
 				for key, value in pairs(autobind.AutoVest.names) do
 					local nick = new.char[128](value)
 					if imgui.InputText('Nickname##'..key, nick, sizeof(nick)) then
@@ -1642,6 +1685,27 @@ function fetchSkinsFromURL()
 				end
 			else
 				print("Error opening skins file")
+			end
+		end
+	end)
+end
+
+function fetchNamesFromURL()
+	downloadFiles({{url = autobind.AutoVest.namesUrl, path = getFile('names'), replace = true}}, function(result)
+		if result then
+			local file = io.open(getFile('names'), "r")
+			if file then
+				local content = file:read("*all")
+				file:close()
+				
+				local success, decodedNames = pcall(decodeJson, content)
+				if success and type(decodedNames) == "table" then
+					autobind.AutoVest.names = decodedNames
+				else
+					print("Error decoding names JSON or invalid data structure")
+				end
+			else
+				print("Error opening names file")
 			end
 		end
 	end)
@@ -2308,7 +2372,6 @@ function has_number(tab, val)
             return true
         end
     end
-
     return false
 end
 
