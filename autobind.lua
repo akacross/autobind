@@ -1,10 +1,14 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.10")
+script_version("1.8.11")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
 local changelog = {
+	["1.8.11"] = {
+		"Fixed: Autoaccept now waits if the player is attacked. (You can still be prisoned if you heal while in a gunfight)",
+		"Fixed: Autoaccept automatically detects when you are in a point. (You no longer need to manually toggle it, it will deactivate when point ends)" -- WIP
+	},
 	["1.8.10"] = {
 		"Improved: Autovest is much more reliable now and responsive. (I am going to start changelog from here on.)",
 	},
@@ -114,7 +118,6 @@ end
 -- Global Variables
 local new, str, sizeof = imgui.new, ffi.string, ffi.sizeof
 local ped, h = playerPed, playerHandle
-local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 
 -- Define thread variables
 local threads = {
@@ -122,7 +125,7 @@ local threads = {
 	autoaccept = nil,
 	captureSpam = nil,
 	keybinds = nil,
-	frequency = nil
+	--frequency = nil
 }
 
 -- Screen Resolution
@@ -146,27 +149,28 @@ local autobind_defaultSettings = {
 		autoSave = true,
 		mode = "Family",
 		familyFreq = 0,
-		factionFreq = 0,
-		captureTurf = false,
+		familyTurf = false,
 		capturePoint = false,
-		disableAfterCapturing = false,
+		disableAfterCapturing = true,
+		factionFreq = 0,
+		factionTurf = false,
 		Frisk = {
 			target = false,
-			aim = false
+			mustAim = true
 		},
 	},
 	AutoBind = {
 		enable = true,
-		autoRepair = false,
+		autoRepair = true,
 		autoBadge = true,
 	},
 	AutoVest = {
 		enable = true,
 		everyone = false,
 		useSkins = true,
-		autoFetch = true,
+		autoFetchSkins = true,
+		autoFetchNames = false,
 		donor = false,
-		timerCorrection = true,
 		skins = {123},
 		names = {"Cross_Maddox"},
 		skinsUrl = "https://raw.githubusercontent.com/akacross/autobind/main/skins.json",
@@ -186,8 +190,8 @@ local autobind_defaultSettings = {
 		Frisk = {Toggle = false, Keys = {VK_MENU, VK_F}, Type = {'KeyDown', 'KeyPressed'}},
 		TakePills = {Toggle = false, Keys = {VK_F3}, Type = {'KeyPressed'}}
 	},
-	BlackMarket = {true, false, false, false, false, false, false, false, true, false, false, false, false},
-	FactionLocker = {true, true, false, true, false, false, false, false, false, true, true}
+	BlackMarket = {1, 9, 13},
+	FactionLocker = {1, 2, 9, 8}
 }
 
 -- Commands
@@ -210,15 +214,16 @@ local cooldown_bool = false
 -- Capture Spam
 local captog = false
 
--- Keybinds
-local lastKeyPressTime = {}
+-- Key Press Type
+local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 
 -- Timers
 local timers = {
 	Vest = {timer = 0, last = 0},
 	Accept = {timer = 0.5, last = 0},
 	Heal = {timer = 12, last = 0},
-	Find = {timer = 19, last = 0}
+	Find = {timer = 19.5, last = 0},
+	Binds = {timer = 1, last = {}}
 }
 
 -- Guard
@@ -315,21 +320,23 @@ local lockerbool = false
 local lockerstate = 0
 local lockercmd = 0
 
+--Your gang is already attempting to capture this turf.
+
 -- Black Market Equipment Menu
 local blackMarketItems = {
-	{label = 'Full Health and Armor', index = 1},
-	{label = 'Silenced Pistol', index = 2},
-	{label = '9mm Pistol', index = 3},
-	{label = 'Shotgun', index = 4},
-	{label = 'MP5', index = 5},
-	{label = 'UZI', index = 6},
-	{label = 'Tec-9', index = 7},
-	{label = 'Country Rifle', index = 8},
-	{label = 'Deagle', index = 9},
-	{label = 'AK-47', index = 10},
-	{label = 'M4', index = 11},
-	{label = 'Spas-12', index = 12},
-	{label = 'Sniper Rifle', index = 13}
+    {label = 'Health/Armor', index = 2, weapon = nil}, -- 1
+    {label = 'Silenced Pistol', index = 6, weapon = 22}, -- 2
+    {label = '9mm Pistol', index = 7, weapon = 23}, -- 3
+    {label = 'Shotgun', index = 8, weapon = 25}, -- 4
+    {label = 'MP5', index = 9, weapon = 29}, -- 5
+    {label = 'UZI', index = 10, weapon = 28}, -- 6
+    {label = 'Tec-9', index = 11, weapon = 32}, -- 7
+    {label = 'Country Rifle', index = 12, weapon = 33}, -- 8
+    {label = 'Deagle', index = 13, weapon = 24}, -- 9
+    {label = 'AK-47', index = 14, weapon = 30}, -- 10
+    {label = 'M4', index = 15, weapon = 31}, -- 11
+    {label = 'Spas-12', index = 16, weapon = 27}, -- 12
+    {label = 'Sniper Rifle', index = 17, weapon = 34} -- 13
 }
 
 local blackMarketExclusiveGroups = {
@@ -348,37 +355,71 @@ local lockerMenuItems = {
 	{label = 'MP5', index = 4},
 	{label = 'M4', index = 5},
 	{label = 'AK-47', index = 6},
-	{label = 'Smoke Grenade', index = 7},
-	{label = 'Camera', index = 8},
 	{label = 'Sniper', index = 9},
-	{label = 'Vest', index = 10},
-	{label = 'First Aid Kit', index = 11}
+	{label = 'Armor', index = 10},
+	{label = 'Health', index = 11}
 }
 
+local lockerExclusiveGroups = {
+	{2, 3}, -- Shotgun, SPAS-12
+	{5, 6} -- M4, AK-47
+}
+
+-- Initialize
 function main()
 	local paths = getPath(nil)
     for _, dir in pairs({"config", "settings", "resource", "skins"}) do
         createDirectory(paths[dir])
     end
-    autobind = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, {{"AutoVest", "skins"}, {"AutoVest", "names"}})
+
+    autobind = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, {{"AutoVest", "skins"}, {"AutoVest", "names"}, "Keybinds"})
+
+	if autobind.Settings.mode == "Factions" then
+		autobind.Settings.mode = "Faction"
+	end
 
     while not isSampAvailable() do wait(100) end
 
-	registerChatCommands()
+	sampRegisterChatCommand(scriptName, function()
+		_menu = 1
+		menu[0] = not menu[0]
+	end)
 
-	if autobind.AutoVest.autoFetch then
-		fetchSkinsFromURL()
+	if autobind.Settings.enable then
+		registerChatCommands()
 	end
+
+	if autobind.AutoVest.autoFetchSkins then
+		fetchDataFromURL(autobind.AutoVest.skinsUrl, 'skins', function(decodedData)
+			autobind.AutoVest.skins = decodedData
+		end)
+	end
+
+	if autobind.AutoVest.autoFetchNames then
+		fetchDataFromURL(autobind.AutoVest.namesUrl, 'names', function(decodedData)
+			autobind.AutoVest.names = decodedData
+		end)
+	end
+
 	downloadSkins()
 
-	createThreads()
-	while true do wait(0)
+	local startedThreads, failedThreads = createThreads()
+	print(string.format("%s v%s has loaded successfully! Threads: %s.", firstToUpper(scriptName), scriptVersion, table.concat(startedThreads, ", ")))
+	if #failedThreads > 0 then
+		print("Threads failed to start: " .. table.concat(failedThreads, ", "))
+	end
+
+	while true do wait(100)
 		resumeThreads()
 	end
 end
 
 -- onD3DPresent
 function onD3DPresent()
+	if not autobind.Settings.enable or not autobind.Keybinds.SprintBind then
+		return
+	end
+
 	-- Sprint Bind
 	if autobind.Settings.enable and autobind.Keybinds.SprintBind.Toggle and (isButtonPressed(h, gkeys.player.SPRINT) and (isCharOnFoot(ped) or isCharInWater(ped))) then
 		setGameKeyState(gkeys.player.SPRINT, 0)
@@ -414,13 +455,14 @@ function activeCheck(chat, dialog, scoreboard, console, pause)
 		   (pause and not isPauseMenuActive())
 end
 
--- Auto Vest
-local function checkGlobalConditions()
+-- Check if admin duty is active
+function checkAdminDuty()
     local _, aduty = getSampfuncsGlobalVar("aduty")
-    local _, HideMe = getSampfuncsGlobalVar("HideMe_check")
-    return not (specState or HideMe == 1 or aduty == 1)
+    local _, HideMe = getSampfuncsGlobalVar("HideMe")
+	return aduty == 0 and (not specState or HideMe == 0)
 end
 
+-- Auto Vest
 local function checkBodyguardCondition()
     return isBodyguard or autobind.AutoVest.donor
 end
@@ -428,11 +470,10 @@ end
 local function checkAnimationCondition(playerId)
     local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
     local pAnimId2 = sampGetPlayerAnimationId(playerId)
-    local aim, _ = getCharPlayerIsTargeting(h)
-    return not (invalidAnimsSet[pAnimId] or pAnimId2 == 746 or aim)
+    return not (invalidAnimsSet[pAnimId] or pAnimId2 == 746 or isButtonPressed(h, gkeys.player.LOCKTARGET))
 end
 
-local function checkVestMode(playerId)
+local function vestModeConditions(playerId)
     if autobind.AutoVest.everyone then
         return true
     end
@@ -447,182 +488,188 @@ local function checkVestMode(playerId)
 	if not result then
 		return false
 	end
-
+	
 	if autobind.Settings.mode == "Family" then
 		return has_number(autobind.AutoVest.skins, getCharModel(peds))
-	elseif autobind.Settings.mode == "Factions" then
-		local color = sampGetPlayerColor(playerId)
-		local r, g, b = hex2rgb(color)
-		return has_number(factions.colors, join_argb_int(255, r, g, b)) and 
+	elseif autobind.Settings.mode == "Faction" then
+		local color = convertColor(sampGetPlayerColor(playerId), true, false, false)
+		return has_number(factions.colors, joinARGB(255, color[1], color[2], color[3], true)) and 
 			(not autobind.AutoVest.useSkins or has_number(factions.skins, getCharModel(peds)))
 	end
     return false
 end
 
+-- Check and send vest
 function checkAndSendVest(prevest)
-    if not autobind.Settings.enable and not autobind.AutoVest.enable then
-        return false
-    end
+	if not autobind.Settings.enable then
+		return "Autobind is disabled"
+	end
     
-    if not checkGlobalConditions() and not checkBodyguardCondition() then
-        return false
+    if not checkAdminDuty() then
+        return
     end
 
-	local currentTime = localClock()
+	if not autobind.AutoVest.enable and not prevest then
+        return
+    end
+
+	if not checkBodyguardCondition() then
+		return "You are not a bodyguard."
+	end
+
+    local currentTime = localClock()
     if currentTime - timers.Vest.last < timers.Vest.timer then
-        return false
+        local timeLeft = math.ceil(timers.Vest.timer - (currentTime - timers.Vest.last))
+        return string.format("You must wait %d seconds before sending vest.", timeLeft > 1 and timeLeft or 1)
     end
 
     for _, player in ipairs(getVisiblePlayers(6, prevest and "all" or "armor")) do
-		if checkAnimationCondition(player.playerId) then
-			if checkVestMode(player.playerId) then
-				sampSendChat(autobind.AutoVest.donor and '/guardnear' or string.format("/guard %d 200", player.playerId))
-				timers.Vest.last = currentTime
-				return true
-			end
-		end
+        if checkAnimationCondition(player.playerId) then
+            if vestModeConditions(player.playerId) then
+                sampSendChat(autobind.AutoVest.donor and '/guardnear' or string.format("/guard %d 200", player.playerId))
+                timers.Vest.last = currentTime
+				return
+            end
+        end
     end
-    return false
+    return "No suitable player found to vest."
 end
 
+-- Check and accept vest
+function checkAndAcceptVest(autoaccept)
+	if not autobind.Settings.enable then
+		return "Autobind is disabled"
+	end
+
+	local currentTime = localClock()
+	if currentTime - timers.Accept.last < timers.Accept.timer then
+		return
+	end
+
+	if currentTime - timers.Heal.last < timers.Heal.timer then
+		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
+		return string.format("You must wait %d seconds before healing.", timeLeft > 1 and timeLeft or 1)
+	end
+
+	if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
+		for _, player in ipairs(getVisiblePlayers(4, "all")) do
+			if autoaccept and autoacceptertoggle then
+				if sampGetPlayerNickname(player.playerId) == autoaccepternick then
+					sampSendChat("/accept bodyguard")
+					timers.Accept.last = currentTime
+					return
+				end
+			end
+		end
+		return autoacceptertoggle and "You are not close enough." or "No one offered you bodyguard."
+	else
+		return "You are already at full armor."
+	end
+end
+
+-- Threads
 local function createAutovestThread()
 	timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
 
     threads.autovest = coroutine.create(function()
         while true do
-            local success, error = pcall(checkAndSendVest, false)
+            local success, message = pcall(checkAndSendVest, false)
             if not success then
-                print("Error in checkAndSendVest: " .. tostring(error))
+                print("Error in checkAndSendVest: " .. tostring(message))
             end
             coroutine.yield()
         end
     end)
 end
 
--- Autoaccept
-function checkAndAcceptVest(autoaccept)
-	if not autobind.Settings.enable then
-		return false
-	end
-
-	local currentTime = localClock()
-	if currentTime - timers.Accept.last < timers.Accept.timer then
-		return false
-	end
-
-	if currentTime - timers.Heal.last < timers.Heal.timer then
-		return false
-	end
-
-	if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
-		for _, player in ipairs(getVisiblePlayers(5, "all")) do
-			if autoaccept and autoacceptertoggle then
-				if sampGetPlayerNickname(player.playerId) == autoaccepternick then
-					autoacceptertoggle = false
-					sampSendChat("/accept bodyguard")
-					timers.Accept.last = currentTime
-					return true
-				end
-			end
-		end
-	end
-	return false
-end
-
 local function createAutoacceptThread()
 	threads.autoaccept = coroutine.create(function()
 		while true do
-			local success, error = pcall(checkAndAcceptVest, autoaccepter)
-            if not success then
-                print("Error in checkAndAcceptVest: " .. tostring(error))
-            end
+			local success, message = pcall(checkAndAcceptVest, autoaccepter)
+			if not success then
+				print("Error in checkAndAcceptVest: " .. tostring(message))
+			end
 			coroutine.yield()
 		end
 	end)
 end
 
--- Keybinds
-local function acceptBodyguard()
-    checkAndAcceptVest(true)
-end
-
-local function offerGuard()
-	local currentTime = localClock()
-	if currentTime - timers.Vest.last < timers.Vest.timer then
-		local timeLeft = timers.Vest.timer - (currentTime - timers.Vest.last)
-		local roundedTimeLeft = math.ceil(timeLeft)
-		if roundedTimeLeft > 1 then
-			formattedAddChatMessage(string.format("You must wait %d seconds before offering a guard.", roundedTimeLeft))
-			return
+local function createKeybindThread()
+	local function acceptBodyguard()
+		local message = checkAndAcceptVest(true)
+		if message then
+			formattedAddChatMessage(message)
 		end
 	end
-
-	local success, error = pcall(checkAndSendVest, true)
-    if not success then
-        print("Error in checkAndSendVest: " .. tostring(error))
-    end
-end
-
-local function blackMarket()
-    if not bmbool then
-        bmbool = true
-        sendCommandWithTimer("/bm")
-    end
-end
-
-local function factionLocker()
-    if not lockerbool then
-        lockerbool = true
-        sendCommandWithTimer("/locker")
-    end
-end
-
-local function bikeBind()
-	if isCharOnAnyBike(ped) then
-		local veh = storeCarCharIsInNoSave(ped)
-		if not isCarInAirProper(veh) then
-			local bikes = {[481] = true, [509] = true, [510] = true}
-			if bikes[getCarModel(veh)] then
-				setGameKeyUpDown(gkeys.vehicle.ACCELERATE, 255, 0)
-			else
-				setGameKeyUpDown(gkeys.vehicle.STEERUP_STEERDOWN, -128, 0)
+	
+	local function offerBodyguard()
+		local message = checkAndSendVest(true)
+		if message then
+			formattedAddChatMessage(message)
+		end
+	end
+	
+	local function blackMarket()
+		if not bmbool then
+			bmbool = true
+			sendCommandWithTimer("/bm")
+		end
+	end
+	
+	local function factionLocker()
+		if not lockerbool then
+			lockerbool = true
+			sendCommandWithTimer("/locker")
+		end
+	end
+	
+	local function bikeBind()
+		if isCharOnAnyBike(ped) then
+			local veh = storeCarCharIsInNoSave(ped)
+			if not isCarInAirProper(veh) then
+				lua_thread.create(function()
+					local bikeIds = {[481] = true, [509] = true, [510] = true}
+					local isBike = bikeIds[getCarModel(veh)]
+					setGameKeyUpDown(
+						isBike and gkeys.vehicle.ACCELERATE or gkeys.vehicle.STEERUP_STEERDOWN, 
+						isBike and 255 or -128, 
+						0
+					)
+				end)
 			end
 		end
 	end
-end
+	
+	local function sprintBind()
+		autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle
+		formattedAddChatMessage(string.format("Sprintbind: %s", autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'))
+	end
+	
+	local function frisk()
+		if checkAdminDuty() then
+			local targeting, _ = getCharPlayerIsTargeting(h)
+			for _, player in ipairs(getVisiblePlayers(5, "all")) do
+				if (isButtonPressed(h, gkeys.player.LOCKTARGET) and autobind.Settings.Frisk.mustAim) or not autobind.Settings.Frisk.mustAim then
+					if (targeting and autobind.Settings.Frisk.target) or not autobind.Settings.Frisk.target then
+						sampSendChat(string.format("/frisk %d", player.playerId))
+						break
+					end
+				end
+			end
+		end
+	end
+	
+	local function takePills()
+		sampSendChat("/takepills")
+	end
 
-local function sprintBind()
-    autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle
-    formattedAddChatMessage(string.format("Sprintbind: %s", autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'))
-end
-
-local function frisk()
-    local _, playerped = storeClosestEntities(ped)
-    local result, id = sampGetPlayerIdByCharHandle(playerped)
-    local result2, target = getCharPlayerIsTargeting(h)
-    if result then
-        if (result2 and autobind.Settings.Frisk.target) or not autobind.Settings.Frisk.target then
-            if (target == playerped and autobind.Settings.Frisk.target) or not autobind.Settings.Frisk.target then
-                if (isPlayerAiming(true, true) and autobind.Settings.Frisk.aim) or not autobind.Settings.Frisk.aim then
-                    sampSendChat(string.format("/frisk %d", id))
-                end
-            end
-        end
-    end
-end
-
-local function takePills()
-    sampSendChat("/takepills")
-end
-
-local function createKeybindThread()
     threads.keybinds = coroutine.create(function()
         while true do
             if autobind.Settings.enable then
 				local currentTime = localClock()
 				local keyFunctions = {
 					Accept = acceptBodyguard,
-					Offer = offerGuard,
+					Offer = offerBodyguard,
 					BlackMarket = blackMarket,
 					FactionLocker = factionLocker,
 					BikeBind = bikeBind,
@@ -639,12 +686,12 @@ local function createKeybindThread()
 			
 					if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
 						if activeCheck(true, true, true, true, true) and not menu[0] then
-							if key == "BikeBind" or not lastKeyPressTime[key] or (currentTime - lastKeyPressTime[key]) >= 1 then
+							if key == "BikeBind" or not timers.Binds.last[key] or (currentTime - timers.Binds.last[key]) >= timers.Binds.timer then
 								local success, error = pcall(keyFunctions[key])
 								if not success then
 									print(string.format("Error in %s function: %s", key, error))
 								end
-								lastKeyPressTime[key] = currentTime
+								timers.Binds.last[key] = currentTime
 							end
 						end
 					end
@@ -655,7 +702,6 @@ local function createKeybindThread()
     end)
 end
 
--- Capture spam
 local function createCaptureSpamThread()
     local lastCaptureTime = 0
     local captureInterval = 1.5
@@ -679,35 +725,6 @@ local function createCaptureSpamThread()
             coroutine.yield()
         end
     end)
-end
-
--- Frequency
-local function createFrequencyThread()
-	local function updateFrequency(mode, currentFreq, settingFreqKey)
-		if autobind.Settings.mode == mode and currentFreq ~= 0 and autobind.Settings[settingFreqKey] ~= currentFreq then
-			sampSendChat(string.format("/setfreq %d", currentFreq))
-			autobind.Settings[settingFreqKey] = currentFreq
-			saveConfigWithErrorHandling(getFile("settings"), autobind)
-		end
-	end
-	
-	local function updateFreqs()
-		updateFrequency("Family", currentFamilyFreq, "familyFreq")
-		updateFrequency("Factions", currentFactionFreq, "factionFreq")
-	end
-
-	currentFamilyFreq = autobind.Settings.familyFreq
-	currentFactionFreq = autobind.Settings.factionFreq
-
-	threads.frequency = coroutine.create(function()
-		while true do
-			local status, err = pcall(updateFreqs)
-			if not status then
-				print("Error in frequency thread: " .. err)
-			end
-			coroutine.yield()
-		end
-	end)
 end
 
 -- Resume threads
@@ -735,9 +752,8 @@ function createThreads()
 	-- Create threads
 	createAutovestThread()
 	createAutoacceptThread()
-	createCaptureSpamThread()
 	createKeybindThread()
-	createFrequencyThread()
+	createCaptureSpamThread()
 
 	-- Check which threads have successfully started and which failed
 	local startedThreads = {}
@@ -750,33 +766,15 @@ function createThreads()
 		end
 	end
 
-	print("Threads successfully started: " .. table.concat(startedThreads, ", "))
-	if #failedThreads > 0 then
-		print("Threads failed to start: " .. table.concat(failedThreads, ", "))
-	end
+	return startedThreads, failedThreads
 end
 
 -- Register chat commands
 function registerChatCommands()
-	sampRegisterChatCommand(scriptName, function()
-		_menu = 1
-		menu[0] = not menu[0]
-	end)
-
 	sampRegisterChatCommand(commands.vestnear, function()
-		local currentTime = localClock()
-		if currentTime - timers.Vest.last < timers.Vest.timer then
-			local timeLeft = timers.Vest.timer - (currentTime - timers.Vest.last)
-			local roundedTimeLeft = math.ceil(timeLeft)
-			if roundedTimeLeft > 1 then
-				formattedAddChatMessage(string.format("You must wait %d seconds before offering a guard.", roundedTimeLeft))
-				return
-			end
-		end
-
-		local success, error = pcall(checkAndSendVest, true)
-		if not success then
-			print("Error in checkAndSendVest: " .. tostring(error))
+		local message = checkAndSendVest(true)
+		if message then
+			formattedAddChatMessage(message)
 		end
 	end)
 
@@ -784,6 +782,7 @@ function registerChatCommands()
 		if autobind.Settings.enable then
 			for _, player in ipairs(getVisiblePlayers(5, "car")) do
 				sampSendChat(string.format("/repair %d 1", player.playerId))
+				break
 			end
 		end
 	end)
@@ -936,41 +935,42 @@ function sampev.onGangZoneStopFlash(zoneId)
 	end)
 end]]
 
---Family MOTD: Freq: -86656 , Allies: BHT/NAS, Read Announcement..
+--You have been muted automatically for spamming. Please wait 10 seconds and try again.
+
 function sampev.onServerMessage(color, text)
-	local mode, message = text:match("([Family|LSPD|SASD|FBI|ARES].+) MOTD: (.+)")
-	if mode and message and color == -65366 then
+	local mode, motdMsg = text:match("([Family|LSPD|SASD|FBI|ARES].+) MOTD: (.+)")
+	if mode and motdMsg and color == -65366 then
 		if mode:match("Family") then
 			autobind.Settings.mode = mode
 			saveConfigWithErrorHandling(getFile("settings"), autobind)
 
-			local freq, allies = message:match("[Ff]req:?%s*(-?%d+)%s*[,%s]*[Aa]llies:?%s*([^,]+)")
+			local freq, allies = motdMsg:match("[Ff]req:?%s*(-?%d+)%s*[/%s]*[Aa]llies:?%s*([^,]+)")
 			if freq and allies then
 				print("Frequency detected", freq)
 				currentFamilyFreq = freq
 
 				print("Allies detected", allies)
 
-				local newMessage = message:gsub("[Ff]req:?%s*(-?%d+)", "")
-				newMessage = newMessage:gsub("^%s*,%s*", "")  -- Remove leading comma and spaces
+				local newMessage = motdMsg:gsub("[Ff]req:?%s*(-?%d+)", "")
+				newMessage = newMessage:gsub("^%s*,%s*", "")
 				print("New message: " .. newMessage)
 
 				return {color, string.format("%s MOTD: %s", mode, newMessage)}
 			end
 		elseif mode:match("[LSPD|SASD|FBI|ARES]") then
-			autobind.Settings.mode = "Factions"
+			autobind.Settings.mode = "Faction"
 			saveConfigWithErrorHandling(getFile("settings"), autobind)
 			if autoaccepter then
 				formattedAddChatMessage(string.format("Auto Accept is now disabled. because you are now in Faction Mode."))
 				autoaccepter = false
 			end
 
-			local freqType, freq = message:match("[/|%s*]%s*([RL FREQ:|FREQ:].-)%s*(-?%d+)")
+			local freqType, freq = motdMsg:match("[/|%s*]%s*([RL FREQ:|FREQ:].-)%s*(-?%d+)")
 			if freqType and freq then
 				print("Faction frequency detected: " .. freq) 
 				currentFactionFreq = freq
 
-				local newMessage = message:gsub(freqType .. "%s*" .. freq:gsub("%-", "%%%-") .. "%s*", "")
+				local newMessage = motdMsg:gsub(freqType .. "%s*" .. freq:gsub("%-", "%%%-") .. "%s*", "")
 				newMessage = newMessage:gsub("%s*/%s*/%s*", " / ")
 				print("New message: " .. newMessage)
 
@@ -985,7 +985,7 @@ function sampev.onServerMessage(color, text)
 			if autobind.Settings.mode == "Family" then
 				currentFamilyFreq = 0
 				autobind.Settings.familyFreq = 0
-			elseif autobind.Settings.mode == "Factions" then
+			elseif autobind.Settings.mode == "Faction" then
 				currentFactionFreq = 0
 				autobind.Settings.factionFreq = 0
 			end
@@ -994,24 +994,31 @@ function sampev.onServerMessage(color, text)
 		end
 	end
 
-	local freq, sender, message = text:match("%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)")
-	if freq and sender and message then
-		local playerId = sampGetPlayerIdByNickname(sender:gsub("%s+", "_"))
-		return {color, string.format("** Radio (%s) kHz ** %s (%d): %s", autobind.Settings.mode, sender, playerId, message)}
+	local div, rank, nickname, message = text:match("%*%*%s*(%a*%s*)%s*(%a+)%s+([%a%s]+):%s*(.*)%s*%*%*")
+	if rank and nickname and message and color == -1920073729 then
+		--print("Rank: " .. rank, "Nickname: " .. nickname, "Message: " .. message)
+	end
+
+	local freq, playerName, message = text:match("%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)")
+	if freq and playerName and message then
+		local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
+		local playerColor = convertColor(sampGetPlayerColor(playerId), false, false, true)
+		return {color, string.format("** %s Radio ** {%s}%s (%d): {FFFFFF}%s", autobind.Settings.mode, playerColor, playerName, playerId, message)}
 	end
 
 	if text:find("The time is now") and color == -86 then
 		lua_thread.create(function()
 			wait(0)
-			if autobind.Settings.captureTurf then
+			local mode = autobind.Settings.mode
+			if (autobind.Settings.factionTurf and mode == "Faction") or (autobind.Settings.familyTurf and mode == "Family") then
 				sampSendChat("/capturf")
-				if autobind.Settings.disableAfterCapturing then
-					autobind.Settings.captureTurf = false
+				if autobind.Settings.disableAfterCapturing and mode == "Family" then
+					autobind.Settings.familyTurf = false
 				end
 			end
-			if autobind.Settings.capturePoint then
+			if autobind.Settings.capturePoint and mode == "Family" then
 				sampSendChat("/capture")
-				if autobind.Settings.disableAfterCapturing  then
+				if autobind.Settings.disableAfterCapturing then
 					autobind.Settings.capturePoint = false
 				end
 			end
@@ -1055,7 +1062,7 @@ function sampev.onServerMessage(color, text)
 	end
 
 	local cooldown = text:match("You must wait (%d+) seconds? before selling another vest%.?")
-	if cooldown and autobind.AutoVest.timerCorrection then
+	if cooldown then
 		timers.Vest.last = localClock() - (timers.Vest.timer - 0.2) + (cooldown + 0.5)
 	end
 
@@ -1083,10 +1090,6 @@ function sampev.onServerMessage(color, text)
 		autoacceptertoggle = false
 	end
 
-	if text:match("You can't heal if you were recently shot, except within points, events, minigames, and paintball.") then
-		autoacceptertoggle = true
-	end
-
 	if text:find("Your hospital bill") and color == -8224086 then
 		lua_thread.create(function()
 			wait(0)
@@ -1107,117 +1110,12 @@ end
 
 function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
 	if senderID ~= 65535 and damage > 0 then
-		print(senderID, damage, weapon, Bodypart)
 		timers.Heal.last = localClock()  -- Start the heal timer
 	end
 end
 
 function sampev.onShowDialog(id, style, title, button1, button2, text)
-	if bmbool then
-		local bmItems = {
-			{weapon = 24, menuIndex = 6},
-			{weapon = 24, menuIndex = 7},
-			{weapon = 27, menuIndex = 8},
-			{weapon = 29, menuIndex = 9},
-			{weapon = 29, menuIndex = 10},
-			{weapon = 29, menuIndex = 11},
-			{weapon = 34, menuIndex = 12},
-			{weapon = 24, menuIndex = 13},
-			{weapon = 31, menuIndex = 14},
-			{weapon = 31, menuIndex = 15},
-			{weapon = 27, menuIndex = 16},
-			{weapon = 34, menuIndex = 17}
-		}
-		
-		if title:find('Black Market') then
-			if bmstate == 0 then
-				if (getCharArmour(ped) == 100 and getCharHealth(ped) - 5000000 == 100) or not autobind.BlackMarket[1] then
-					bmstate = 1
-					sampev.onShowDialog(id, style, title, button1, button2, text)
-					return false
-				end
-				sampSendDialogResponse(id, 1, 2, nil)
-				bmstate = 1
-				sendCommandWithTimer("/bm")
-				return false
-			end
-		
-			for i, item in ipairs(bmItems) do
-				if bmstate == i then
-					if hasCharGotWeapon(ped, item.weapon) or not autobind.BlackMarket[i + 1] then
-						bmstate = i + 1
-						sampev.onShowDialog(id, style, title, button1, button2, text)
-						return false
-					end
-					sampSendDialogResponse(id, 1, item.menuIndex, nil)
-					bmstate = i + 1
-					sendCommandWithTimer("/bm")
-					return false
-				end
-			end
-		
-			if bmstate == #bmItems + 1 then
-				bmbool = false
-				bmstate = 0
-				bmcmd = 0
-				sampev.onShowDialog(id, style, title, button1, button2, text)
-				return false
-			end
-		end
-	end
-
-	if lockerbool then
-		local lockerItems = {
-			{weapon = 24, menuIndex = 0, configIndex = 1},  -- Deagle
-			{weapon = 25, menuIndex = 1, configIndex = 2},  -- Shotgun
-			{weapon = 27, menuIndex = 2, configIndex = 3},  -- SPAS-12
-			{weapon = 29, menuIndex = 3, configIndex = 4},  -- MP5
-			{weapon = 31, menuIndex = 4, configIndex = 5},  -- M4
-			{weapon = 30, menuIndex = 5, configIndex = 6},  -- AK-47
-			{weapon = 17, menuIndex = 6, configIndex = 7},  -- Smoke Grenade
-			{weapon = 43, menuIndex = 7, configIndex = 8},  -- Camera
-			{weapon = 34, menuIndex = 8, configIndex = 9},  -- Sniper Rifle
-			{armor = true, menuIndex = 9, configIndex = 10},  -- Armor
-			{health = true, menuIndex = 10, configIndex = 11}  -- Health
-		}
-		
-		if title:find('LSPD Menu') or title:find('FBI Menu') or title:find('ARES Menu') then
-			sampSendDialogResponse(id, 1, 1, nil)
-			return false
-		end
-		
-		if title:find('LSPD Equipment') or title:find('FBI Weapons') or title:find('ARES Equipment') then
-			for i, item in ipairs(lockerItems) do
-				if lockerstate == i - 1 then
-					local shouldSkip = false
-					if item.weapon then
-						shouldSkip = hasCharGotWeapon(PLAYER_PED, item.weapon) or not autobind.FactionLocker[item.configIndex]
-					elseif item.armor then
-						shouldSkip = getCharArmour(PLAYER_PED) == 100 or not autobind.FactionLocker[item.configIndex]
-					elseif item.health then
-						shouldSkip = getCharHealth(ped) - 5000000 == 100 or not autobind.FactionLocker[item.configIndex]
-					end
-		
-					if shouldSkip then
-						lockerstate = i
-						sampev.onShowDialog(id, style, title, button1, button2, text)
-						return false
-					end
-		
-					sampSendDialogResponse(id, 1, item.menuIndex, nil)
-					lockerstate = i
-					sendCommandWithTimer("/locker")
-					return false
-				end
-			end
-		
-			-- If we've reached this point, we've gone through all items
-			lockerbool = false
-			lockerstate = 0
-			lockercmd = 0
-			return false
-		end
-	end
+	
 end
 
 function sampev.onTogglePlayerSpectating(state)
@@ -1228,26 +1126,15 @@ imgui.OnInitialize(function()
     imgui.GetIO().IniFilename = nil
     local smallIcons = {"PLUS", "MINUS"}
     local defaultIcons = {
-		"SHIELD_PLUS",
-		"POWER_OFF",
-		"FLOPPY_DISK",
-		"REPEAT",
-		"PERSON_BOOTH",
-		"ERASER",
-		"RETWEET",
-		"GEAR",
-		"CART_SHOPPING",
-		"PLUS",
-		"MINUS",
-		"KEYBOARD",
-		"KEYBOARD_DOWN",
+		"SHIELD_PLUS", "POWER_OFF", "FLOPPY_DISK", "REPEAT", "PERSON_BOOTH", "ERASER",
+		"RETWEET", "GEAR", "CART_SHOPPING", "KEYBOARD", "KEYBOARD_DOWN",
     }
     loadFontAwesome6Icons(smallIcons, 6, "solid")
     loadFontAwesome6Icons(defaultIcons, 12, "solid")
 
 	for i = 0, 311 do
 		if skinTexture[i] == nil then
-			skinTexture[i] = imgui.CreateTextureFromFile("moonloader/resource/skins/Skin_"..i..".png")
+			skinTexture[i] = imgui.CreateTextureFromFile(string.format("%s\\Skin_%d.png", getPath("skins"), i))
 		end
 	end
 
@@ -1259,10 +1146,10 @@ function()
 	local newPos, status = imgui.handleWindowDragging(autobind.Window.Pos, autobind.Window.Size, imgui.ImVec2(0.5, 0.5))
     if status and menu[0] then autobind.Window.Pos = newPos end
     imgui.SetNextWindowPos(autobind.Window.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-	imgui.SetNextWindowSize(autobind.Window.Size)
+	imgui.SetNextWindowSize(autobind.Window.Size, imgui.Cond.Always)
 	imgui.Begin(string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion), menu, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize)
 		local family = autobind.Settings.mode == "Family"
-		local faction = autobind.Settings.mode == "Factions"
+		local faction = autobind.Settings.mode == "Faction"
 
 		imgui.BeginChild("##1", imgui.ImVec2(85, 392), true)
 
@@ -1274,6 +1161,13 @@ function()
 				autobind.Settings.enable and imgui.ImVec4(0.15, 0.59, 0.18, 0.4) or imgui.ImVec4(1, 0.19, 0.19, 0.2),
 				imgui.ImVec2(75, 75)) then
 				autobind.Settings.enable = not autobind.Settings.enable
+				if autobind.Settings.enable then
+					registerChatCommands()
+				else
+					for _, command in pairs(commands) do
+						sampUnregisterChatCommand(command)
+					end
+				end
 			end
 			if imgui.IsItemHovered() then
 				imgui.SetTooltip('Toggles all functionalities')
@@ -1301,7 +1195,7 @@ function()
 				imgui.ImVec4(0.40, 0.12, 0.12, 1),
 				imgui.ImVec4(0.30, 0.08, 0.08, 1),
 				imgui.ImVec2(75, 75)) then
-				autobind = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, {{"AutoVest", "skins"}, {"AutoVest", "names"}})
+				autobind = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, {{"AutoVest", "skins"}, {"AutoVest", "names"}, "Keybinds"})
 			end
 			if imgui.IsItemHovered() then
 				imgui.SetTooltip('Reload configuration')
@@ -1390,9 +1284,12 @@ function()
 					end
 					imgui.SameLine()
 					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					if imgui.Checkbox('Capture (Turfs)', new.bool(autobind.Settings.captureTurf)) then
-						autobind.Settings.captureTurf = not autobind.Settings.captureTurf
-						if autobind.Settings.captureTurf then
+
+					local switchTurf = autobind.Settings.mode:lower() .. "Turf"
+					if imgui.Checkbox('Capture (Turfs)', new.bool(autobind.Settings[switchTurf])) then
+						autobind.Settings[switchTurf] = not autobind.Settings[switchTurf]
+
+						if switchTurf == "familyTurf" then
 							autobind.Settings.capturePoint = false
 						end
 					end
@@ -1400,12 +1297,32 @@ function()
 						imgui.SetTooltip('Capture (Turfs) will automatically type /capturf at signcheck time.')
 					end
 
-					-- Disable/Capture
-					if imgui.Checkbox('Disable after capturing', new.bool(autobind.Settings.disableAfterCapturing)) then
-						autobind.Settings.disableAfterCapturing = not autobind.Settings.disableAfterCapturing
+					if family then
+						-- Disable/Capture
+						if imgui.Checkbox('Disable after capturing', new.bool(autobind.Settings.disableAfterCapturing)) then
+							autobind.Settings.disableAfterCapturing = not autobind.Settings.disableAfterCapturing
+						end
+						if imgui.IsItemHovered() then
+							imgui.SetTooltip('Disable after capturing: prevents capture spam after the point/turf has been secured.')
+						end
+						imgui.SameLine()
+						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
+						if imgui.Checkbox('Capture (Points)', new.bool(autobind.Settings.capturePoint)) then
+							autobind.Settings.capturePoint = not autobind.Settings.capturePoint
+							if autobind.Settings.capturePoint then
+								autobind.Settings.familyTurf = false
+							end
+						end
+						if imgui.IsItemHovered() then
+							imgui.SetTooltip('Capture (Points) will automatically type /capturf at signcheck time.')
+						end
+					end
+
+					if imgui.Checkbox('Accept Repair', new.bool(autobind.AutoBind.autoRepair)) then
+						autobind.AutoBind.autoRepair = not autobind.AutoBind.autoRepair
 					end
 					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Disable after capturing: prevents capture spam after the point/turf has been secured.')
+						imgui.SetTooltip('Accept Repair will automatically accept repair requests.')
 					end
 
 					if faction then
@@ -1418,41 +1335,17 @@ function()
 							imgui.SetTooltip('Automatically types /badge after spawning from the hopsital.')
 						end
 					end
-					
-					if family then
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						if imgui.Checkbox('Capture (Points)', new.bool(autobind.Settings.capturePoint)) then
-							autobind.Settings.capturePoint = not autobind.Settings.capturePoint
-							if autobind.Settings.capturePoint then
-								autobind.Settings.captureTurf = false
-							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.SetTooltip('Capture (Points) will automatically type /capturf at signcheck time.')
-						end
-					end
-
-					-- Accept
-					if family then
-						if imgui.Checkbox('Accept Vest', new.bool(autoaccepter)) then
-							autoaccepter = not autoaccepter
-						end
-						if imgui.IsItemHovered() then
-							imgui.SetTooltip('Accept Vest will automatically accept vest requests.')
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					end
-					if imgui.Checkbox('Accept Repair', new.bool(autobind.AutoBind.autoRepair)) then
-						autobind.AutoBind.autoRepair = not autobind.AutoBind.autoRepair
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Accept Repair will automatically accept repair requests.')
-					end
 
 					-- Auto Vest
 					imgui.Text('Auto Vest:')
+					if imgui.Checkbox("Enable", new.bool(autobind.AutoVest.enable)) then
+						autobind.AutoVest.enable = not autobind.AutoVest.enable
+					end
+					if imgui.IsItemHovered() then
+						imgui.SetTooltip('Enable for automatic vesting.')
+					end
+					imgui.SameLine()
+					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
 					if imgui.Checkbox("Diamond Donator", new.bool(autobind.AutoVest.donor)) then
 						autobind.AutoVest.donor = not autobind.AutoVest.donor
 						timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
@@ -1460,45 +1353,52 @@ function()
 					if imgui.IsItemHovered() then
 						imgui.SetTooltip('Enable for Diamond Donators. Uses /guardnear does not have armor/paused checks.')
 					end
-					imgui.SameLine()
-					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					if imgui.Checkbox("Timer fix", new.bool(autobind.AutoVest.timerCorrection)) then
-						autobind.AutoVest.timerCorrection = not autobind.AutoVest.timerCorrection
+
+					-- Accept
+					if imgui.Checkbox('Auto Accept', new.bool(autoaccepter)) then
+						autoaccepter = not autoaccepter
 					end
 					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Automatically fixes the timer when the server wait message is shown.')
+						imgui.SetTooltip('Accept Vest will automatically accept vest requests.')
 					end
 
 					imgui.Text('Frisk:')
-					if imgui.Checkbox("Player Target", new.bool(autobind.Settings.Frisk.target)) then
+					if imgui.Checkbox("Targeting", new.bool(autobind.Settings.Frisk.target)) then
 						autobind.Settings.Frisk.target = not autobind.Settings.Frisk.target
+					end
+					if imgui.IsItemHovered() then
+						imgui.SetTooltip('Must be targeting a player to frisk. (Green Blip above the player)')
 					end
 					imgui.SameLine()
 					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					if imgui.Checkbox("Player Aim", new.bool(autobind.Settings.Frisk.aim)) then
-						autobind.Settings.Frisk.aim = not autobind.Settings.Frisk.aim
+					if imgui.Checkbox("Must Aim", new.bool(autobind.Settings.Frisk.mustAim)) then
+						autobind.Settings.Frisk.mustAim = not autobind.Settings.Frisk.mustAim
+					end
+					if imgui.IsItemHovered() then
+						imgui.SetTooltip('Must be aiming to frisk.')
 					end
 				imgui.EndChild()
 
 				imgui.SetCursorPos(imgui.ImVec2(340, 5))
 
-				imgui.BeginChild("##keybinds", imgui.ImVec2(155, 263), true)
-					keychange('Accept')
-					keychange('Offer')
-					keychange('BlackMarket')
-					if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
+				if imgui.BeginChild("##keybinds", imgui.ImVec2(155, 263), true) then
+					if imgui.Button(fa.CART_SHOPPING .. " BM Locker") then
 						bmmenu[0] = not bmmenu[0]
 					end
-					keychange('TakePills')
+					keyEditor('BlackMarket')
 					if faction then
-						keychange('FactionLocker')
 						if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
 							factionlockermenu[0] = not factionlockermenu[0]
 						end
+						keyEditor('FactionLocker')
 					end
-					keychange('BikeBind')
-					keychange('SprintBind')
-					keychange('Frisk')
+					keyEditor('Accept')
+					keyEditor('Offer')
+					keyEditor('TakePills')
+					keyEditor('BikeBind')
+					keyEditor('SprintBind')
+					keyEditor('Frisk')
+				end
 				imgui.EndChild()
 			end
 
@@ -1515,14 +1415,16 @@ function()
 					imgui.SameLine()
 					imgui.PopItemWidth()
 					if imgui.Button("Fetch") then
-						fetchSkinsFromURL()
+						fetchDataFromURL(autobind.AutoVest.skinsUrl, 'skins', function(decodedData)
+							autobind.AutoVest.skins = decodedData
+						end)
 					end
 					if imgui.IsItemHovered() then
 						imgui.SetTooltip("Fetches skins from provided URL")
 					end
 					imgui.SameLine()
-					if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetch)) then
-						autobind.AutoVest.autoFetch = not autobind.AutoVest.autoFetch
+					if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchSkins)) then
+						autobind.AutoVest.autoFetchSkins = not autobind.AutoVest.autoFetchSkins
 					end
 					if imgui.IsItemHovered() then
 						imgui.SetTooltip("Fetch skins at startup")
@@ -1534,10 +1436,6 @@ function()
 					local start = imgui.GetCursorPos()  -- Starting position
 				
 					for i, skinId in ipairs(autobind.AutoVest.skins) do
-						if skinTexture[skinId] == nil then
-							skinTexture[skinId] = imgui.CreateTextureFromFile("moonloader/resource/skins/Skin_"..skinId..".png")
-						end
-				
 						-- Calculate position
 						local column = (i - 1) % columns
 						local row = math.floor((i - 1) / columns)
@@ -1588,10 +1486,6 @@ function()
 					local start = imgui.GetCursorPos()  -- Starting position
 				
 					for i, skinId in ipairs(factions.skins) do
-						if skinTexture[skinId] == nil then
-							skinTexture[skinId] = imgui.CreateTextureFromFile("moonloader/resource/skins/Skin_"..skinId..".png")
-						end
-				
 						-- Calculate position
 						local column = (i - 1) % columns
 						local row = math.floor((i - 1) / columns)
@@ -1620,18 +1514,20 @@ function()
 				imgui.SameLine()
 				imgui.PopItemWidth()
 				if imgui.Button("Fetch") then
-					fetchNamesFromURL()
+					fetchDataFromURL(autobind.AutoVest.namesUrl, 'names', function(decodedData)
+						autobind.AutoVest.names = decodedData
+					end)
 				end
 				if imgui.IsItemHovered() then
 					imgui.SetTooltip("Fetches names from provided URL")
 				end
-				--[[imgui.SameLine()
-				if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetch)) then
-					autobind.AutoVest.autoFetch = not autobind.AutoVest.autoFetch
+				imgui.SameLine()
+				if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchNames)) then
+					autobind.AutoVest.autoFetchNames = not autobind.AutoVest.autoFetchNames
 				end
 				if imgui.IsItemHovered() then
 					imgui.SetTooltip("Fetch names at startup")
-				end]]
+				end
 
 				for key, value in pairs(autobind.AutoVest.names) do
 					local nick = new.char[128](value)
@@ -1669,57 +1565,8 @@ function()
 	imgui.End()
 end)
 
-function fetchSkinsFromURL()
-	downloadFiles({{url = autobind.AutoVest.skinsUrl, path = getFile('skins'), replace = true}}, function(result)
-		if result then
-			local file = io.open(getFile('skins'), "r")
-			if file then
-				local content = file:read("*all")
-				file:close()
-				
-				local success, decodedSkins = pcall(decodeJson, content)
-				if success and type(decodedSkins) == "table" then
-					autobind.AutoVest.skins = decodedSkins
-				else
-					print("Error decoding skins JSON or invalid data structure")
-				end
-			else
-				print("Error opening skins file")
-			end
-		end
-	end)
-end
-
-function fetchNamesFromURL()
-	downloadFiles({{url = autobind.AutoVest.namesUrl, path = getFile('names'), replace = true}}, function(result)
-		if result then
-			local file = io.open(getFile('names'), "r")
-			if file then
-				local content = file:read("*all")
-				file:close()
-				
-				local success, decodedNames = pcall(decodeJson, content)
-				if success and type(decodedNames) == "table" then
-					autobind.AutoVest.names = decodedNames
-				else
-					print("Error decoding names JSON or invalid data structure")
-				end
-			else
-				print("Error opening names file")
-			end
-		end
-	end)
-end
-
-local frameDrawer = imgui.OnFrame(function() return skinmenu[0] end,
+imgui.OnFrame(function() return skinmenu[0] end,
 function()
-	for i = 0, 311 do
-		if skinTexture[i] == nil then
-			skinTexture[i] = imgui.CreateTextureFromFile("moonloader/resource/skins/Skin_"..i..".png")
-		end
-	end
-end,
-function(self)
 	if not menu[0] then
 		skinmenu[0] = false
 	end
@@ -1767,14 +1614,44 @@ function(self)
 	imgui.End()
 end)
 
-local function createCheckbox(label, index, table, exclusiveGroups)
-    if imgui.Checkbox(label, new.bool(table[index])) then
-        table[index] = not table[index]
-        if table[index] and exclusiveGroups then
-            for _, group in ipairs(exclusiveGroups) do
-                for _, exclusiveIndex in ipairs(group) do
-                    if exclusiveIndex ~= index then
-                        table[exclusiveIndex] = false
+-- Helper function to check if a table contains a value
+local function tableContains(tbl, value)
+    for _, v in ipairs(tbl) do
+        if v == value then
+            return true
+        end
+    end
+    return false
+end
+
+local function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
+    local isChecked = tableContains(tbl, index)
+    if imgui.Checkbox(label, new.bool(isChecked)) then
+        if isChecked then
+            for i, v in ipairs(tbl) do
+                if v == index then
+                    table.remove(tbl, i)
+                    break
+                end
+            end
+        else
+            if #tbl < maxSelections then
+                table.insert(tbl, index)
+                if exclusiveGroups then
+                    for _, group in ipairs(exclusiveGroups) do
+                        if tableContains(group, index) then
+                            for _, exclusiveIndex in ipairs(group) do
+                                if exclusiveIndex ~= index then
+                                    for i, v in ipairs(tbl) do
+                                        if v == exclusiveIndex then
+                                            table.remove(tbl, i)
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                            break  -- Exit the loop once the relevant group is found and processed
+                        end
                     end
                 end
             end
@@ -1782,34 +1659,146 @@ local function createCheckbox(label, index, table, exclusiveGroups)
     end
 end
 
-local function createMenu(title, items, table, exclusiveGroups)
+local function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
     imgui.Text(title)
-    for _, item in ipairs(items) do
-        createCheckbox(item.label, item.index, table, exclusiveGroups)
+    for index, item in ipairs(items) do
+        createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
     end
 end
 
 imgui.OnFrame(function() return bmmenu[0] end,
 function()
-	if not menu[0] then
-		bmmenu[0] = false
-	end
-	imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x - (autobind.Window.Size.x * 0.635), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    imgui.Begin(string.format("BM Settings", script.this.name, script.this.version), bmmenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize)
-		createMenu('Black-Market Equipment:', blackMarketItems, autobind.BlackMarket, blackMarketExclusiveGroups)
+    if not menu[0] then
+        bmmenu[0] = false
+    end
+    imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x - (autobind.Window.Size.x * 0.635), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+    if imgui.Begin("BM Settings", bmmenu, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.AlwaysAutoResize) then
+        createMenu('Black-Market Equipment:', blackMarketItems, autobind.BlackMarket, blackMarketExclusiveGroups, 4)
+    end
     imgui.End()
 end)
 
 imgui.OnFrame(function() return factionlockermenu[0] end,
 function()
-	if not menu[0] then
-		factionlockermenu[0] = false
-	end
-	imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x + (autobind.Window.Size.x * 0.607), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    imgui.Begin(string.format("Faction Locker", script.this.name, script.this.version), factionlockermenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysAutoResize)
-		createMenu('Locker Equipment:', lockerMenuItems, autobind.FactionLocker)
-	imgui.End()
+    if not menu[0] then
+        factionlockermenu[0] = false
+    end
+    imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x + (autobind.Window.Size.x * 0.607), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+    if imgui.Begin("Faction Locker", factionlockermenu, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.AlwaysAutoResize) then
+        createMenu('Locker Equipment:', lockerMenuItems, autobind.FactionLocker, lockerExclusiveGroups, 4)
+    end
+    imgui.End()
 end)
+
+-- Key Editor
+function keyEditor(name)
+    if not autobind.Keybinds[name] then
+        print("Warning: autobind.Keybinds[" .. name .. "] is nil")
+        return
+    end
+
+    if not autobind.Keybinds[name].Keys then
+        autobind.Keybinds[name].Keys = {}
+    end
+
+    imgui.BeginGroup()
+
+    imgui.Text(name .. ":")
+
+	if imgui.Checkbox((autobind.Keybinds[name].Toggle and "Enabled" or "Disabled") .. "##" .. name, new.bool(autobind.Keybinds[name].Toggle)) then
+		autobind.Keybinds[name].Toggle = not autobind.Keybinds[name].Toggle
+	end
+
+    for i, key in ipairs(autobind.Keybinds[name].Keys) do
+        local buttonText = changekey[name] and changekey[name] == i and fa.KEYBOARD_DOWN or 
+            (key ~= 0 and vk.id_to_name(key) or fa.KEYBOARD)
+
+        if imgui.Button(buttonText .. '##' .. name .. i) then
+            changekey[name] = i
+            lua_thread.create(function()
+                while changekey[name] == i do 
+                    wait(0)
+                    local keydown, result = getDownKeys()
+                    if result then
+                        autobind.Keybinds[name].Keys[i] = keydown
+                        changekey[name] = false
+                    end
+                end
+            end)
+        end
+
+        -- Add a combo box for key type selection
+        imgui.SameLine()
+        imgui.PushItemWidth(75)
+        local keyTypes = {"KeyDown", "KeyPressed"}
+        
+        local currentType = autobind.Keybinds[name].Type
+        if type(currentType) == "table" then
+            currentType = currentType[i] or "KeyDown"
+        elseif type(currentType) ~= "string" then
+            currentType = "KeyDown"
+        end
+        
+        if imgui.BeginCombo("##KeyType"..name..i, currentType:gsub("Key", "")) then
+            for _, keyType in ipairs(keyTypes) do
+                if imgui.Selectable(keyType:gsub("Key", ""), currentType == keyType) then
+                    if type(autobind.Keybinds[name].Type) ~= "table" then
+                        autobind.Keybinds[name].Type = {autobind.Keybinds[name].Type or "KeyDown"}
+                    end
+                    autobind.Keybinds[name].Type[i] = keyType
+                end
+            end
+            imgui.EndCombo()
+        end
+        imgui.PopItemWidth()
+    end
+
+    if imgui.Button(fa.PLUS .. "##add" .. name) then
+        local nextIndex = #autobind.Keybinds[name].Keys + 1
+        if nextIndex <= 3 then
+            table.insert(autobind.Keybinds[name].Keys, 0)
+            if type(autobind.Keybinds[name].Type) ~= "table" then
+                autobind.Keybinds[name].Type = {autobind.Keybinds[name].Type or "KeyDown"}
+            end
+            table.insert(autobind.Keybinds[name].Type, "KeyDown")
+        end
+    end
+
+    imgui.SameLine()
+
+    if imgui.Button(fa.MINUS .. "##remove" .. name) then
+        if #autobind.Keybinds[name].Keys > 0 then
+            table.remove(autobind.Keybinds[name].Keys)
+            if type(autobind.Keybinds[name].Type) == "table" then
+                table.remove(autobind.Keybinds[name].Type)
+            end
+        end
+    end
+
+    imgui.EndGroup()
+end
+
+-- Fetch Data From URL
+function fetchDataFromURL(url, path, callback)
+	downloadFiles({{url = url, path = getFile(path), replace = true}}, function(result)
+		if result then
+			local file = io.open(getFile(path), "r")
+			if file then
+				local content = file:read("*all")
+				file:close()
+				
+				local success, decodedData = pcall(decodeJson, content)
+				if success and type(decodedData) == "table" then
+					callback(decodedData)
+				else
+					print("Error decoding JSON or invalid data structure "..content)
+				end
+			else
+				print("Error opening file: " .. path)
+			end
+		end
+	end)
+end
 
 -- Generate Skins Urls
 local function generateSkinsUrls()
@@ -1824,6 +1813,7 @@ local function generateSkinsUrls()
     return files
 end
 
+-- Download Skins
 function downloadSkins()
 	downloadFiles(generateSkinsUrls(), function(result)
         if result then 
@@ -2084,6 +2074,108 @@ function compareVersions(version1, version2)
     return 0
 end
 
+function isPlayerAiming(thirdperson, firstperson)
+	local id = mem.read(11989416, 2, false)
+	if thirdperson and (id == 5 or id == 53 or id == 55 or id == 65) then return true end
+	if firstperson and (id == 7 or id == 8 or id == 16 or id == 34 or id == 39 or id == 40 or id == 41 or id == 42 or id == 45 or id == 46 or id == 51 or id == 52) then return true end
+end
+
+function getDownKeys()
+    local keyslist = nil
+    local bool = false
+    for k, v in pairs(vk) do
+        if isKeyDown(v) then
+            keyslist = v
+            bool = true
+        end
+    end
+    return keyslist, bool
+end
+
+function keycheck(bind)
+    local r = true
+    if not bind.keys then
+        return false
+    end
+    for i = 1, #bind.keys do
+        r = r and PressType[bind.type[i]](bind.keys[i])
+    end
+    return r
+end
+
+function has_number(tab, val)
+    for index, value in ipairs(tab) do
+        if tonumber(value) == val then
+            return true
+        end
+    end
+    return false
+end
+
+function setGameKeyUpDown(key, value, delay)
+	setGameKeyState(key, value)
+	wait(delay)
+	setGameKeyState(key, 0)
+end
+
+function imgui.CustomButton(name, color, colorHovered, colorActive, size)
+    local clr = imgui.Col
+    imgui.PushStyleColor(clr.Button, color)
+    imgui.PushStyleColor(clr.ButtonHovered, colorHovered)
+    imgui.PushStyleColor(clr.ButtonActive, colorActive)
+    if not size then size = imgui.ImVec2(0, 0) end
+    local result = imgui.Button(name, size)
+    imgui.PopStyleColor(3)
+    return result
+end
+
+function findPlayer(target)
+    if not target then return nil end
+
+    local targetId = tonumber(target)
+    if targetId and sampIsPlayerConnected(targetId) then
+        return true, targetId, sampGetPlayerNickname(targetId)
+    end
+
+    for i = 0, sampGetMaxPlayerId(false) do
+        if sampIsPlayerConnected(i) then
+            local name = sampGetPlayerNickname(i)
+            if name:lower():find("^" .. target:lower()) then
+                return true, i, name
+            end
+        end
+    end
+
+    return nil
+end
+
+function sampGetPlayerIdByNickname(nick)
+	nick = tostring(nick)
+	local _, myid = sampGetPlayerIdByCharHandle(ped)
+	if nick == sampGetPlayerNickname(myid) then return myid end
+	for i = 0, sampGetMaxPlayerId(false) do
+		if sampIsPlayerConnected(i) and sampGetPlayerNickname(i) == nick then
+			return i
+		end
+	end
+end
+
+function hex2rgb(rgba)
+	local a = bit.band(bit.rshift(rgba, 24),	0xFF)
+	local r = bit.band(bit.rshift(rgba, 16),	0xFF)
+	local g = bit.band(bit.rshift(rgba, 8),		0xFF)
+	local b = bit.band(rgba, 0xFF)
+	return r / 255, g / 255, b / 255
+end
+
+function join_argb_int(a, r, g, b)
+	local argb = b * 255
+    argb = bit.bor(argb, bit.lshift(g * 255, 8))
+    argb = bit.bor(argb, bit.lshift(r * 255, 16))
+    argb = bit.bor(argb, bit.lshift(a, 24))
+    return argb
+end
+
 function calculateWindowSize(lines, padding)
     local totalHeight = 0
     local maxWidth = 0
@@ -2225,218 +2317,6 @@ function loadFontAwesome6Icons(iconList, fontSize, style)
     local glyphRanges = imgui.ImVector_ImWchar()
     builder:BuildRanges(glyphRanges)
     imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85(style), fontSize, config, glyphRanges[0].Data)
-end
-
-function sendCommandWithTimer(command)
-    local currentTime = localClock()
-    local shortInterval = 0.5
-    local longInterval = 2
-
-    local data = cmdData[command]
-    if not data then return end
-
-    data.counter = data.counter + 1
-    if data.counter ~= 3 then
-        if currentTime - data.lastTime >= shortInterval then
-            sampSendChat(command)
-            data.lastTime = currentTime
-        end
-    else
-        if currentTime - data.lastTime >= longInterval then
-            data.counter = 0
-            sampSendChat(command)
-            data.lastTime = currentTime
-        end
-    end
-end
-
-function keychange(name)
-    if not autobind.Keybinds[name] then
-        print("Warning: autobind.Keybinds[" .. name .. "] is nil")
-        return
-    end
-
-    if not autobind.Keybinds[name].Keys then
-        autobind.Keybinds[name].Keys = {}
-    end
-
-    imgui.BeginGroup()
-
-    imgui.Text(name .. ":")
-
-	if imgui.Checkbox((autobind.Keybinds[name].Toggle and "Enabled" or "Disabled") .. "##" .. name, new.bool(autobind.Keybinds[name].Toggle)) then
-		autobind.Keybinds[name].Toggle = not autobind.Keybinds[name].Toggle
-	end
-
-    for i, key in ipairs(autobind.Keybinds[name].Keys) do
-        local buttonText = changekey[name] and changekey[name] == i and fa.KEYBOARD_DOWN or 
-            (key ~= 0 and vk.id_to_name(key) or fa.KEYBOARD)
-
-        if imgui.Button(buttonText .. '##' .. name .. i) then
-            changekey[name] = i
-            lua_thread.create(function()
-                while changekey[name] == i do 
-                    wait(0)
-                    local keydown, result = getDownKeys()
-                    if result then
-                        autobind.Keybinds[name].Keys[i] = keydown
-                        changekey[name] = false
-                    end
-                end
-            end)
-        end
-
-        -- Add a combo box for key type selection
-        imgui.SameLine()
-        imgui.PushItemWidth(75)
-        local keyTypes = {"KeyDown", "KeyPressed"}
-        
-        local currentType = autobind.Keybinds[name].Type
-        if type(currentType) == "table" then
-            currentType = currentType[i] or "KeyDown"
-        elseif type(currentType) ~= "string" then
-            currentType = "KeyDown"
-        end
-        
-        if imgui.BeginCombo("##KeyType"..name..i, currentType:gsub("Key", "")) then
-            for _, keyType in ipairs(keyTypes) do
-                if imgui.Selectable(keyType:gsub("Key", ""), currentType == keyType) then
-                    if type(autobind.Keybinds[name].Type) ~= "table" then
-                        autobind.Keybinds[name].Type = {autobind.Keybinds[name].Type or "KeyDown"}
-                    end
-                    autobind.Keybinds[name].Type[i] = keyType
-                end
-            end
-            imgui.EndCombo()
-        end
-        imgui.PopItemWidth()
-    end
-
-    if imgui.Button(fa.PLUS .. "##add" .. name) then
-        local nextIndex = #autobind.Keybinds[name].Keys + 1
-        if nextIndex <= 3 then
-            table.insert(autobind.Keybinds[name].Keys, 0)
-            if type(autobind.Keybinds[name].Type) ~= "table" then
-                autobind.Keybinds[name].Type = {autobind.Keybinds[name].Type or "KeyDown"}
-            end
-            table.insert(autobind.Keybinds[name].Type, "KeyDown")
-        end
-    end
-
-    imgui.SameLine()
-
-    if imgui.Button(fa.MINUS .. "##remove" .. name) then
-        if #autobind.Keybinds[name].Keys > 0 then
-            table.remove(autobind.Keybinds[name].Keys)
-            if type(autobind.Keybinds[name].Type) == "table" then
-                table.remove(autobind.Keybinds[name].Type)
-            end
-        end
-    end
-
-    imgui.EndGroup()
-end
-
-function isPlayerAiming(thirdperson, firstperson)
-	local id = mem.read(11989416, 2, false)
-	if thirdperson and (id == 5 or id == 53 or id == 55 or id == 65) then return true end
-	if firstperson and (id == 7 or id == 8 or id == 16 or id == 34 or id == 39 or id == 40 or id == 41 or id == 42 or id == 45 or id == 46 or id == 51 or id == 52) then return true end
-end
-
-function getDownKeys()
-    local keyslist = nil
-    local bool = false
-    for k, v in pairs(vk) do
-        if isKeyDown(v) then
-            keyslist = v
-            bool = true
-        end
-    end
-    return keyslist, bool
-end
-
-function keycheck(bind)
-    local r = true
-    if not bind.keys then
-        return false
-    end
-    for i = 1, #bind.keys do
-        r = r and PressType[bind.type[i]](bind.keys[i])
-    end
-    return r
-end
-
-function has_number(tab, val)
-    for index, value in ipairs(tab) do
-        if tonumber(value) == val then
-            return true
-        end
-    end
-    return false
-end
-
-function setGameKeyUpDown(key, value, delay)
-	setGameKeyState(key, value)
-	wait(delay)
-	setGameKeyState(key, 0)
-end
-
-function imgui.CustomButton(name, color, colorHovered, colorActive, size)
-    local clr = imgui.Col
-    imgui.PushStyleColor(clr.Button, color)
-    imgui.PushStyleColor(clr.ButtonHovered, colorHovered)
-    imgui.PushStyleColor(clr.ButtonActive, colorActive)
-    if not size then size = imgui.ImVec2(0, 0) end
-    local result = imgui.Button(name, size)
-    imgui.PopStyleColor(3)
-    return result
-end
-
-function findPlayer(target)
-    if not target then return nil end
-
-    local targetId = tonumber(target)
-    if targetId and sampIsPlayerConnected(targetId) then
-        return true, targetId, sampGetPlayerNickname(targetId)
-    end
-
-    for i = 0, sampGetMaxPlayerId(false) do
-        if sampIsPlayerConnected(i) then
-            local name = sampGetPlayerNickname(i)
-            if name:lower():find("^" .. target:lower()) then
-                return true, i, name
-            end
-        end
-    end
-
-    return nil
-end
-
-function sampGetPlayerIdByNickname(nick)
-	nick = tostring(nick)
-	local _, myid = sampGetPlayerIdByCharHandle(ped)
-	if nick == sampGetPlayerNickname(myid) then return myid end
-	for i = 0, sampGetMaxPlayerId(false) do
-		if sampIsPlayerConnected(i) and sampGetPlayerNickname(i) == nick then
-			return i
-		end
-	end
-end
-
-function hex2rgb(rgba)
-	local a = bit.band(bit.rshift(rgba, 24),	0xFF)
-	local r = bit.band(bit.rshift(rgba, 16),	0xFF)
-	local g = bit.band(bit.rshift(rgba, 8),		0xFF)
-	local b = bit.band(rgba, 0xFF)
-	return r / 255, g / 255, b / 255
-end
-
-function join_argb_int(a, r, g, b)
-	local argb = b * 255
-    argb = bit.bor(argb, bit.lshift(g * 255, 8))
-    argb = bit.bor(argb, bit.lshift(r * 255, 16))
-    argb = bit.bor(argb, bit.lshift(a, 24))
-    return argb
 end
 
 function apply_custom_style()
