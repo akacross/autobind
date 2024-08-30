@@ -124,8 +124,7 @@ local threads = {
 	autovest = nil,
 	autoaccept = nil,
 	captureSpam = nil,
-	keybinds = nil,
-	--frequency = nil
+	keybinds = nil
 }
 
 -- Screen Resolution
@@ -200,16 +199,19 @@ local commands = {
 	repairnear = "repairnear",
 	sprintbind = "sprintbind",
 	bikebind = "bikebind",
-	find = "find",
-	tcap = "tcap",
+	find = "hfind",
+	tcap = "turfcap",
 	autovest = "autovest",
-	autoaccept = "av",
-	ddmode = "ddmode",
+	autoaccept = "autoaccept",
+	ddmode = "donormode",
 }
 
 -- Auto Find
-local autofind = false
-local cooldown_bool = false
+local autofind ={
+	enable = false,
+	playerName = "",
+	playerId = -1,
+}
 
 -- Capture Spam
 local captog = false
@@ -220,14 +222,16 @@ local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 -- Timers
 local timers = {
 	Vest = {timer = 0, last = 0},
-	Accept = {timer = 0.5, last = 0},
+	VestCD = {timer = 1.5, last = 0},
+	AcceptCD = {timer = 1.5, last = 0},
 	Heal = {timer = 12, last = 0},
 	Find = {timer = 19.5, last = 0},
+	Muted = {timer = 13, last = 0},
 	Binds = {timer = 1, last = {}}
 }
 
 -- Guard
-local guardTime = 12.8
+local guardTime = 13.5
 local ddguardTime = 6
 local isBodyguard = true
 
@@ -252,11 +256,14 @@ local factions = {
 }
 
 -- Menu Variables
-local menu = new.bool(false)
-local _menu = 1
-local skinmenu = new.bool(false)
-local bmmenu = new.bool(false)
-local factionlockermenu = new.bool(false)
+local menu = {
+	settings = new.bool(false),
+	pageId = 1,
+	skins = new.bool(false),
+	blackmarket = new.bool(false),
+	factionlocker = new.bool(false)
+}
+
 local changekey = {}
 
 -- Dragging Box
@@ -276,10 +283,10 @@ local skinEditor = {
 local specState = false
 
 -- Bike
-local bike = {[481] = true, [509] = true, [510] = true}
+local bikeIds = {[481] = true, [509] = true, [510] = true}
 
 -- Moto
-local moto = {
+local motoIds = {
 	[448] = true, [461] = true, [462] = true, [463] = true, [468] = true, [471] = true, 
 	[521] = true, [522] = true, [523] = true, [581] = true, [586] = true
 }
@@ -290,19 +297,6 @@ local invalidAnimsSet = {
     [1163] = true, [1164] = true, [1165] = true, [1166] = true, [1167] = true,
     [1069] = true, [1070] = true, [746] = true
 }
-
--- Flashing Zones
---[[local flashing = {turf = false, point = false}
-
--- Zone IDs
-local zoneIds = {
-	turf = {
-		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
-	},
-	point = {
-		30, 31, 38, 32, 36, 37, 34, 35, 39
-	}
-}]]
 
 -- Command Data
 local cmdData = {
@@ -319,8 +313,6 @@ local bmcmd = 0
 local lockerbool = false
 local lockerstate = 0
 local lockercmd = 0
-
---Your gang is already attempting to capture this turf.
 
 -- Black Market Equipment Menu
 local blackMarketItems = {
@@ -381,8 +373,8 @@ function main()
     while not isSampAvailable() do wait(100) end
 
 	sampRegisterChatCommand(scriptName, function()
-		_menu = 1
-		menu[0] = not menu[0]
+		menu.pageId = 1
+		menu.settings[0] = not menu.settings[0]
 	end)
 
 	if autobind.Settings.enable then
@@ -409,7 +401,7 @@ function main()
 		print("Threads failed to start: " .. table.concat(failedThreads, ", "))
 	end
 
-	while true do wait(100)
+	while true do wait(5)
 		resumeThreads()
 	end
 end
@@ -436,8 +428,10 @@ function getVisiblePlayers(maxDist, type)
         if peds ~= ped and distance < maxDist then
             local result, playerId = sampGetPlayerIdByCharHandle(peds)
             if result and not sampIsPlayerPaused(playerId) then
-				if (type == "armor" and sampGetPlayerArmor(playerId) < 49) or (type == "car" and not isCharInAnyCar(ped) and isCharInAnyCar(peds)) or (type == "all") then
-					table.insert(visiblePlayers, {playerId = playerId, distance = distance})
+				if sampGetPlayerNickname(playerId):find("_") then
+					if (type == "armor" and sampGetPlayerArmor(playerId) < 49) or (type == "car" and not isCharInAnyCar(ped) and isCharInAnyCar(peds)) or (type == "all") then
+						table.insert(visiblePlayers, {playerId = playerId, distance = distance})
+					end
 				end
             end
         end
@@ -460,6 +454,11 @@ function checkAdminDuty()
     local _, aduty = getSampfuncsGlobalVar("aduty")
     local _, HideMe = getSampfuncsGlobalVar("HideMe")
 	return aduty == 0 and (not specState or HideMe == 0)
+end
+
+function toggleBind(bind)
+	autobind.Keybinds[bind].Toggle = not autobind.Keybinds[bind].Toggle
+	formattedAddChatMessage(string.format("%s: %s", bind, autobind.Keybinds[bind].Toggle and '{008000}on' or '{FF0000}off'))
 end
 
 -- Auto Vest
@@ -499,6 +498,14 @@ local function vestModeConditions(playerId)
     return false
 end
 
+function checkMuted()
+	local currentTime = localClock()
+	if currentTime - timers.Muted.last < timers.Muted.timer then
+		return true
+	end
+	return false
+end
+
 -- Check and send vest
 function checkAndSendVest(prevest)
 	if not autobind.Settings.enable then
@@ -518,6 +525,14 @@ function checkAndSendVest(prevest)
 	end
 
     local currentTime = localClock()
+	if currentTime - timers.VestCD.last < timers.VestCD.timer then
+		return
+	end
+
+	if checkMuted() then
+		return "You have been muted for spamming. Please wait."
+	end
+
     if currentTime - timers.Vest.last < timers.Vest.timer then
         local timeLeft = math.ceil(timers.Vest.timer - (currentTime - timers.Vest.last))
         return string.format("You must wait %d seconds before sending vest.", timeLeft > 1 and timeLeft or 1)
@@ -527,12 +542,12 @@ function checkAndSendVest(prevest)
         if checkAnimationCondition(player.playerId) then
             if vestModeConditions(player.playerId) then
                 sampSendChat(autobind.AutoVest.donor and '/guardnear' or string.format("/guard %d 200", player.playerId))
-                timers.Vest.last = currentTime
+                timers.VestCD.last = currentTime
 				return
             end
         end
     end
-    return "No suitable player found to vest."
+	return "No suitable player found to vest."
 end
 
 -- Check and accept vest
@@ -541,9 +556,17 @@ function checkAndAcceptVest(autoaccept)
 		return "Autobind is disabled"
 	end
 
+	if not checkAdminDuty() then
+        return
+    end
+
 	local currentTime = localClock()
-	if currentTime - timers.Accept.last < timers.Accept.timer then
+	if currentTime - timers.AcceptCD.last < timers.AcceptCD.timer then
 		return
+	end
+
+	if checkMuted() then
+		return "You have been muted for spamming. Please wait."
 	end
 
 	if currentTime - timers.Heal.last < timers.Heal.timer then
@@ -556,12 +579,12 @@ function checkAndAcceptVest(autoaccept)
 			if autoaccept and autoacceptertoggle then
 				if sampGetPlayerNickname(player.playerId) == autoaccepternick then
 					sampSendChat("/accept bodyguard")
-					timers.Accept.last = currentTime
+					timers.AcceptCD.last = currentTime
 					return
 				end
 			end
 		end
-		return autoacceptertoggle and "You are not close enough." or "No one offered you bodyguard."
+		return autoacceptertoggle and string.format("You are not close enough to %s.", autoaccepternick:gsub("_", " ")) or "No one offered you bodyguard."
 	else
 		return "You are already at full armor."
 	end
@@ -625,24 +648,19 @@ local function createKeybindThread()
 	
 	local function bikeBind()
 		if isCharOnAnyBike(ped) then
-			local veh = storeCarCharIsInNoSave(ped)
-			if not isCarInAirProper(veh) then
-				lua_thread.create(function()
-					local bikeIds = {[481] = true, [509] = true, [510] = true}
-					local isBike = bikeIds[getCarModel(veh)]
-					setGameKeyUpDown(
-						isBike and gkeys.vehicle.ACCELERATE or gkeys.vehicle.STEERUP_STEERDOWN, 
-						isBike and 255 or -128, 
-						0
-					)
-				end)
-			end
-		end
+            local veh = storeCarCharIsInNoSave(ped)
+            if not isCarInAirProper(veh) then
+                if bikeIds[getCarModel(veh)] then
+                    setGameKeyUpDown(gkeys.vehicle.ACCELERATE, 255, 0)
+                elseif motoIds[getCarModel(veh)] then
+                    setGameKeyUpDown(gkeys.vehicle.STEERUP_STEERDOWN, -128, 0)
+                end
+            end
+        end
 	end
 	
 	local function sprintBind()
-		autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle
-		formattedAddChatMessage(string.format("Sprintbind: %s", autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'))
+		toggleBind("SprintBind")
 	end
 	
 	local function frisk()
@@ -685,7 +703,7 @@ local function createKeybindThread()
 					}
 			
 					if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
-						if activeCheck(true, true, true, true, true) and not menu[0] then
+						if activeCheck(true, true, true, true, true) and not menu.settings[0] then
 							if key == "BikeBind" or not timers.Binds.last[key] or (currentTime - timers.Binds.last[key]) >= timers.Binds.timer then
 								local success, error = pcall(keyFunctions[key])
 								if not success then
@@ -749,13 +767,11 @@ end
 
 -- Create threads
 function createThreads()
-	-- Create threads
 	createAutovestThread()
 	createAutoacceptThread()
 	createKeybindThread()
 	createCaptureSpamThread()
 
-	-- Check which threads have successfully started and which failed
 	local startedThreads = {}
 	local failedThreads = {}
 	for name, thread in pairs(threads) do
@@ -767,6 +783,11 @@ function createThreads()
 	end
 
 	return startedThreads, failedThreads
+end
+
+function toggleCaptureSpam()
+	captog = not captog
+	formattedAddChatMessage(captog and string.format("{FFFF00}Starting capture attempt... (type /%s to toggle)", commands.tcap) or "{FFFF00}Capture spam ended.")
 end
 
 -- Register chat commands
@@ -791,20 +812,22 @@ function registerChatCommands()
 		if autobind.Settings.enable then
 			lua_thread.create(function()
 				local function stopFinding()
-					autofind = false
-					formattedAddChatMessage("You are no longer finding anyone.")
+					autofind.enable = false
 				end
 	
-				local function startFinding(playerid, name)
-					target = playerid
-					autofind = true
-					formattedAddChatMessage(string.format("Finding: {00a2ff}%s{ffffff}. /%s again to toggle.", name, commands.find))
-					while autofind do
+				local function startFinding()
+					autofind.enable = true
+					formattedAddChatMessage(string.format("Finding: {00a2ff}%s{ffffff}. /%s again to toggle.", autofind.playerName, commands.find))
+					while autofind.enable do
 						local currentTime = localClock()
-						if sampIsPlayerConnected(target) then
-							if currentTime - timers.Find.last >= timers.Find.timer then
-								timers.Find.last = currentTime
-								sampSendChat("/find " .. target)
+						if sampIsPlayerConnected(autofind.playerId) then
+							if checkAdminDuty() then
+								if currentTime - timers.Find.last >= timers.Find.timer and not checkMuted() then
+									timers.Find.last = currentTime
+									sampSendChat("/find " .. autofind.playerId)
+								end
+							else
+								stopFinding()
 							end
 						else
 							stopFinding()
@@ -814,24 +837,34 @@ function registerChatCommands()
 					end
 				end
 	
-				if string.len(params) > 0 then
-					local result, playerid, name = findPlayer(params)
-					if result then
-						if not autofind then
-							startFinding(playerid, name)
+				if not checkMuted() then
+					if string.len(params) > 0 then
+						if checkAdminDuty() then
+							local result, playerid, name = findPlayer(params)
+							if result then
+								autofind.playerId = playerid
+								autofind.playerName = name
+								if not autofind.enable then
+									startFinding()
+								else
+									formattedAddChatMessage(string.format("Now finding: {00a2ff}%s{ffffff}.", name))
+								end
+							else
+								formattedAddChatMessage("Invalid player specified.")
+							end
 						else
-							target = playerid
-							formattedAddChatMessage(string.format("Now finding: {00a2ff}%s{ffffff}.", name))
+							sampSendChat(string.format("/find %s", params))
 						end
 					else
-						formattedAddChatMessage("Invalid player specified.")
+						if autofind.enable then
+							stopFinding()
+							formattedAddChatMessage("You are no longer finding anyone.")
+						else
+							formattedAddChatMessage(string.format('USAGE: /%s [playerid/partofname]', commands.find))
+						end
 					end
 				else
-					if autofind then
-						stopFinding()
-					else
-						formattedAddChatMessage(string.format('USAGE: /%s [playerid/partofname]', commands.find))
-					end
+					formattedAddChatMessage(string.format("You are muted, you cannot use the /%s command.", commands.find))
 				end
 			end)
 		end
@@ -839,22 +872,19 @@ function registerChatCommands()
 
 	sampRegisterChatCommand(commands.tcap, function()
 		if autobind.Settings.enable then
-			captog = not captog
-			formattedAddChatMessage(captog and "{FFFF00}Starting capture attempt... (type /tcap to toggle)" or "{FFFF00}Capture spam ended.")
+			toggleCaptureSpam()
 		end
 	end)
 
 	sampRegisterChatCommand(commands.sprintbind, function()
 		if autobind.Settings.enable then
-			autobind.Keybinds.SprintBind.Toggle = not autobind.Keybinds.SprintBind.Toggle
-			formattedAddChatMessage('Sprintbind: '..(autobind.Keybinds.SprintBind.Toggle and '{008000}on' or '{FF0000}off'))
+			toggleBind("SprintBind")
 		end
 	end)
 
 	sampRegisterChatCommand(commands.bikebind, function()
 		if autobind.Settings.enable then
-			autobind.Keybinds.BikeBind.Toggle = not autobind.Keybinds.BikeBind.Toggle
-			formattedAddChatMessage('Bikebind: '..(autobind.Keybinds.BikeBind.Toggle and '{008000}on' or '{FF0000}off'))
+			toggleBind("BikeBind")
 		end
 	end)
 
@@ -885,58 +915,31 @@ end
 -- Save config on script terminate
 function onScriptTerminate(scr, quitGame)
 	if scr == script.this then
+		-- Save config
 		if autobind.Settings.autoSave then
 			saveConfigWithErrorHandling(getFile("settings"), autobind)
+		end
+
+		-- Unregister chat commands
+		for _, command in pairs(commands) do
+			sampUnregisterChatCommand(command)
 		end
 	end
 end
 
 function onWindowMessage(msg, wparam, lparam)
-	if wparam == VK_ESCAPE and (menu[0] or skinmenu[0] or bmmenu[0] or factionlockermenu[0]) then
+	if wparam == VK_ESCAPE and (menu.settings[0]) then
         if msg == wm.WM_KEYDOWN then
             consumeWindowMessage(true, false)
         end
         if msg == wm.WM_KEYUP then
-            menu[0] = false
-			skinmenu[0] = false
-			bmmenu[0] = false
-			factionlockermenu[0] = false
+            menu.settings[0] = false
         end
     end
 end
 
---[[function sampev.onGangZoneFlash(zoneId, color)
-	lua_thread.create(function()
-		wait(0)
-		for k, v in pairs(zoneIds) do
-			if v.point[k] == zoneId then
-				flashing.point = true
-				break
-			elseif v.turf[k] == zoneId then
-				flashing.turf = true
-				break
-			end
-		end
-	end)
-end
-
-function sampev.onGangZoneStopFlash(zoneId)
-	lua_thread.create(function()
-		wait(0)
-		for k, v in pairs(zoneIds) do
-			if v.point[k] == zoneId then
-				flashing.point = false
-				break
-			elseif v.turf[k] == zoneId then
-				flashing.turf = false
-				break
-			end
-		end
-	end)
-end]]
-
---You have been muted automatically for spamming. Please wait 10 seconds and try again.
-
+--Your gang is already attempting to capture this turf.
+--
 function sampev.onServerMessage(color, text)
 	local mode, motdMsg = text:match("([Family|LSPD|SASD|FBI|ARES].+) MOTD: (.+)")
 	if mode and motdMsg and color == -65366 then
@@ -994,10 +997,10 @@ function sampev.onServerMessage(color, text)
 		end
 	end
 
-	local div, rank, nickname, message = text:match("%*%*%s*(%a*%s*)%s*(%a+)%s+([%a%s]+):%s*(.*)%s*%*%*")
+	--[[local div, rank, nickname, message = text:match("%*%*%s*(%a*%s*)%s*(%a+)%s+([%a%s]+):%s*(.*)%s*%*%*")
 	if rank and nickname and message and color == -1920073729 then
-		--print("Rank: " .. rank, "Nickname: " .. nickname, "Message: " .. message)
-	end
+		print("Rank: " .. rank, "Nickname: " .. nickname, "Message: " .. message)
+	end]]
 
 	local freq, playerName, message = text:match("%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)")
 	if freq and playerName and message then
@@ -1006,6 +1009,7 @@ function sampev.onServerMessage(color, text)
 		return {color, string.format("** %s Radio ** {%s}%s (%d): {FFFFFF}%s", autobind.Settings.mode, playerColor, playerName, playerId, message)}
 	end
 
+	-- Auto Capture
 	if text:find("The time is now") and color == -86 then
 		lua_thread.create(function()
 			wait(0)
@@ -1025,6 +1029,65 @@ function sampev.onServerMessage(color, text)
 		end)
 	end
 
+	-- Vest/Accept
+	local function resetVestTimer(additionalTime)
+		timers.Vest.last = localClock() - (timers.Vest.timer - 0.2) + (additionalTime or 0)
+	end
+	
+	if text:find("That player isn't near you.") and color == -1347440726 then
+		resetVestTimer(2)
+	end
+	
+	if text:find("You can't /guard while aiming.") and color == -1347440726 then
+		resetVestTimer(0.5)
+	end
+	
+	local cooldown = text:match("You must wait (%d+) seconds? before selling another vest%.?")
+	if cooldown then
+		resetVestTimer(tonumber(cooldown) + 0.5)
+	end
+
+	local nickname = text:match("%* You offered protection to (.+) for %$200%.")
+	if nickname then
+		-- = nickname -- Overlay
+		timers.Vest.last = localClock()
+	end
+
+	if text:find("You are not a bodyguard.") and color ==  -1347440726 then
+		isBodyguard = false
+	end
+
+	if text:match("%* You are now a Bodyguard, type /help to see your new commands.") then
+		isBodyguard = true
+	end
+
+	if text:find("You are not near the person offering you guard!") and color == -1347440726 then
+		formattedAddChatMessage(string.format("You are not close enough to %s.", autoaccepternick:gsub("_", " ")))
+		return false
+	end
+
+	local nickname = text:match("%* Bodyguard (.+) wants to protect you for %$200, type %/accept bodyguard to accept%.")
+	if nickname and color == 869072810 then
+		autoaccepternick = nickname:gsub("%s+", "_") -- Overlay
+		autoacceptertoggle = true
+	end
+
+	local nickname = text:match("%* You accepted the protection for %$200 from (.+)%.")
+	if nickname then
+		autoaccepternick = ""
+		autoacceptertoggle = false
+	end
+
+	-- Find
+	if text:match("You have already searched for someone - wait a little.") then
+		timers.Find.last = localClock() - (timers.Find.timer - 0.2) + 5
+	end
+
+	if text:match("You can't find that person as they're hidden in one of their turfs.") then
+		timers.Find.last = localClock() - (timers.Find.timer - 0.2) + 5
+	end
+
+	-- Accept Repair
 	if text:find("wants to repair your car for $1") then
 		lua_thread.create(function()
 			wait(0)
@@ -1034,11 +1097,26 @@ function sampev.onServerMessage(color, text)
 		end)
 	end
 
-	if text:match("You are not a Sapphire or Diamond Donator!") or
+	-- Auto Badge
+	if text:find("Your hospital bill") and color == -8224086 then
+		lua_thread.create(function()
+			wait(0)
+			if autobind.AutoBind.autoBadge then
+				sampSendChat("/badge")
+			end
+		end)
+	end
+
+	-- Muted
+	if text:match("You have been muted automatically for spamming. Please wait 10 seconds and try again.") then
+		timers.Muted.last = localClock()
+	end
+
+	--[[if text:match("You are not a Sapphire or Diamond Donator!") or
 	   text:match("You are not at the black market!") or
 	   text:match("You can't do this right now.") or
 	   text:match("You have been muted automatically for spamming. Please wait 10 seconds and try again.") or
-	   text:match("You are muted from submitting commands right now.") and bmbool == 1 then
+	   text:match("You are muted from submitting commands right now.") and bmbool then
         bmbool = false
 		bmstate = 0
         bmcmd = 0
@@ -1051,54 +1129,9 @@ function sampev.onServerMessage(color, text)
         lockerbool = false
 		lockerstate = 0
         lockercmd = 0
-    end
+    end]]
 
-	if text:find("That player isn't near you.") and color == -1347440726 then
-		timers.Vest.last = localClock() - (timers.Vest.timer - 0.2)
-	end
-
-	if text:find("You can't /guard while aiming.") and color == -1347440726 then
-		timers.Vest.last = localClock() - (timers.Vest.timer - 0.2)
-	end
-
-	local cooldown = text:match("You must wait (%d+) seconds? before selling another vest%.?")
-	if cooldown then
-		timers.Vest.last = localClock() - (timers.Vest.timer - 0.2) + (cooldown + 0.5)
-	end
-
-	if text:find("That player isn't near you.") and color ==  -1347440726 then
-		timers.Vest.last = localClock() - (timers.Vest.timer - 0.2) + 3
-	end
-
-	if text:find("You are not a bodyguard.") and color ==  -1347440726 then
-		isBodyguard = false
-	end
-
-	if text:match("* You are now a Bodyguard, type /help to see your new commands.") then
-		isBodyguard = true
-	end
-
-	local nickname = text:match("%* Bodyguard (.+) wants to protect you for %$200, type %/accept bodyguard to accept%.")
-	if nickname and color == 869072810 then
-		autoaccepternick = nickname:gsub("%s+", "_")
-		autoacceptertoggle = true
-	end
-
-	local nickname = text:match("%* You accepted the protection for %$200 from (.+)%.")
-	if nickname then
-		autoaccepternick = ""
-		autoacceptertoggle = false
-	end
-
-	if text:find("Your hospital bill") and color == -8224086 then
-		lua_thread.create(function()
-			wait(0)
-			if autobind.AutoBind.autoBadge then
-				sampSendChat("/badge")
-			end
-		end)
-	end
-
+	-- Help
 	if text:match("*** OTHER *** /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp") then
 		lua_thread.create(function()
 			wait(0)
@@ -1141,18 +1174,15 @@ imgui.OnInitialize(function()
     apply_custom_style()
 end)
 
-imgui.OnFrame(function() return menu[0] end,
+imgui.OnFrame(function() return menu.settings[0] end,
 function()
+	local title = string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion)
 	local newPos, status = imgui.handleWindowDragging(autobind.Window.Pos, autobind.Window.Size, imgui.ImVec2(0.5, 0.5))
-    if status and menu[0] then autobind.Window.Pos = newPos end
+    if status and menu.settings[0] then autobind.Window.Pos = newPos end
     imgui.SetNextWindowPos(autobind.Window.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
 	imgui.SetNextWindowSize(autobind.Window.Size, imgui.Cond.Always)
-	imgui.Begin(string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion), menu, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize)
-		local family = autobind.Settings.mode == "Family"
-		local faction = autobind.Settings.mode == "Faction"
-
-		imgui.BeginChild("##1", imgui.ImVec2(85, 392), true)
-
+	if imgui.Begin(title, menu.settings, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+		if imgui.BeginChild("##1", imgui.ImVec2(85, 392), true) then
 			imgui.SetCursorPos(imgui.ImVec2(5, 5))
 			if imgui.CustomButton(
 				fa.POWER_OFF,
@@ -1228,56 +1258,56 @@ function()
 			if imgui.IsItemHovered() then
 				imgui.SetTooltip('Check for update [Disabled]')
 			end
-
+		end
 		imgui.EndChild()
 
 		imgui.SetCursorPos(imgui.ImVec2(92, 28))
 
-		imgui.BeginChild("##2", imgui.ImVec2(500, 88), true)
+		if imgui.BeginChild("##2", imgui.ImVec2(500, 88), true) then
 
 			imgui.SetCursorPos(imgui.ImVec2(5,5))
 			if imgui.CustomButton(string.format("%s  Settings", fa("GEAR")),
-				_menu == 1 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+				menu.pageId == 1 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
 				imgui.ImVec4(0.40, 0.12, 0.12, 1),
 				imgui.ImVec4(0.30, 0.08, 0.08, 1),
 				imgui.ImVec2(165, 75)) then
-				_menu = 1
+				menu.pageId = 1
 			end
 
 			imgui.SetCursorPos(imgui.ImVec2(170, 5))
 
 			if imgui.CustomButton(string.format("%s  %s Skins", fa("PERSON_BOOTH"), autobind.Settings.mode),
-				_menu == 2 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+				menu.pageId == 2 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
 				imgui.ImVec4(0.40, 0.12, 0.12, 1),
 				imgui.ImVec4(0.30, 0.08, 0.08, 1),
 				imgui.ImVec2(165, 75)) then
 
-				_menu = 2
+				menu.pageId = 2
 			end
 
 			imgui.SetCursorPos(imgui.ImVec2(335, 5))
 
 			if imgui.CustomButton(string.format("%s  Names", fa("PERSON_BOOTH")),
-				_menu == 3 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
+				menu.pageId == 3 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
 				imgui.ImVec4(0.40, 0.12, 0.12, 1),
 				imgui.ImVec4(0.30, 0.08, 0.08, 1),
 				imgui.ImVec2(165, 75)) then
 
-				_menu = 3
+				menu.pageId = 3
 			end
+		end
 		imgui.EndChild()
 
 		imgui.SetCursorPos(imgui.ImVec2(92, 112))
 
-		imgui.BeginChild("##3", imgui.ImVec2(500, 276), true)
-			if _menu == 1 then
+		if imgui.BeginChild("##3", imgui.ImVec2(500, 276), true) then
+			if menu.pageId == 1 then
 				imgui.SetCursorPos(imgui.ImVec2(5, 10))
 				imgui.BeginChild("##config", imgui.ImVec2(330, 255), false)
 					-- Autobind/Capture
 					imgui.Text('Auto Bind:')
 					if imgui.Checkbox('Capture Spam', new.bool(captog)) then
-						captog = not captog
-						formattedAddChatMessage(captog and "{FFFF00}Starting capture attempt... (type /tcap to toggle)" or "{FFFF00}Capture spam ended.")
+						toggleCaptureSpam()
 					end
 					if imgui.IsItemHovered() then
 						imgui.SetTooltip('Capture spam will automatically type /capturf every 1.5 seconds.')
@@ -1297,7 +1327,7 @@ function()
 						imgui.SetTooltip('Capture (Turfs) will automatically type /capturf at signcheck time.')
 					end
 
-					if family then
+					if autobind.Settings.mode == "Family" then
 						-- Disable/Capture
 						if imgui.Checkbox('Disable after capturing', new.bool(autobind.Settings.disableAfterCapturing)) then
 							autobind.Settings.disableAfterCapturing = not autobind.Settings.disableAfterCapturing
@@ -1325,7 +1355,7 @@ function()
 						imgui.SetTooltip('Accept Repair will automatically accept repair requests.')
 					end
 
-					if faction then
+					if autobind.Settings.mode == "Faction" then
 						imgui.SameLine()
 						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
 						if imgui.Checkbox('Auto Badge', new.bool(autobind.AutoBind.autoBadge)) then 
@@ -1380,15 +1410,14 @@ function()
 				imgui.EndChild()
 
 				imgui.SetCursorPos(imgui.ImVec2(340, 5))
-
 				if imgui.BeginChild("##keybinds", imgui.ImVec2(155, 263), true) then
 					if imgui.Button(fa.CART_SHOPPING .. " BM Locker") then
-						bmmenu[0] = not bmmenu[0]
+						menu.blackmarket[0] = not menu.blackmarket[0]
 					end
 					keyEditor('BlackMarket')
-					if faction then
+					if autobind.Settings.mode == "Faction" then
 						if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
-							factionlockermenu[0] = not factionlockermenu[0]
+							menu.factionlocker[0] = not menu.factionlocker[0]
 						end
 						keyEditor('FactionLocker')
 					end
@@ -1402,8 +1431,8 @@ function()
 				imgui.EndChild()
 			end
 
-			if _menu == 2 then
-				if family then
+			if menu.pageId == 2 then
+				if autobind.Settings.mode == "Family" then
 					imgui.PushItemWidth(334)
 					local url = new.char[128](autobind.AutoVest.skinsUrl)
 					if imgui.InputText('##skins_url', url, sizeof(url)) then
@@ -1471,11 +1500,10 @@ function()
 					imgui.SetCursorPos(imgui.ImVec2(posX, posY))
 					if imgui.Button(u8"Add\nSkin", imageSize) then
 						autobind.AutoVest.skins[#autobind.AutoVest.skins + 1] = 0
-						skinmenu[0] = not skinmenu[0]
+						menu.skins[0] = not menu.skins[0]
 						skinEditor.selected = #autobind.AutoVest.skins
 					end
-				end
-				if faction then
+				elseif autobind.Settings.mode == "Faction" then
 					if imgui.Checkbox("Use Skins", new.bool(autobind.AutoVest.useSkins)) then
 						autobind.AutoVest.useSkins = not autobind.AutoVest.useSkins
 					end
@@ -1502,7 +1530,7 @@ function()
 				end
 			end
 
-			if _menu == 3 then
+			if menu.pageId == 3 then
 				imgui.PushItemWidth(334)
 				local url = new.char[128](autobind.AutoVest.namesUrl)
 				if imgui.InputText('##names_url', url, sizeof(url)) then
@@ -1543,11 +1571,11 @@ function()
 					autobind.AutoVest.names[#autobind.AutoVest.names + 1] = "Name"
 				end
 			end
+		end
 		imgui.EndChild()
 		imgui.SetCursorPos(imgui.ImVec2(92, 384))
 
-		imgui.BeginChild("##5", imgui.ImVec2(500, 36), true)
-
+		if imgui.BeginChild("##5", imgui.ImVec2(500, 36), true) then
 			if imgui.Checkbox('Autosave', new.bool(autobind.Settings.autoSave)) then
 				autobind.Settings.autoSave = not autobind.Settings.autoSave
 			end
@@ -1561,18 +1589,17 @@ function()
 			if imgui.IsItemHovered() then
 				imgui.SetTooltip('With this enabled, the vest will be applied to everyone on the server')
 			end
+		end
 		imgui.EndChild()
+	end
 	imgui.End()
 end)
 
-imgui.OnFrame(function() return skinmenu[0] end,
+imgui.OnFrame(function() return menu.settings[0] and menu.skins[0] end,
 function()
-	if not menu[0] then
-		skinmenu[0] = false
-	end
 	imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x, autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
 	imgui.SetNextWindowSize(imgui.ImVec2(505, 390), imgui.Cond.FirstUseEver)
-	imgui.Begin(u8("Skin Menu"), skinmenu, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoScrollbar)
+	imgui.Begin(u8("Skin Menu"), menu.skins, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoScrollbar)
 		imgui.SetWindowFocus()
 		if skinEditor.page == 15 then max = 299 else max = 41+(21*(skinEditor.page-2)) end
 		for i = 21+(21*(skinEditor.page-2)), max do
@@ -1585,7 +1612,7 @@ function()
 			end
 			if imgui.ImageButton(skinTexture[i], imgui.ImVec2(55, 100)) then
 				autobind.AutoVest.skins[skinEditor.selected] = i
-				skinmenu[0] = false
+				menu.skins[0] = false
 			end
 			if imgui.IsItemHovered() then imgui.SetTooltip("Skin "..i.."") end
 		end
@@ -1666,25 +1693,19 @@ local function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
     end
 end
 
-imgui.OnFrame(function() return bmmenu[0] end,
+imgui.OnFrame(function() return menu.settings[0] and menu.blackmarket[0] end,
 function()
-    if not menu[0] then
-        bmmenu[0] = false
-    end
     imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x - (autobind.Window.Size.x * 0.635), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    if imgui.Begin("BM Settings", bmmenu, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.AlwaysAutoResize) then
+    if imgui.Begin("BM Settings", menu.blackmarket, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.AlwaysAutoResize) then
         createMenu('Black-Market Equipment:', blackMarketItems, autobind.BlackMarket, blackMarketExclusiveGroups, 4)
     end
     imgui.End()
 end)
 
-imgui.OnFrame(function() return factionlockermenu[0] end,
+imgui.OnFrame(function() return menu.settings[0] and menu.factionlocker[0] end,
 function()
-    if not menu[0] then
-        factionlockermenu[0] = false
-    end
     imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x + (autobind.Window.Size.x * 0.607), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    if imgui.Begin("Faction Locker", factionlockermenu, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.AlwaysAutoResize) then
+    if imgui.Begin("Faction Locker", menu.factionlocker, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.AlwaysAutoResize) then
         createMenu('Locker Equipment:', lockerMenuItems, autobind.FactionLocker, lockerExclusiveGroups, 4)
     end
     imgui.End()
@@ -2026,19 +2047,6 @@ function joinARGB(a, r, g, b, normalized)
     return bit.bor(bit.lshift(clamp(a), 24), bit.lshift(clamp(r), 16), bit.lshift(clamp(g), 8), clamp(b))
 end
 
-function comparePivots(pivot1, pivot2)
-    return pivot1.x == pivot2.x and pivot1.y == pivot2.y
-end
-
-function findPivotIndex(pivot)
-    for i, p in ipairs(pivots) do
-        if comparePivots(p.value, pivot) then
-            return p.name .. " " .. p.icon
-        end
-    end
-    return "Unknown"
-end
-
 function formattedAddChatMessage(string)
     sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} %s", firstToUpper(scriptName), string), -1)
 end
@@ -2072,12 +2080,6 @@ function compareVersions(version1, version2)
         end
     end
     return 0
-end
-
-function isPlayerAiming(thirdperson, firstperson)
-	local id = mem.read(11989416, 2, false)
-	if thirdperson and (id == 5 or id == 53 or id == 55 or id == 65) then return true end
-	if firstperson and (id == 7 or id == 8 or id == 16 or id == 34 or id == 39 or id == 40 or id == 41 or id == 42 or id == 45 or id == 46 or id == 51 or id == 52) then return true end
 end
 
 function getDownKeys()
@@ -2158,22 +2160,6 @@ function sampGetPlayerIdByNickname(nick)
 			return i
 		end
 	end
-end
-
-function hex2rgb(rgba)
-	local a = bit.band(bit.rshift(rgba, 24),	0xFF)
-	local r = bit.band(bit.rshift(rgba, 16),	0xFF)
-	local g = bit.band(bit.rshift(rgba, 8),		0xFF)
-	local b = bit.band(rgba, 0xFF)
-	return r / 255, g / 255, b / 255
-end
-
-function join_argb_int(a, r, g, b)
-	local argb = b * 255
-    argb = bit.bor(argb, bit.lshift(g * 255, 8))
-    argb = bit.bor(argb, bit.lshift(r * 255, 16))
-    argb = bit.bor(argb, bit.lshift(a, 24))
-    return argb
 end
 
 function calculateWindowSize(lines, padding)
