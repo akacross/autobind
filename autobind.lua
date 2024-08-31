@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.11")
+script_version("1.8.12")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -472,6 +472,7 @@ local function checkAnimationCondition(playerId)
     return not (invalidAnimsSet[pAnimId] or pAnimId2 == 746 or isButtonPressed(h, gkeys.player.LOCKTARGET))
 end
 
+-- Vest Mode Conditions
 local function vestModeConditions(playerId)
     if autobind.AutoVest.everyone then
         return true
@@ -498,12 +499,17 @@ local function vestModeConditions(playerId)
     return false
 end
 
+-- Check muted
 function checkMuted()
-	local currentTime = localClock()
-	if currentTime - timers.Muted.last < timers.Muted.timer then
+	if localClock() - timers.Muted.last < timers.Muted.timer then
 		return true
 	end
 	return false
+end
+
+-- Reset timer
+function resetTimer(additionalTime, timer)
+	timer.last = localClock() - (timer.timer - 0.2) + (additionalTime or 0)
 end
 
 -- Check and send vest
@@ -586,7 +592,7 @@ function checkAndAcceptVest(autoaccept)
 		end
 		return autoacceptertoggle and string.format("You are not close enough to %s.", autoaccepternick:gsub("_", " ")) or "No one offered you bodyguard."
 	else
-		return "You are already at full armor."
+		return "You are already have a vest."
 	end
 end
 
@@ -664,7 +670,7 @@ local function createKeybindThread()
 	end
 	
 	local function frisk()
-		if checkAdminDuty() then
+		if checkAdminDuty() and not checkMuted() then
 			local targeting, _ = getCharPlayerIsTargeting(h)
 			for _, player in ipairs(getVisiblePlayers(5, "all")) do
 				if (isButtonPressed(h, gkeys.player.LOCKTARGET) and autobind.Settings.Frisk.mustAim) or not autobind.Settings.Frisk.mustAim then
@@ -678,7 +684,9 @@ local function createKeybindThread()
 	end
 	
 	local function takePills()
-		sampSendChat("/takepills")
+		if checkAdminDuty() and not checkMuted() then
+			sampSendChat("/takepills")
+		end
 	end
 
     threads.keybinds = coroutine.create(function()
@@ -726,7 +734,7 @@ local function createCaptureSpamThread()
 
     local function captureSpam()
         local currentTime = localClock()
-        if captog and currentTime - lastCaptureTime >= captureInterval then
+        if currentTime - lastCaptureTime >= captureInterval then
             sampSendChat("/capturf")
             lastCaptureTime = currentTime
         end
@@ -734,7 +742,8 @@ local function createCaptureSpamThread()
 
     threads.captureSpam = coroutine.create(function()
         while true do
-            if autobind.Settings.enable then
+            if autobind.Settings.enable and captog and not checkMuted() and checkAdminDuty() then
+				print("Capturing spam")
                 local status, err = pcall(captureSpam)
                 if not status then
                     print("Error in capture spam thread: " .. err)
@@ -800,7 +809,7 @@ function registerChatCommands()
 	end)
 
 	sampRegisterChatCommand(commands.repairnear, function()
-		if autobind.Settings.enable then
+		if autobind.Settings.enable and not checkMuted() and checkAdminDuty() then
 			for _, player in ipairs(getVisiblePlayers(5, "car")) do
 				sampSendChat(string.format("/repair %d 1", player.playerId))
 				break
@@ -824,7 +833,7 @@ function registerChatCommands()
 							if checkAdminDuty() then
 								if currentTime - timers.Find.last >= timers.Find.timer and not checkMuted() then
 									timers.Find.last = currentTime
-									sampSendChat("/find " .. autofind.playerId)
+									sampSendChat(string.format("/find %d", autofind.playerId))
 								end
 							else
 								stopFinding()
@@ -1013,38 +1022,36 @@ function sampev.onServerMessage(color, text)
 	if text:find("The time is now") and color == -86 then
 		lua_thread.create(function()
 			wait(0)
-			local mode = autobind.Settings.mode
-			if (autobind.Settings.factionTurf and mode == "Faction") or (autobind.Settings.familyTurf and mode == "Family") then
-				sampSendChat("/capturf")
-				if autobind.Settings.disableAfterCapturing and mode == "Family" then
-					autobind.Settings.familyTurf = false
+			if autobind.Settings.enable and not checkMuted() and checkAdminDuty() then
+				local mode = autobind.Settings.mode
+				if (autobind.Settings.factionTurf and mode == "Faction") or (autobind.Settings.familyTurf and mode == "Family") then
+					sampSendChat("/capturf")
+					if autobind.Settings.disableAfterCapturing and mode == "Family" then
+						autobind.Settings.familyTurf = false
+					end
 				end
-			end
-			if autobind.Settings.capturePoint and mode == "Family" then
-				sampSendChat("/capture")
-				if autobind.Settings.disableAfterCapturing then
-					autobind.Settings.capturePoint = false
+				if autobind.Settings.capturePoint and mode == "Family" then
+					sampSendChat("/capture")
+					if autobind.Settings.disableAfterCapturing then
+						autobind.Settings.capturePoint = false
+					end
 				end
 			end
 		end)
 	end
 
 	-- Vest/Accept
-	local function resetVestTimer(additionalTime)
-		timers.Vest.last = localClock() - (timers.Vest.timer - 0.2) + (additionalTime or 0)
-	end
-	
 	if text:find("That player isn't near you.") and color == -1347440726 then
-		resetVestTimer(2)
+		resetTimer(2, timers.Vest)
 	end
 	
 	if text:find("You can't /guard while aiming.") and color == -1347440726 then
-		resetVestTimer(0.5)
+		resetTimer(0.5, timers.Vest)
 	end
 	
 	local cooldown = text:match("You must wait (%d+) seconds? before selling another vest%.?")
 	if cooldown then
-		resetVestTimer(tonumber(cooldown) + 0.5)
+		resetTimer(tonumber(cooldown) + 0.5, timers.Vest)
 	end
 
 	local nickname = text:match("%* You offered protection to (.+) for %$200%.")
@@ -1080,19 +1087,21 @@ function sampev.onServerMessage(color, text)
 
 	-- Find
 	if text:match("You have already searched for someone - wait a little.") then
-		timers.Find.last = localClock() - (timers.Find.timer - 0.2) + 5
+		resetTimer(5, timers.Find)
 	end
 
 	if text:match("You can't find that person as they're hidden in one of their turfs.") then
-		timers.Find.last = localClock() - (timers.Find.timer - 0.2) + 5
+		resetTimer(5, timers.Find)
 	end
 
 	-- Accept Repair
 	if text:find("wants to repair your car for $1") then
 		lua_thread.create(function()
 			wait(0)
-			if autobind.AutoBind.autoRepair then
-				sampSendChat("/accept repair")
+			if autobind.Settings.enable and not checkMuted() and checkAdminDuty() then
+				if autobind.AutoBind.autoRepair then
+					sampSendChat("/accept repair")
+				end
 			end
 		end)
 	end
@@ -1101,8 +1110,10 @@ function sampev.onServerMessage(color, text)
 	if text:find("Your hospital bill") and color == -8224086 then
 		lua_thread.create(function()
 			wait(0)
-			if autobind.AutoBind.autoBadge then
-				sampSendChat("/badge")
+			if autobind.Settings.enable and not checkMuted() and checkAdminDuty() then
+				if autobind.AutoBind.autoBadge then
+					sampSendChat("/badge")
+				end
 			end
 		end)
 	end
