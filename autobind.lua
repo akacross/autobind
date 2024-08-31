@@ -240,9 +240,12 @@ local currentFamilyFreq = 0
 local currentFactionFreq = 0
 
 -- Auto Accept
-local autoaccepter = false
-local autoacceptertoggle = false
-local autoaccepternick = ""
+local accepter = {
+	enable = false,
+	received = false,
+	playerName = "",
+	playerId = -1
+}
 
 -- Factions
 local factions = {
@@ -582,15 +585,15 @@ function checkAndAcceptVest(autoaccept)
 
 	if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
 		for _, player in ipairs(getVisiblePlayers(4, "all")) do
-			if autoaccept and autoacceptertoggle then
-				if sampGetPlayerNickname(player.playerId) == autoaccepternick then
+			if autoaccept and accepter.received then
+				if sampGetPlayerNickname(player.playerId) == accepter.playerName then
 					sampSendChat("/accept bodyguard")
 					timers.AcceptCD.last = currentTime
 					return
 				end
 			end
 		end
-		return autoacceptertoggle and string.format("You are not close enough to %s.", autoaccepternick:gsub("_", " ")) or "No one offered you bodyguard."
+		return accepter.received and string.format("You are not close enough to %s.", accepter.playerName:gsub("_", " ")) or "No one offered you bodyguard."
 	else
 		return "You are already have a vest."
 	end
@@ -614,7 +617,7 @@ end
 local function createAutoacceptThread()
 	threads.autoaccept = coroutine.create(function()
 		while true do
-			local success, message = pcall(checkAndAcceptVest, autoaccepter)
+			local success, message = pcall(checkAndAcceptVest, accepter.enable)
 			if not success then
 				print("Error in checkAndAcceptVest: " .. tostring(message))
 			end
@@ -906,8 +909,8 @@ function registerChatCommands()
 
 	sampRegisterChatCommand(commands.autoaccept, function()
 		if autobind.Settings.enable then
-			autoaccepter = not autoaccepter
-			formattedAddChatMessage(string.format("Auto Accept is now %s.", autoaccepter and 'enabled' or 'disabled'))
+			accepter.enable = not accepter.enable
+			formattedAddChatMessage(string.format("Auto Accept is now %s.", accepter.enable and 'enabled' or 'disabled'))
 		end
 	end)
 
@@ -972,9 +975,9 @@ function sampev.onServerMessage(color, text)
 		elseif mode:match("[LSPD|SASD|FBI|ARES]") then
 			autobind.Settings.mode = "Faction"
 			saveConfigWithErrorHandling(getFile("settings"), autobind)
-			if autoaccepter then
+			if accepter.enable then
 				formattedAddChatMessage(string.format("Auto Accept is now disabled. because you are now in Faction Mode."))
-				autoaccepter = false
+				accepter.enable = false
 			end
 
 			local freqType, freq = motdMsg:match("[/|%s*]%s*([RL FREQ:|FREQ:].-)%s*(-?%d+)")
@@ -1069,20 +1072,27 @@ function sampev.onServerMessage(color, text)
 	end
 
 	if text:find("You are not near the person offering you guard!") and color == -1347440726 then
-		formattedAddChatMessage(string.format("You are not close enough to %s.", autoaccepternick:gsub("_", " ")))
+		formattedAddChatMessage(string.format("You are not close enough to %s.", accepter.playerName:gsub("_", " ")))
 		return false
 	end
 
 	local nickname = text:match("%* Bodyguard (.+) wants to protect you for %$200, type %/accept bodyguard to accept%.")
 	if nickname and color == 869072810 then
-		autoaccepternick = nickname:gsub("%s+", "_") -- Overlay
-		autoacceptertoggle = true
+		accepter.playerName = nickname:gsub("%s+", "_") -- Overlay
+		accepter.playerId = sampGetPlayerIdByNickname(accepter.playerName)
+		accepter.received = true
 	end
 
 	local nickname = text:match("%* You accepted the protection for %$200 from (.+)%.")
 	if nickname then
-		autoaccepternick = ""
-		autoacceptertoggle = false
+		accepter.playerName = ""
+		accepter.playerId = -1
+		accepter.received = false
+	end
+
+	if text:match("You are not a Diamond Donator!") then
+		timers.Vest.timer = guardTime
+		autobind.AutoVest.donor = false
 	end
 
 	-- Find
@@ -1396,8 +1406,8 @@ function()
 					end
 
 					-- Accept
-					if imgui.Checkbox('Auto Accept', new.bool(autoaccepter)) then
-						autoaccepter = not autoaccepter
+					if imgui.Checkbox('Auto Accept', new.bool(accepter.enable)) then
+						accepter.enable = not accepter.enable
 					end
 					if imgui.IsItemHovered() then
 						imgui.SetTooltip('Accept Vest will automatically accept vest requests.')
