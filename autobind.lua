@@ -127,6 +127,12 @@ local threads = {
 	keybinds = nil
 }
 
+-- Key Press Type
+local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
+
+-- Spec State
+local specState = false
+
 -- Screen Resolution
 local resX, resY = getScreenResolution()
 
@@ -206,19 +212,6 @@ local commands = {
 	ddmode = "donormode",
 }
 
--- Auto Find
-local autofind ={
-	enable = false,
-	playerName = "",
-	playerId = -1,
-}
-
--- Capture Spam
-local captog = false
-
--- Key Press Type
-local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
-
 -- Timers
 local timers = {
 	Vest = {timer = 0, last = 0},
@@ -247,6 +240,13 @@ local accepter = {
 	playerId = -1
 }
 
+-- Auto Find
+local autofind ={
+	enable = false,
+	playerName = "",
+	playerId = -1
+}
+
 -- Factions
 local factions = {
 	skins = {
@@ -257,6 +257,9 @@ local factions = {
 		-14269954, -7500289, -14911565, -3368653
 	}
 }
+
+-- Capture Spam
+local captureSpam = false
 
 -- Menu Variables
 local menu = {
@@ -282,9 +285,6 @@ local skinEditor = {
 	page = 1
 }
 
--- Spec State
-local specState = false
-
 -- Bike
 local bikeIds = {[481] = true, [509] = true, [510] = true}
 
@@ -299,12 +299,6 @@ local invalidAnimsSet = {
     [1158] = true, [1159] = true, [1160] = true, [1161] = true, [1162] = true,
     [1163] = true, [1164] = true, [1165] = true, [1166] = true, [1167] = true,
     [1069] = true, [1070] = true, [746] = true
-}
-
--- Command Data
-local cmdData = {
-    ["/bm"] = {counter = 0, lastTime = 0},
-    ["/locker"] = {counter = 0, lastTime = 0}
 }
 
 -- Black Market Variables
@@ -593,7 +587,7 @@ function checkAndAcceptVest(autoaccept)
 				end
 			end
 		end
-		return accepter.received and string.format("You are not close enough to %s.", accepter.playerName:gsub("_", " ")) or "No one offered you bodyguard."
+		return accepter.received and string.format("You are not close enough to %s (%d)", accepter.playerName:gsub("_", " "), accepter.playerId) or "No one offered you bodyguard."
 	else
 		return "You are already have a vest."
 	end
@@ -745,7 +739,7 @@ local function createCaptureSpamThread()
 
     threads.captureSpam = coroutine.create(function()
         while true do
-            if autobind.Settings.enable and captog and not checkMuted() and checkAdminDuty() then
+            if autobind.Settings.enable and captureSpam and not checkMuted() and checkAdminDuty() then
 				print("Capturing spam")
                 local status, err = pcall(captureSpam)
                 if not status then
@@ -798,8 +792,8 @@ function createThreads()
 end
 
 function toggleCaptureSpam()
-	captog = not captog
-	formattedAddChatMessage(captog and string.format("{FFFF00}Starting capture attempt... (type /%s to toggle)", commands.tcap) or "{FFFF00}Capture spam ended.")
+	captureSpam = not captureSpam
+	formattedAddChatMessage(captureSpam and string.format("{FFFF00}Starting capture attempt... (type /%s to toggle)", commands.tcap) or "{FFFF00}Capture spam ended.")
 end
 
 -- Register chat commands
@@ -1327,7 +1321,7 @@ function()
 				imgui.BeginChild("##config", imgui.ImVec2(330, 255), false)
 					-- Autobind/Capture
 					imgui.Text('Auto Bind:')
-					if imgui.Checkbox('Capture Spam', new.bool(captog)) then
+					if imgui.Checkbox('Capture Spam', new.bool(captureSpam)) then
 						toggleCaptureSpam()
 					end
 					if imgui.IsItemHovered() then
