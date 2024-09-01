@@ -206,7 +206,7 @@ local commands = {
 	sprintbind = "sprintbind",
 	bikebind = "bikebind",
 	find = "hfind",
-	tcap = "turfcap",
+	tcap = "capspam",
 	autovest = "autovest",
 	autoaccept = "autoaccept",
 	ddmode = "donormode",
@@ -225,7 +225,7 @@ local timers = {
 
 -- Guard
 local guardTime = 13.5
-local ddguardTime = 6
+local ddguardTime = 6.5
 local isBodyguard = true
 
 -- Frequency
@@ -504,6 +504,14 @@ function checkMuted()
 	return false
 end
 
+-- Heal timer
+function checkHeal()
+	if localClock() - timers.Heal.last < timers.Heal.timer then
+		return true
+	end
+	return false
+end
+
 -- Reset timer
 function resetTimer(additionalTime, timer)
 	timer.last = localClock() - (timer.timer - 0.2) + (additionalTime or 0)
@@ -572,7 +580,7 @@ function checkAndAcceptVest(autoaccept)
 		return "You have been muted for spamming. Please wait."
 	end
 
-	if currentTime - timers.Heal.last < timers.Heal.timer then
+	if checkHeal() then
 		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
 		return string.format("You must wait %d seconds before healing.", timeLeft > 1 and timeLeft or 1)
 	end
@@ -729,7 +737,7 @@ local function createCaptureSpamThread()
     local lastCaptureTime = 0
     local captureInterval = 1.5
 
-    local function captureSpam()
+    local function createCaptureSpam()
         local currentTime = localClock()
         if currentTime - lastCaptureTime >= captureInterval then
             sampSendChat("/capturf")
@@ -741,7 +749,7 @@ local function createCaptureSpamThread()
         while true do
             if autobind.Settings.enable and captureSpam and not checkMuted() and checkAdminDuty() then
 				print("Capturing spam")
-                local status, err = pcall(captureSpam)
+                local status, err = pcall(createCaptureSpam)
                 if not status then
                     print("Error in capture spam thread: " .. err)
                 end
@@ -792,8 +800,10 @@ function createThreads()
 end
 
 function toggleCaptureSpam()
-	captureSpam = not captureSpam
-	formattedAddChatMessage(captureSpam and string.format("{FFFF00}Starting capture attempt... (type /%s to toggle)", commands.tcap) or "{FFFF00}Capture spam ended.")
+	if checkAdminDuty() then
+		captureSpam = not captureSpam
+		formattedAddChatMessage(captureSpam and string.format("{FFFF00}Starting capture attempt... (type /%s to toggle)", commands.tcap) or "{FFFF00}Capture spam ended.")
+	end
 end
 
 -- Register chat commands
