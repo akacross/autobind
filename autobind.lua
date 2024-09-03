@@ -186,6 +186,7 @@ local autobind_defaultSettings = {
 		Pos = {x = resX / 2, y = resY / 2}
 	},
 	BlackMarket = {
+		Pos = {x = resX / 5, y = resY / 2},
         Kit1 = {1, 9, 13},
         Kit2 = {1, 9, 12},
         Kit3 = {1, 9, 4}
@@ -276,13 +277,16 @@ local menu = {
 	factionlocker = new.bool(false)
 }
 
+-- Change Key
 local changekey = {}
 
--- Dragging Box
-local selectedbox = false
+-- Calculate Size
 local size = {
     {x = 0, y = 0}
 }
+
+-- Currently Dragging
+local currentlyDragging = nil
 
 -- Skin Editor
 local skinTexture = {}
@@ -1359,12 +1363,10 @@ end
 
 imgui.OnInitialize(function()
     imgui.GetIO().IniFilename = nil
-    local smallIcons = {"PLUS", "MINUS"}
     local defaultIcons = {
 		"SHIELD_PLUS", "POWER_OFF", "FLOPPY_DISK", "REPEAT", "PERSON_BOOTH", "ERASER",
-		"RETWEET", "GEAR", "CART_SHOPPING", "KEYBOARD", "KEYBOARD_DOWN",
+		"RETWEET", "GEAR", "CART_SHOPPING", "KEYBOARD", "KEYBOARD_DOWN", "LINK",
     }
-    loadFontAwesome6Icons(smallIcons, 6, "solid")
     loadFontAwesome6Icons(defaultIcons, 12, "solid")
 
 	for i = 0, 311 do
@@ -1380,9 +1382,8 @@ local function createRow(label, tooltip, setting, toggleFunction, sameLine)
     if imgui.Checkbox(label, new.bool(setting)) then
         toggleFunction()
     end
-    if imgui.IsItemHovered() then
-        imgui.CustomTooltip(tooltip)
-    end
+    imgui.CustomTooltip(tooltip)
+
     if sameLine then
         imgui.SameLine()
         imgui.SetCursorPosX(imgui.GetWindowWidth() / 2.0)
@@ -1395,19 +1396,14 @@ function()
 	if not isSampAvailable() then return end
 
 	local title = string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion)
-	local newPos, status = imgui.handleWindowDragging(autobind.Window.Pos, imgui.ImVec2(600, 428), imgui.ImVec2(0.5, 0.5))
+	local newPos, status = imgui.handleWindowDragging("Settings", autobind.Window.Pos, imgui.ImVec2(600, 428), imgui.ImVec2(0.5, 0.5))
     if status and menu.settings[0] then autobind.Window.Pos = newPos end
     imgui.SetNextWindowPos(autobind.Window.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-	imgui.SetNextWindowSize(imgui.ImVec2(600, 428), imgui.Cond.Always)
-	if imgui.Begin(title, menu.settings, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
-		if imgui.BeginChild("##1", imgui.ImVec2(85, 392), false) then
-			imgui.SetCursorPos(imgui.ImVec2(0, 0))
-			if imgui.CustomButton(
-				fa.POWER_OFF,
-				autobind.Settings.enable and imgui.ImVec4(0.15, 0.59, 0.18, 0.7) or imgui.ImVec4(1, 0.19, 0.19, 0.5),
-				autobind.Settings.enable and imgui.ImVec4(0.15, 0.59, 0.18, 0.5) or imgui.ImVec4(1, 0.19, 0.19, 0.3),
-				autobind.Settings.enable and imgui.ImVec4(0.15, 0.59, 0.18, 0.4) or imgui.ImVec4(1, 0.19, 0.19, 0.2),
-				imgui.ImVec2(75, 75)) then
+	imgui.SetNextWindowSize(imgui.ImVec2(588, 415), imgui.Cond.Always)
+	if imgui.Begin(title, menu.settings, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollbar) then
+		-- Define button properties for the first child
+		local buttons1 = {
+			{icon = fa.POWER_OFF, tooltip = string.format('%s Toggles all functionalities. (%s%s{FFFFFF})', fa.POWER_OFF, autobind.Settings.enable and '{00FF00}' or '{FF0000}', autobind.Settings.enable and 'ON' or 'OFF'), action = function()
 				autobind.Settings.enable = not autobind.Settings.enable
 				if autobind.Settings.enable then
 					registerChatCommands()
@@ -1416,112 +1412,60 @@ function()
 						sampUnregisterChatCommand(command)
 					end
 				end
-			end
-			if imgui.IsItemHovered() then
-				imgui.CustomTooltip('Toggles all functionalities')
-			end
-
-			imgui.SetCursorPos(imgui.ImVec2(0, 76))
-
-			if imgui.CustomButton(
-				fa.FLOPPY_DISK,
-				imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
-				imgui.ImVec4(0.40, 0.12, 0.12, 1),
-				imgui.ImVec4(0.30, 0.08, 0.08, 1),
-				imgui.ImVec2(75, 75)) then
+			end, color = function() return autobind.Settings.enable and imgui.ImVec4(0.15, 0.59, 0.18, 0.7) or imgui.ImVec4(1, 0.19, 0.19, 0.5) end},
+			{icon = fa.FLOPPY_DISK, tooltip = 'Save configuration', action = function()
 				saveConfigWithErrorHandling(getFile("settings"), autobind)
-			end
-			if imgui.IsItemHovered() then
-				imgui.CustomTooltip('Save configuration')
-			end
-
-			imgui.SetCursorPos(imgui.ImVec2(0, 152))
-
-			if imgui.CustomButton(
-				fa.REPEAT,
-				imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
-				imgui.ImVec4(0.40, 0.12, 0.12, 1),
-				imgui.ImVec4(0.30, 0.08, 0.08, 1),
-				imgui.ImVec2(75, 75)) then
-
+			end},
+			{icon = fa.REPEAT, tooltip = 'Reload configuration', action = function()
 				loadConfigs()
-			end
-			if imgui.IsItemHovered() then
-				imgui.CustomTooltip('Reload configuration')
-			end
-
-			imgui.SetCursorPos(imgui.ImVec2(0, 228))
-
-			if imgui.CustomButton(
-				fa.ERASER,
-				imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
-				imgui.ImVec4(0.40, 0.12, 0.12, 1),
-				imgui.ImVec4(0.30, 0.08, 0.08, 1),
-				imgui.ImVec2(75, 75)) then
+			end},
+			{icon = fa.ERASER, tooltip = 'Load default configuration', action = function()
 				ensureDefaults(autobind, autobind_defaultSettings, true, {{"Settings", "mode"}, {"Settings", "freq"}})
-			end
-			if imgui.IsItemHovered() then
-				imgui.CustomTooltip('Load default configuration')
-			end
-
-			imgui.SetCursorPos(imgui.ImVec2(0, 304))
-
-			if imgui.CustomButton(
-				fa.RETWEET .. ' Update',
-				imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
-				imgui.ImVec4(0.40, 0.12, 0.12, 1),
-				imgui.ImVec4(0.30, 0.08, 0.08, 1),
-				imgui.ImVec2(75, 75)) then
+			end},
+			{icon = fa.RETWEET .. ' Update', tooltip = 'Check for update [Disabled]', action = function()
 				-- do something?
-			end
-			if imgui.IsItemHovered() then
-				imgui.CustomTooltip('Check for update [Disabled]')
+			end}
+		}
+
+		-- Define button properties for the second child
+		local buttons2 = {
+			{icon = fa("GEAR"), label = "Settings", pageId = 1, tooltip = "Open Settings"},
+			{icon = fa("PERSON_BOOTH"), label = autobind.Settings.mode .. " Skins", pageId = 2, tooltip = "Open Skins"},
+			{icon = fa("PERSON_BOOTH"), label = "Names", pageId = 3, tooltip = "Open Names"}
+		}
+
+		-- First child
+		if imgui.BeginChild("##1", imgui.ImVec2(85, 392), false) then
+			for i, button in ipairs(buttons1) do
+				imgui.SetCursorPos(imgui.ImVec2(0, (i - 1) * 76))
+				if imgui.CustomButton(button.icon, button.color and button.color() or imgui.ImVec4(0.16, 0.16, 0.16, 0.9), imgui.ImVec4(0.40, 0.12, 0.12, 1), imgui.ImVec4(0.30, 0.08, 0.08, 1), imgui.ImVec2(75, 75)) then
+					button.action()
+				end
+				imgui.CustomTooltip(button.tooltip)
 			end
 		end
 		imgui.EndChild()
 
 		imgui.SetCursorPos(imgui.ImVec2(85, 28))
 
+		-- Second child
 		if imgui.BeginChild("##2", imgui.ImVec2(500, 88), false) then
-
-			imgui.SetCursorPos(imgui.ImVec2(0, 0))
-			if imgui.CustomButton(string.format("%s  Settings", fa("GEAR")),
-				menu.pageId == 1 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
-				imgui.ImVec4(0.40, 0.12, 0.12, 1),
-				imgui.ImVec4(0.30, 0.08, 0.08, 1),
-				imgui.ImVec2(165, 75)) then
-				menu.pageId = 1
-			end
-
-			imgui.SetCursorPos(imgui.ImVec2(165, 0))
-
-			if imgui.CustomButton(string.format("%s  %s Skins", fa("PERSON_BOOTH"), autobind.Settings.mode),
-				menu.pageId == 2 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
-				imgui.ImVec4(0.40, 0.12, 0.12, 1),
-				imgui.ImVec4(0.30, 0.08, 0.08, 1),
-				imgui.ImVec2(165, 75)) then
-
-				menu.pageId = 2
-			end
-
-			imgui.SetCursorPos(imgui.ImVec2(330, 0))
-
-			if imgui.CustomButton(string.format("%s  Names", fa("PERSON_BOOTH")),
-				menu.pageId == 3 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
-				imgui.ImVec4(0.40, 0.12, 0.12, 1),
-				imgui.ImVec4(0.30, 0.08, 0.08, 1),
-				imgui.ImVec2(165, 75)) then
-
-				menu.pageId = 3
+			for i, button in ipairs(buttons2) do
+				imgui.SetCursorPos(imgui.ImVec2((i - 1) * 165, 0))
+				if imgui.CustomButton(string.format("%s  %s", button.icon, button.label), menu.pageId == button.pageId and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9), imgui.ImVec4(0.40, 0.12, 0.12, 1), imgui.ImVec4(0.30, 0.08, 0.08, 1), imgui.ImVec2(165, 75)) then
+					menu.pageId = button.pageId
+				end
+				if menu.pageId ~= i then
+					imgui.CustomTooltip(button.tooltip)
+				end
 			end
 		end
 		imgui.EndChild()
 
-		imgui.SetCursorPos(imgui.ImVec2(85, 100))
-
+		imgui.SetCursorPos(imgui.ImVec2(85, 110))
 		if imgui.BeginChild("##3", imgui.ImVec2(500, 276), false) then
 			if menu.pageId == 1 then
-				imgui.SetCursorPos(imgui.ImVec2(10, 10))
+				imgui.SetCursorPos(imgui.ImVec2(10, 1))
 				imgui.BeginChild("##config", imgui.ImVec2(300, 255), false)
 					-- Autobind/Capture
 					imgui.Text('Auto Bind:')
@@ -1586,16 +1530,16 @@ function()
 					end, false)
 				imgui.EndChild()
 
-				imgui.SetCursorPos(imgui.ImVec2(300, 10))
-				if imgui.BeginChild("##keybinds", imgui.ImVec2(200, 263), false) then
+				imgui.SetCursorPos(imgui.ImVec2(300, 1))
+				if imgui.BeginChild("##keybinds", imgui.ImVec2(197, 263), false) then
 					-- Define the key editor table
 					local keyEditors = {
 						{label = "Accept", key = "Accept"},
 						{label = "Offer", key = "Offer"},
-						{label = "Take Pills", key = "TakePills"},
+						{label = "Take-Pills", key = "TakePills"},
 						{label = "Frisk", key = "Frisk"},
-						{label = "Bike Bind", key = "BikeBind"},
-						{label = "Sprint Bind", key = "SprintBind"}
+						{label = "Bike-Bind", key = "BikeBind"},
+						{label = "Sprint-Bind", key = "SprintBind"}
 					}
 
 					-- Use the key editor table to call keyEditor for each entry
@@ -1607,182 +1551,171 @@ function()
 			end
 
 			if menu.pageId == 2 then
-				if autobind.Settings.mode == "Family" then
-					imgui.PushItemWidth(334)
-					local url = new.char[128](autobind.AutoVest.skinsUrl)
-					if imgui.InputText('##skins_url', url, sizeof(url)) then
-						autobind.AutoVest.skinsUrl = u8:decode(str(url))
-					end
-					if imgui.IsItemHovered() then
-						imgui.CustomTooltip("URL to fetch skins from, must be a JSON array of skin IDs")
-					end
-					imgui.SameLine()
-					imgui.PopItemWidth()
-					if imgui.Button("Fetch") then
-						fetchDataFromURL(autobind.AutoVest.skinsUrl, 'skins', function(decodedData)
-							autobind.AutoVest.skins = decodedData
-						end)
-					end
-					if imgui.IsItemHovered() then
-						imgui.CustomTooltip("Fetches skins from provided URL")
-					end
-					imgui.SameLine()
-					if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchSkins)) then
-						autobind.AutoVest.autoFetchSkins = not autobind.AutoVest.autoFetchSkins
-					end
-					if imgui.IsItemHovered() then
-						imgui.CustomTooltip("Fetch skins at startup")
-					end
-
-					local columns = 8  -- Number of columns in the grid
-					local imageSize = imgui.ImVec2(50, 95)  -- Size of each image
-					local spacing = 11.2  -- Spacing between images
-					local start = imgui.GetCursorPos()  -- Starting position
-				
-					for i, skinId in ipairs(autobind.AutoVest.skins) do
-						-- Calculate position
-						local column = (i - 1) % columns
-						local row = math.floor((i - 1) / columns)
-						local posX = start.x + column * (imageSize.x + spacing)
-						local posY = start.y + row * (imageSize.y + spacing)
-				
-						-- Set position and draw the image
-						imgui.SetCursorPos(imgui.ImVec2(posX, posY))
-						imgui.Image(skinTexture[skinId], imageSize)
-				
-						-- Draw the "X" button on top of the image
-						imgui.SetCursorPos(imgui.ImVec2(posX + imageSize.x - 20, posY))
-						imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0, 0, 0, 0))  -- Transparent background
-						imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(1, 0, 0, 0.5))  -- Red when hovered
-						imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(1, 0, 0, 0.5))  -- Red when active
-						if imgui.Button("x##"..i, imgui.ImVec2(20, 20)) then
-							table.remove(autobind.AutoVest.skins, i)
+				imgui.SetCursorPos(imgui.ImVec2(10, 1))
+				if imgui.BeginChild("##skins", imgui.ImVec2(487, 270), false) then
+					if autobind.Settings.mode == "Family" then
+						imgui.PushItemWidth(334)
+						local url = new.char[128](autobind.AutoVest.skinsUrl)
+						if imgui.InputText('##skins_url', url, sizeof(url)) then
+							autobind.AutoVest.skinsUrl = u8:decode(str(url))
 						end
-						imgui.PopStyleColor(3)
-				
-						if imgui.IsItemHovered() then
+						imgui.CustomTooltip(string.format('URL to fetch skins from, must be a JSON array of skin IDs,\n%s "%s"', fa.LINK, autobind.AutoVest.skinsUrl))
+						imgui.SameLine()
+						imgui.PopItemWidth()
+						if imgui.Button("Fetch") then
+							fetchDataFromURL(autobind.AutoVest.skinsUrl, 'skins', function(decodedData)
+								autobind.AutoVest.skins = decodedData
+							end)
+						end
+						imgui.CustomTooltip("Fetches skins from provided URL")
+						imgui.SameLine()
+						if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchSkins)) then
+							autobind.AutoVest.autoFetchSkins = not autobind.AutoVest.autoFetchSkins
+						end
+						imgui.CustomTooltip("Fetch skins at startup")
+
+						local columns = 8  -- Number of columns in the grid
+						local imageSize = imgui.ImVec2(50, 80)  -- Size of each image
+						local spacing = 10.0  -- Spacing between images
+						local start = imgui.GetCursorPos()  -- Starting position
+					
+						for i, skinId in ipairs(autobind.AutoVest.skins) do
+							-- Calculate position
+							local column = (i - 1) % columns
+							local row = math.floor((i - 1) / columns)
+							local posX = start.x + column * (imageSize.x + spacing)
+							local posY = start.y + row * (imageSize.y + spacing / 4)
+					
+							-- Set position and draw the image
+							imgui.SetCursorPos(imgui.ImVec2(posX, posY))
+							imgui.Image(skinTexture[skinId], imageSize)
+					
+							-- Draw the "X" button on top of the image
+							imgui.SetCursorPos(imgui.ImVec2(posX + imageSize.x - 20, posY))
+							imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0, 0, 0, 0))  -- Transparent background
+							imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(1, 0, 0, 0.5))  -- Red when hovered
+							imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(1, 0, 0, 0.5))  -- Red when active
+							if imgui.Button("x##"..i, imgui.ImVec2(20, 20)) then
+								table.remove(autobind.AutoVest.skins, i)
+							end
+							imgui.PopStyleColor(3)
 							imgui.CustomTooltip("Skin "..skinId)
 						end
-					end
-				
-					-- Add the "Add Skin" button in the next available slot
-					local addButtonIndex = #autobind.AutoVest.skins + 1
-					local column = (addButtonIndex - 1) % columns
-					local row = math.floor((addButtonIndex - 1) / columns)
-					local posX = start.x + column * (imageSize.x + spacing)
-					local posY = start.y + row * (imageSize.y + spacing)
-				
-					imgui.SetCursorPos(imgui.ImVec2(posX, posY))
-					if imgui.Button(u8"Add\nSkin", imageSize) then
-						autobind.AutoVest.skins[#autobind.AutoVest.skins + 1] = 0
-						menu.skins[0] = not menu.skins[0]
-						skinEditor.selected = #autobind.AutoVest.skins
-					end
-				elseif autobind.Settings.mode == "Faction" then
-					if imgui.Checkbox("Use Skins", new.bool(autobind.AutoVest.useSkins)) then
-						autobind.AutoVest.useSkins = not autobind.AutoVest.useSkins
-					end
-
-					local columns = 8  -- Number of columns in the grid
-					local imageSize = imgui.ImVec2(50, 95)  -- Size of each image
-					local spacing = 11.2  -- Spacing between images
-					local start = imgui.GetCursorPos()  -- Starting position
-				
-					for i, skinId in ipairs(factions.skins) do
-						-- Calculate position
-						local column = (i - 1) % columns
-						local row = math.floor((i - 1) / columns)
+					
+						-- Add the "Add Skin" button in the next available slot
+						local addButtonIndex = #autobind.AutoVest.skins + 1
+						local column = (addButtonIndex - 1) % columns
+						local row = math.floor((addButtonIndex - 1) / columns)
 						local posX = start.x + column * (imageSize.x + spacing)
 						local posY = start.y + row * (imageSize.y + spacing)
-				
-						-- Set position and draw the image
+					
 						imgui.SetCursorPos(imgui.ImVec2(posX, posY))
-						imgui.Image(skinTexture[skinId], imageSize)
-						if imgui.IsItemHovered() then
+						if imgui.Button(u8"Add\nSkin", imageSize) then
+							autobind.AutoVest.skins[#autobind.AutoVest.skins + 1] = 0
+							menu.skins[0] = not menu.skins[0]
+							skinEditor.selected = #autobind.AutoVest.skins
+						end
+					elseif autobind.Settings.mode == "Faction" then
+						if imgui.Checkbox("Use Skins", new.bool(autobind.AutoVest.useSkins)) then
+							autobind.AutoVest.useSkins = not autobind.AutoVest.useSkins
+						end
+
+						local columns = 8  -- Number of columns in the grid
+						local imageSize = imgui.ImVec2(50, 80)  -- Size of each image
+						local spacing = 10.0  -- Spacing between images
+						local start = imgui.GetCursorPos()  -- Starting position
+					
+						for i, skinId in ipairs(factions.skins) do
+							-- Calculate position
+							local column = (i - 1) % columns
+							local row = math.floor((i - 1) / columns)
+							local posX = start.x + column * (imageSize.x + spacing)
+							local posY = start.y + row * (imageSize.y + spacing / 4)
+					
+							-- Set position and draw the image
+							imgui.SetCursorPos(imgui.ImVec2(posX, posY))
+							imgui.Image(skinTexture[skinId], imageSize)
 							imgui.CustomTooltip("Skin "..skinId)
 						end
 					end
 				end
+				imgui.EndChild()
 			end
 
 			if menu.pageId == 3 then
-				imgui.PushItemWidth(334)
-				local url = new.char[128](autobind.AutoVest.namesUrl)
-				if imgui.InputText('##names_url', url, sizeof(url)) then
-					autobind.AutoVest.namesUrl = u8:decode(str(url))
-				end
-				if imgui.IsItemHovered() then
-					imgui.CustomTooltip("URL to fetch names from, must be a JSON array of names")
-				end
-				imgui.SameLine()
-				imgui.PopItemWidth()
-				if imgui.Button("Fetch") then
-					fetchDataFromURL(autobind.AutoVest.namesUrl, 'names', function(decodedData)
-						autobind.AutoVest.names = decodedData
-					end)
-				end
-				if imgui.IsItemHovered() then
-					imgui.CustomTooltip("Fetches names from provided URL")
-				end
-				imgui.SameLine()
-				if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchNames)) then
-					autobind.AutoVest.autoFetchNames = not autobind.AutoVest.autoFetchNames
-				end
-				if imgui.IsItemHovered() then
-					imgui.CustomTooltip("Fetch names at startup")
-				end
-			
-				local itemsPerRow = 3  -- Number of items per row
-				local itemCount = 0
-			
-				for key, value in pairs(autobind.AutoVest.names) do
-					local nick = new.char[128](value)
-					imgui.PushItemWidth(130)  -- Adjust the width of the input field
-					if imgui.InputText('##Nickname'..key, nick, sizeof(nick)) then
-						autobind.AutoVest.names[key] = u8:decode(str(nick))
+				imgui.SetCursorPos(imgui.ImVec2(10, 1))
+				if imgui.BeginChild("##names", imgui.ImVec2(487, 263), false) then
+					imgui.PushItemWidth(326)
+					local url = new.char[128](autobind.AutoVest.namesUrl)
+					if imgui.InputText('##names_url', url, sizeof(url)) then
+						autobind.AutoVest.namesUrl = u8:decode(str(url))
 					end
-					imgui.PopItemWidth()
+					imgui.CustomTooltip(string.format('URL to fetch names from, must be a JSON array of names,\n%s "%s"', fa.LINK, autobind.AutoVest.namesUrl))
 					imgui.SameLine()
-					if imgui.Button(u8"X##"..key) then
-						table.remove(autobind.AutoVest.names, key)
+					imgui.PopItemWidth()
+					if imgui.Button("Fetch") then
+						fetchDataFromURL(autobind.AutoVest.namesUrl, 'names', function(decodedData)
+							autobind.AutoVest.names = decodedData
+						end)
 					end
-			
-					itemCount = itemCount + 1
-					if itemCount % itemsPerRow ~= 0 then
+					imgui.CustomTooltip("Fetches names from provided URL")
+					imgui.SameLine()
+					if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchNames)) then
+						autobind.AutoVest.autoFetchNames = not autobind.AutoVest.autoFetchNames
+					end
+					imgui.CustomTooltip("Fetch names at startup")
+				
+					local itemsPerRow = 3  -- Number of items per row
+					local itemCount = 0
+				
+					for key, value in pairs(autobind.AutoVest.names) do
+						local nick = new.char[128](value)
+						imgui.PushItemWidth(130)  -- Adjust the width of the input field
+						if imgui.InputText('##Nickname'..key, nick, sizeof(nick)) then
+							autobind.AutoVest.names[key] = u8:decode(str(nick))
+						end
+						imgui.PopItemWidth()
 						imgui.SameLine()
+						if imgui.Button(u8"x##"..key) then
+							table.remove(autobind.AutoVest.names, key)
+						end
+				
+						itemCount = itemCount + 1
+						if itemCount % itemsPerRow ~= 0 then
+							imgui.SameLine()
+						end
+					end
+					if imgui.Button(u8"Add Name", imgui.ImVec2(130, 20)) then
+						autobind.AutoVest.names[#autobind.AutoVest.names + 1] = "Name"
 					end
 				end
-				if imgui.Button(u8"Add Name", imgui.ImVec2(130, 20)) then
-					autobind.AutoVest.names[#autobind.AutoVest.names + 1] = "Name"
-				end
+				imgui.EndChild()
 			end
 		end
 		imgui.EndChild()
-		imgui.SetCursorPos(imgui.ImVec2(92, 384))
 
+		imgui.SetCursorPos(imgui.ImVec2(92, 386.5))
 		if imgui.BeginChild("##5", imgui.ImVec2(500, 36), false) then
 			if imgui.Checkbox('Autosave', new.bool(autobind.Settings.autoSave)) then
 				autobind.Settings.autoSave = not autobind.Settings.autoSave
 			end
-			if imgui.IsItemHovered() then
-				imgui.CustomTooltip('Automatically saves your settings when you exit the game')
-			end
+			imgui.CustomTooltip('Automatically saves your settings when you exit the game')
 			imgui.SameLine()
 			if imgui.Checkbox('Everyone', new.bool(autobind.AutoVest.everyone)) then
 				autobind.AutoVest.everyone = not autobind.AutoVest.everyone
 			end
-			if imgui.IsItemHovered() then
-				imgui.CustomTooltip('With this enabled, the vest will be applied to everyone on the server')
-			end
+			imgui.CustomTooltip('With this enabled, the vest will be applied to everyone on the server')
 			imgui.SameLine()
 			if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
 				menu.blackmarket[0] = not menu.blackmarket[0]
 			end
+			imgui.CustomTooltip('Open the Black Market settings')
 			if autobind.Settings.mode == "Faction" then
 				imgui.SameLine()
 				if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
 					menu.factionlocker[0] = not menu.factionlocker[0]
 				end
+				imgui.CustomTooltip('Open the Faction Locker settings')
 			end
 		end
 		imgui.EndChild()
@@ -1812,7 +1745,7 @@ function()
 				autobind.AutoVest.skins[skinEditor.selected] = i
 				menu.skins[0] = false
 			end
-			if imgui.IsItemHovered() then imgui.CustomTooltip("Skin "..i.."") end
+			imgui.CustomTooltip("Skin "..i.."")
 		end
 
 		imgui.SetCursorPos(imgui.ImVec2(555, 360))
@@ -1921,33 +1854,41 @@ function()
     if not isSampAvailable() then return end
 
 	-- Blackmarket Window
-    imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x - (600 * 0.635), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+
+	local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.BlackMarket.Pos, imgui.ImVec2(226, 290), imgui.ImVec2(0.5, 0.5))
+    if status and menu.settings[0] then autobind.BlackMarket.Pos = newPos end
+
+    imgui.SetNextWindowPos(autobind.BlackMarket.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
     if imgui.Begin(string.format("BM Settings - Kit: %d", kitId), menu.blackmarket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
         local availWidth = imgui.GetContentRegionAvail().x
         local buttonWidth = availWidth / 3 - 5
 
-        if imgui.Button(fa.CART_SHOPPING .. " Kit 1", imgui.ImVec2(buttonWidth, 0)) then
-            kitId = 1
-        end
-        imgui.SameLine()
-        if imgui.Button(fa.CART_SHOPPING .. " Kit 2", imgui.ImVec2(buttonWidth, 0)) then
-            kitId = 2
-        end
-        imgui.SameLine()
-        if imgui.Button(fa.CART_SHOPPING .. " Kit 3", imgui.ImVec2(buttonWidth, 0)) then
-            kitId = 3
-        end
+		-- Define a table to map kitId to key and menu data
+		local kits = {
+			{id = 1, key = 'BlackMarket1', menu = autobind.BlackMarket.Kit1},
+			{id = 2, key = 'BlackMarket2', menu = autobind.BlackMarket.Kit2},
+			{id = 3, key = 'BlackMarket3', menu = autobind.BlackMarket.Kit3}
+		}
 
-        if kitId == 1 then
-            keyEditor("Keybind", 'BlackMarket1')
-            createMenu('Selection', blackMarketItems, autobind.BlackMarket.Kit1, blackMarketExclusiveGroups, 4)
-        elseif kitId == 2 then
-            keyEditor("Keybind", 'BlackMarket2')
-            createMenu('Selection', blackMarketItems, autobind.BlackMarket.Kit2, blackMarketExclusiveGroups, 4)
-        elseif kitId == 3 then
-            keyEditor("Keybind", 'BlackMarket3')
-            createMenu('Selection', blackMarketItems, autobind.BlackMarket.Kit3, blackMarketExclusiveGroups, 4)
-        end
+		-- Create buttons for each kit
+		for _, kit in ipairs(kits) do
+			if imgui.Button(fa.CART_SHOPPING .. " Kit " .. kit.id, imgui.ImVec2(buttonWidth, 0)) then
+				kitId = kit.id
+			end
+			imgui.SameLine()
+		end
+
+		-- Remove the last SameLine to avoid layout issues
+		imgui.NewLine()
+
+		-- Display the key editor and menu based on the selected kitId
+		for _, kit in ipairs(kits) do
+			if kitId == kit.id then
+				keyEditor("Keybind", kit.key)
+				createMenu('Selection', blackMarketItems, kit.menu, blackMarketExclusiveGroups, 4)
+			end
+		end
+		print(imgui.GetWindowSize())
     end
     imgui.End()
 end)
@@ -1975,11 +1916,11 @@ local function showKeyTypeTooltip(keyType)
         KeyDown = "Triggers when the key is held down. (Repeats until the key is released)",
         KeyPressed = "Triggers when the key is just pressed down. (Does not repeat until the key is released and pressed again)."
     }
-    imgui.SetTooltip(tooltips[keyType] or "Unknown key type.")
+    imgui.CustomTooltip(tooltips[keyType] or "Unknown key type.")
 end
 
 -- Key Editor
-function keyEditor(title, index)
+function keyEditor(title, index, discription)
     if not autobind.Keybinds[index] then
         print("Warning: autobind.Keybinds[" .. index .. "] is nil")
         return
@@ -1993,16 +1934,15 @@ function keyEditor(title, index)
 
     imgui.AlignTextToFramePadding()
     imgui.Text(title .. ":")
-    --[[if imgui.IsItemHovered() then
-        imgui.CustomTooltip(discription)
-    end]]
+	if discription then
+		imgui.CustomTooltip(discription)
+	end
+
     imgui.SameLine()
     if imgui.Checkbox((autobind.Keybinds[index].Toggle and "Enabled" or "Disabled") .. "##" .. index, new.bool(autobind.Keybinds[index].Toggle)) then
         autobind.Keybinds[index].Toggle = not autobind.Keybinds[index].Toggle
     end
-    if imgui.IsItemHovered() then
-        imgui.CustomTooltip(string.format("Toggle this key binding. %s", autobind.Keybinds[index].Toggle and "{00FF00}(Enabled)" or "{FF0000}(Disabled)"))
-    end
+    imgui.CustomTooltip(string.format("Toggle this key binding. %s", autobind.Keybinds[index].Toggle and "{00FF00}(Enabled)" or "{FF0000}(Disabled)"))
 
     for i, key in ipairs(autobind.Keybinds[index].Keys) do
         local buttonText = changekey[index] and changekey[index] == i and fa.KEYBOARD_DOWN or 
@@ -2022,13 +1962,11 @@ function keyEditor(title, index)
                 end
             end)
         end
-        if imgui.IsItemHovered() then
-            imgui.CustomTooltip(string.format("Press to change key %d", i))
-        end
+        imgui.CustomTooltip(string.format("Press to change key %d", i))
 
         -- Add a combo box for key type selection
         imgui.SameLine()
-        imgui.PushItemWidth(75)
+        imgui.PushItemWidth(90)
         local keyTypes = {"KeyDown", "KeyPressed"}
         
         local currentType = autobind.Keybinds[index].Type
@@ -2046,15 +1984,11 @@ function keyEditor(title, index)
                     end
                     autobind.Keybinds[index].Type[i] = keyType
                 end
-                if imgui.IsItemHovered() then
-                    showKeyTypeTooltip(keyType)
-                end
+                showKeyTypeTooltip(keyType)
             end
             imgui.EndCombo()
         end
-        if imgui.IsItemHovered() then
-            showKeyTypeTooltip(currentType)
-        end
+        showKeyTypeTooltip(currentType)
         imgui.PopItemWidth()
 
         -- Add the "-" button next to the first key slot if there are multiple keys
@@ -2069,9 +2003,7 @@ function keyEditor(title, index)
                     end
                 end
             end
-            if imgui.IsItemHovered() then
-                imgui.CustomTooltip("Remove this key binding.")
-            end
+            imgui.CustomTooltip("Remove this key binding.")
         end
 
         -- Add the "+" button next to the last key slot
@@ -2088,9 +2020,7 @@ function keyEditor(title, index)
                     table.insert(autobind.Keybinds[index].Type, "KeyDown")
                 end
             end
-            if imgui.IsItemHovered() then
-                imgui.CustomTooltip("Add a new key binding.")
-            end
+            imgui.CustomTooltip("Add a new key binding.")
         end
     end
 
@@ -2104,9 +2034,7 @@ function keyEditor(title, index)
             end
             table.insert(autobind.Keybinds[index].Type, "KeyDown")
         end
-        if imgui.IsItemHovered() then
-            imgui.CustomTooltip("Add a new key binding.")
-        end
+        imgui.CustomTooltip("Add a new key binding.")
     end
 
     imgui.EndGroup()
@@ -2518,29 +2446,39 @@ function calculateWindowSize(lines, padding)
     return windowSize
 end
 
-function imgui.handleWindowDragging(pos, size, pivot)
+function imgui.handleWindowDragging(menuId, pos, size, pivot)
     local mpos = imgui.GetMousePos()
     local offset = {x = size.x * pivot.x, y = size.y * pivot.y}
     local boxPos = {x = pos.x - offset.x, y = pos.y - offset.y}
 
+    -- Get screen resolution
+    local screenWidth, screenHeight = imgui.GetIO().DisplaySize.x, imgui.GetIO().DisplaySize.y
+
     if mpos.x >= boxPos.x and mpos.x <= boxPos.x + size.x and mpos.y >= boxPos.y and mpos.y <= boxPos.y + size.y then
         if imgui.IsMouseClicked(0) and not imgui.IsAnyItemHovered() then
-            selectedbox = true
+            currentlyDragging = menuId
             tempOffset = {x = mpos.x - boxPos.x, y = mpos.y - boxPos.y}
         end
     end
-    if selectedbox then
+
+    if currentlyDragging == menuId then
         if imgui.IsMouseReleased(0) then
-            selectedbox = false
+            currentlyDragging = nil
         else
             if imgui.IsAnyItemHovered() then
-				selectedbox = false
-			else
+                currentlyDragging = nil
+            else
                 local newBoxPos = {x = mpos.x - tempOffset.x, y = mpos.y - tempOffset.y}
+
+                -- Clamp the new position within the screen bounds
+                newBoxPos.x = math.max(0, math.min(newBoxPos.x, screenWidth - size.x))
+                newBoxPos.y = math.max(0, math.min(newBoxPos.y, screenHeight - size.y))
+
                 return {x = newBoxPos.x + offset.x, y = newBoxPos.y + offset.y}, true
             end
         end
     end
+
     return {x = pos.x, y = pos.y}, false
 end
 
@@ -2615,7 +2553,7 @@ function imgui.CustomButtonWithTooltip(name, color, colorHovered, colorActive, s
     if not size then size = imgui.ImVec2(0, 0) end
     local result = imgui.Button(name, size)
     imgui.PopStyleColor(3)
-    if imgui.IsItemHovered() and tooltip then
+    if tooltip then
         imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
         imgui.CustomTooltip(tooltip)
         imgui.PopStyleVar()
