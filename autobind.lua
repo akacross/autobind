@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.12")
+script_version("1.8.13a")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -124,7 +124,8 @@ local threads = {
 	autovest = nil,
 	autoaccept = nil,
 	captureSpam = nil,
-	keybinds = nil
+	keybinds = nil,
+	pointbounds = nil
 }
 
 -- Key Press Type
@@ -182,21 +183,26 @@ local autobind_defaultSettings = {
 		namesUrl = "https://raw.githubusercontent.com/akacross/autobind/main/names.json",
 	},
 	Window = {
-		Pos = {x = resX / 2, y = resY / 2},
-		Size = {x = 600, y = 428},
+		Pos = {x = resX / 2, y = resY / 2}
 	},
+	BlackMarket = {
+        Kit1 = {1, 9, 13},
+        Kit2 = {1, 9, 12},
+        Kit3 = {1, 9, 4}
+    },
+    FactionLocker = {1, 2, 9, 8},
 	Keybinds = {
-		Accept = {Toggle = true, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}},
-		Offer = {Toggle = true, Keys = {VK_MENU, VK_O}, Type = {'KeyDown', 'KeyPressed'}},
-		BlackMarket = {Toggle = false, Keys = {VK_MENU, VK_X}, Type = {'KeyDown', 'KeyPressed'}},
-		FactionLocker = {Toggle = false, Keys = {VK_MENU, VK_X}, Type = {'KeyDown', 'KeyPressed'}},
-		BikeBind = {Toggle = false, Keys = {VK_SHIFT}, Type = {'KeyDown', 'KeyDown'}},
-		SprintBind = {Toggle = true, Keys = {VK_F11}, Type = {'KeyPressed'}},
-		Frisk = {Toggle = false, Keys = {VK_MENU, VK_F}, Type = {'KeyDown', 'KeyPressed'}},
-		TakePills = {Toggle = false, Keys = {VK_F3}, Type = {'KeyPressed'}}
-	},
-	BlackMarket = {1, 9, 13},
-	FactionLocker = {1, 2, 9, 8}
+        Accept = {Toggle = true, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}},
+        Offer = {Toggle = true, Keys = {VK_MENU, VK_O}, Type = {'KeyDown', 'KeyPressed'}},
+        BlackMarket1 = {Toggle = false, Keys = {VK_MENU, VK_1}, Type = {'KeyDown', 'KeyPressed'}},
+        BlackMarket2 = {Toggle = false, Keys = {VK_MENU, VK_2}, Type = {'KeyDown', 'KeyPressed'}},
+        BlackMarket3 = {Toggle = false, Keys = {VK_MENU, VK_3}, Type = {'KeyDown', 'KeyPressed'}},
+        FactionLocker = {Toggle = false, Keys = {VK_MENU, VK_X}, Type = {'KeyDown', 'KeyPressed'}},
+        BikeBind = {Toggle = false, Keys = {VK_SHIFT}, Type = {'KeyDown', 'KeyDown'}},
+        SprintBind = {Toggle = true, Keys = {VK_F11}, Type = {'KeyPressed'}},
+        Frisk = {Toggle = false, Keys = {VK_MENU, VK_F}, Type = {'KeyDown', 'KeyPressed'}},
+        TakePills = {Toggle = false, Keys = {VK_F3}, Type = {'KeyPressed'}}
+    }
 }
 
 -- Commands
@@ -301,21 +307,11 @@ local invalidAnimsSet = {
     [1069] = true, [1070] = true, [746] = true
 }
 
--- Black Market Variables
-local bmbool = false
-local bmstate = 0
-local bmcmd = 0
-
--- Locker Variables
-local lockerbool = false
-local lockerstate = 0
-local lockercmd = 0
-
 -- Black Market Equipment Menu
 local blackMarketItems = {
     {label = 'Health/Armor', index = 2, weapon = nil}, -- 1
-    {label = 'Silenced Pistol', index = 6, weapon = 22}, -- 2
-    {label = '9mm Pistol', index = 7, weapon = 23}, -- 3
+    {label = 'Silenced', index = 6, weapon = 22}, -- 2
+    {label = '9mm', index = 7, weapon = 23}, -- 3
     {label = 'Shotgun', index = 8, weapon = 25}, -- 4
     {label = 'MP5', index = 9, weapon = 29}, -- 5
     {label = 'UZI', index = 10, weapon = 28}, -- 6
@@ -329,7 +325,7 @@ local blackMarketItems = {
 }
 
 local blackMarketExclusiveGroups = {
-	{2, 3, 9},  -- Silenced Pistol, 9mm Pistol, Deagle
+	{2, 3, 9},  -- Silenced, 9mm, Deagle
 	{4, 12},    -- Shotgun, Spas-12
 	{5, 6, 7},  -- MP5, UZI, Tec-9
 	{8, 13},    -- Country Rifle, Sniper Rifle
@@ -354,51 +350,117 @@ local lockerExclusiveGroups = {
 	{5, 6} -- M4, AK-47
 }
 
+local gzData = nil
+local enteredPoint = false
+local leaveTime = nil
+local preventHeal = false
+
+local getItemFromBM = 0
+local gettingItem = false
+local currentKey = nil
+local errorHandled = false
+
+ffi.cdef[[
+	struct stGangzone {
+		float fPosition[4];
+		uint32_t dwColor;
+		uint32_t dwAltColor;
+	};
+
+	struct stGangzonePool {
+		struct stGangzone *pGangzone[1024];
+		int iIsListed[1024];
+	};
+]]
+
+function loadConfigs()
+	local ignoreKeys = {
+		{"AutoVest", "skins"}, {"AutoVest", "names"}, 
+		{"Keybinds", "BlackMarket1"}, {"Keybinds", "BlackMarket2"}, {"Keybinds", "BlackMarket3"},
+		{"Keybinds", "FactionLocker"},
+		{"Keybinds", "BikeBind"},
+		{"Keybinds", "SprintBind"},
+		{"Keybinds", "Frisk"},
+		{"Keybinds", "TakePills"},
+		{"Keybinds", "Accept"},
+		{"Keybinds", "Offer"}
+	}
+
+	-- Handle Config File
+    local success, config, err = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, ignoreKeys)
+	if not success then
+		print("Failed to handle config file: " .. err)
+		return
+	end
+	autobind = config
+end
+
 -- Initialize
 function main()
+	-- Check if SAMP/SAMPFUNCS is loaded
+	if not isSampLoaded() or not isSampfuncsLoaded() then return end
+
+	-- Create Directories
 	local paths = getPath(nil)
     for _, dir in pairs({"config", "settings", "resource", "skins"}) do
         createDirectory(paths[dir])
     end
 
-    autobind = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, {{"AutoVest", "skins"}, {"AutoVest", "names"}, "Keybinds"})
+	-- Load Configs
+	loadConfigs()
 
+	-- Fix Factions Mode (Temporary)
 	if autobind.Settings.mode == "Factions" then
 		autobind.Settings.mode = "Faction"
 	end
 
+	-- Wait for SAMP
     while not isSampAvailable() do wait(100) end
 
+	-- Register Menu Command
 	sampRegisterChatCommand(scriptName, function()
 		menu.pageId = 1
 		menu.settings[0] = not menu.settings[0]
 	end)
 
+	sampRegisterChatCommand("areyouin", function()
+		formattedAddChatMessage("Entered Point: " .. (enteredPoint and "true" or "false"))
+	end)
+
+	-- Register Chat Commands
 	if autobind.Settings.enable then
 		registerChatCommands()
 	end
 
+	-- Download Skins
+	downloadSkins()
+
+	-- Wait for SAMP to be connected
+	while sampGetGamestate() ~= 3 do wait(100) end
+
+	-- Fetch Skins
 	if autobind.AutoVest.autoFetchSkins then
 		fetchDataFromURL(autobind.AutoVest.skinsUrl, 'skins', function(decodedData)
 			autobind.AutoVest.skins = decodedData
 		end)
 	end
 
+	-- Fetch Names
 	if autobind.AutoVest.autoFetchNames then
 		fetchDataFromURL(autobind.AutoVest.namesUrl, 'names', function(decodedData)
 			autobind.AutoVest.names = decodedData
 		end)
 	end
 
-	downloadSkins()
-
+	-- Create Threads
 	local startedThreads, failedThreads = createThreads()
 	print(string.format("%s v%s has loaded successfully! Threads: %s.", firstToUpper(scriptName), scriptVersion, table.concat(startedThreads, ", ")))
 	if #failedThreads > 0 then
 		print("Threads failed to start: " .. table.concat(failedThreads, ", "))
 	end
 
-	while true do wait(5)
+	-- Resume Threads
+	while true do wait(5) 
 		resumeThreads()
 	end
 end
@@ -643,18 +705,59 @@ local function createKeybindThread()
 		end
 	end
 	
-	local function blackMarket()
-		if not bmbool then
-			bmbool = true
-			sendCommandWithTimer("/bm")
-		end
+	local function blackMarket1()
+		getItemFromBM = 1
+		errorHandled = false
+		table.foreach(autobind.BlackMarket.Kit1, function(_, index)
+			local item = blackMarketItems[index]
+			if item then
+				currentKey = item.index
+				gettingItem = true
+				sampSendChat("/bm")
+				repeat wait(0) until not gettingItem
+			end
+		end)
+		getItemFromBM = 0
+		gettingItem = false
+		currentKey = nil
+	end
+	
+	local function blackMarket2()
+		getItemFromBM = 2
+		errorHandled = false
+		table.foreach(autobind.BlackMarket.Kit2, function(_, index)
+			local item = blackMarketItems[index]
+			if item then
+				currentKey = item.index
+				gettingItem = true
+				sampSendChat("/bm")
+				repeat wait(0) until not gettingItem
+			end
+		end)
+		getItemFromBM = 0
+		gettingItem = false
+		currentKey = nil
+	end
+	
+	local function blackMarket3()
+		getItemFromBM = 3
+		errorHandled = false
+		table.foreach(autobind.BlackMarket.Kit3, function(_, index)
+			local item = blackMarketItems[index]
+			if item then
+				currentKey = item.index
+				gettingItem = true
+				sampSendChat("/bm")
+				repeat wait(0) until not gettingItem
+			end
+		end)
+		getItemFromBM = 0
+		gettingItem = false
+		currentKey = nil
 	end
 	
 	local function factionLocker()
-		if not lockerbool then
-			lockerbool = true
-			sendCommandWithTimer("/locker")
-		end
+
 	end
 	
 	local function bikeBind()
@@ -701,7 +804,9 @@ local function createKeybindThread()
 				local keyFunctions = {
 					Accept = acceptBodyguard,
 					Offer = offerBodyguard,
-					BlackMarket = blackMarket,
+					BlackMarket1 = blackMarket1,
+					BlackMarket2 = blackMarket2,
+					BlackMarket3 = blackMarket3,
 					FactionLocker = factionLocker,
 					BikeBind = bikeBind,
 					SprintBind = sprintBind,
@@ -733,6 +838,7 @@ local function createKeybindThread()
     end)
 end
 
+-- Capture Spam Thread
 local function createCaptureSpamThread()
     local lastCaptureTime = 0
     local captureInterval = 1.5
@@ -748,10 +854,59 @@ local function createCaptureSpamThread()
     threads.captureSpam = coroutine.create(function()
         while true do
             if autobind.Settings.enable and captureSpam and not checkMuted() and checkAdminDuty() then
-				print("Capturing spam")
                 local status, err = pcall(createCaptureSpam)
                 if not status then
                     print("Error in capture spam thread: " .. err)
+                end
+            end
+            coroutine.yield()
+        end
+    end)
+end
+
+-- Pointbounds Thread
+local function createPointboundsThread()
+	-- Get the gangzone pool pointer
+	gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
+
+	-- Create the pointbounds
+	local function createPointbounds()
+		if autobind.Settings.mode == "Family" then
+			if not enteredPoint then
+				for i = 0, 1023 do
+					if gzData.iIsListed[i] ~= 0 and gzData.pGangzone[i] ~= nil then
+						local pos = gzData.pGangzone[i].fPosition
+						local color = gzData.pGangzone[i].dwColor
+						local ped_pos = { getCharCoordinates(PLAYER_PED) }
+				
+						local min1, max1 = math.min(pos[0], pos[2]), math.max(pos[0], pos[2])
+						local min2, max2 = math.min(pos[1], pos[3]), math.max(pos[1], pos[3])
+				
+						-- Check if player is within the gangzone
+						if i >= 34 and i <= 45 then
+							if ped_pos[1] >= min1 and ped_pos[1] <= max1 and ped_pos[2] >= min2 and ped_pos[2] <= max2 and color == 2348810495 then
+								enteredPoint = true
+								break
+							else
+								if enteredPoint then
+									leaveTime = os.time()
+									preventHeal = true
+								end
+								enteredPoint = false
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+    threads.pointbounds = coroutine.create(function()
+        while true do
+            if autobind.Settings.enable then
+                local status, err = pcall(createPointbounds)
+                if not status then
+                    print("Error in pointbounds thread: " .. err)
                 end
             end
             coroutine.yield()
@@ -785,6 +940,7 @@ function createThreads()
 	createAutoacceptThread()
 	createKeybindThread()
 	createCaptureSpamThread()
+	createPointboundsThread()
 
 	local startedThreads = {}
 	local failedThreads = {}
@@ -1137,24 +1293,16 @@ function sampev.onServerMessage(color, text)
 		timers.Muted.last = localClock()
 	end
 
-	--[[if text:match("You are not a Sapphire or Diamond Donator!") or
-	   text:match("You are not at the black market!") or
-	   text:match("You can't do this right now.") or
-	   text:match("You have been muted automatically for spamming. Please wait 10 seconds and try again.") or
-	   text:match("You are muted from submitting commands right now.") and bmbool then
-        bmbool = false
-		bmstate = 0
-        bmcmd = 0
+    if getItemFromBM > 0 then
+        if (text:match("You are not a Sapphire or Diamond Donator!") or text:match("%s*You are not at the black market!")) and color == -1077886209 then
+            print("You are not a Sapphire or Diamond Donator or not at the black market!", color)
+            getItemFromBM = 0
+            gettingItem = false
+            currentKey = nil
+            errorHandled = true
+            print(getItemFromBM, currentKey, gettingItem)
+        end
     end
-
-	if text:match('You are not in range of your lockers.') or
-	   text:match('You have been muted automatically for spamming. Please wait 10 seconds and try again.') or
-	   text:match('You are muted from submitting commands right now.') or
-	   text:match("You can't use your lockers if you were recently shot.") and lockerbool then
-        lockerbool = false
-		lockerstate = 0
-        lockercmd = 0
-    end]]
 
 	-- Help
 	if text:match("*** OTHER *** /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp") then
@@ -1168,12 +1316,41 @@ end
 
 function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
 	if senderID ~= 65535 and damage > 0 then
-		timers.Heal.last = localClock()  -- Start the heal timer
+		if autobind.Settings.mode == "Family" then
+			if preventHeal then
+				local currentTime = os.time()
+				if currentTime - leaveTime >= 180 then
+					preventHeal = false
+				else
+					print("Heal timer is prevented for 3 minutes after leaving the pointbounds.")
+					return
+				end
+			end
+		end
+
+		if not enteredPoint or autobind.Settings.mode == "Faction" then
+			timers.Heal.last = localClock()
+		end
 	end
 end
 
 function sampev.onShowDialog(id, style, title, button1, button2, text)
-	
+    -- Debug: Dialog shown
+    print("Dialog shown with ID:", id, "Title:", title)
+    
+    if getItemFromBM > 0 then
+        if not title:find("Black Market") then 
+            getItemFromBM = 0 
+            gettingItem = false
+            currentKey = nil
+            errorHandled = false
+            return false 
+        end
+        sampSendDialogResponse(id, 1, currentKey, nil)
+        gettingItem = false
+        errorHandled = false
+        return false
+    end
 end
 
 function sampev.onTogglePlayerSpectating(state)
@@ -1199,16 +1376,32 @@ imgui.OnInitialize(function()
     apply_custom_style()
 end)
 
+local function createRow(label, tooltip, setting, toggleFunction, sameLine)
+    if imgui.Checkbox(label, new.bool(setting)) then
+        toggleFunction()
+    end
+    if imgui.IsItemHovered() then
+        imgui.CustomTooltip(tooltip)
+    end
+    if sameLine then
+        imgui.SameLine()
+        imgui.SetCursorPosX(imgui.GetWindowWidth() / 2.0)
+    end
+end
+
 imgui.OnFrame(function() return menu.settings[0] end,
 function()
+	assert(isSampLoaded(), "Samp not loaded")
+	if not isSampAvailable() then return end
+
 	local title = string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion)
-	local newPos, status = imgui.handleWindowDragging(autobind.Window.Pos, autobind.Window.Size, imgui.ImVec2(0.5, 0.5))
+	local newPos, status = imgui.handleWindowDragging(autobind.Window.Pos, imgui.ImVec2(600, 428), imgui.ImVec2(0.5, 0.5))
     if status and menu.settings[0] then autobind.Window.Pos = newPos end
     imgui.SetNextWindowPos(autobind.Window.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-	imgui.SetNextWindowSize(autobind.Window.Size, imgui.Cond.Always)
+	imgui.SetNextWindowSize(imgui.ImVec2(600, 428), imgui.Cond.Always)
 	if imgui.Begin(title, menu.settings, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
-		if imgui.BeginChild("##1", imgui.ImVec2(85, 392), true) then
-			imgui.SetCursorPos(imgui.ImVec2(5, 5))
+		if imgui.BeginChild("##1", imgui.ImVec2(85, 392), false) then
+			imgui.SetCursorPos(imgui.ImVec2(0, 0))
 			if imgui.CustomButton(
 				fa.POWER_OFF,
 				autobind.Settings.enable and imgui.ImVec4(0.15, 0.59, 0.18, 0.7) or imgui.ImVec4(1, 0.19, 0.19, 0.5),
@@ -1225,10 +1418,10 @@ function()
 				end
 			end
 			if imgui.IsItemHovered() then
-				imgui.SetTooltip('Toggles all functionalities')
+				imgui.CustomTooltip('Toggles all functionalities')
 			end
 
-			imgui.SetCursorPos(imgui.ImVec2(5, 81))
+			imgui.SetCursorPos(imgui.ImVec2(0, 76))
 
 			if imgui.CustomButton(
 				fa.FLOPPY_DISK,
@@ -1239,10 +1432,10 @@ function()
 				saveConfigWithErrorHandling(getFile("settings"), autobind)
 			end
 			if imgui.IsItemHovered() then
-				imgui.SetTooltip('Save configuration')
+				imgui.CustomTooltip('Save configuration')
 			end
 
-			imgui.SetCursorPos(imgui.ImVec2(5, 157))
+			imgui.SetCursorPos(imgui.ImVec2(0, 152))
 
 			if imgui.CustomButton(
 				fa.REPEAT,
@@ -1250,13 +1443,14 @@ function()
 				imgui.ImVec4(0.40, 0.12, 0.12, 1),
 				imgui.ImVec4(0.30, 0.08, 0.08, 1),
 				imgui.ImVec2(75, 75)) then
-				autobind = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, {{"AutoVest", "skins"}, {"AutoVest", "names"}, "Keybinds"})
+
+				loadConfigs()
 			end
 			if imgui.IsItemHovered() then
-				imgui.SetTooltip('Reload configuration')
+				imgui.CustomTooltip('Reload configuration')
 			end
 
-			imgui.SetCursorPos(imgui.ImVec2(5, 233))
+			imgui.SetCursorPos(imgui.ImVec2(0, 228))
 
 			if imgui.CustomButton(
 				fa.ERASER,
@@ -1267,10 +1461,10 @@ function()
 				ensureDefaults(autobind, autobind_defaultSettings, true, {{"Settings", "mode"}, {"Settings", "freq"}})
 			end
 			if imgui.IsItemHovered() then
-				imgui.SetTooltip('Load default configuration')
+				imgui.CustomTooltip('Load default configuration')
 			end
 
-			imgui.SetCursorPos(imgui.ImVec2(5, 309))
+			imgui.SetCursorPos(imgui.ImVec2(0, 304))
 
 			if imgui.CustomButton(
 				fa.RETWEET .. ' Update',
@@ -1278,19 +1472,19 @@ function()
 				imgui.ImVec4(0.40, 0.12, 0.12, 1),
 				imgui.ImVec4(0.30, 0.08, 0.08, 1),
 				imgui.ImVec2(75, 75)) then
-
+				-- do something?
 			end
 			if imgui.IsItemHovered() then
-				imgui.SetTooltip('Check for update [Disabled]')
+				imgui.CustomTooltip('Check for update [Disabled]')
 			end
 		end
 		imgui.EndChild()
 
-		imgui.SetCursorPos(imgui.ImVec2(92, 28))
+		imgui.SetCursorPos(imgui.ImVec2(85, 28))
 
-		if imgui.BeginChild("##2", imgui.ImVec2(500, 88), true) then
+		if imgui.BeginChild("##2", imgui.ImVec2(500, 88), false) then
 
-			imgui.SetCursorPos(imgui.ImVec2(5,5))
+			imgui.SetCursorPos(imgui.ImVec2(0, 0))
 			if imgui.CustomButton(string.format("%s  Settings", fa("GEAR")),
 				menu.pageId == 1 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
 				imgui.ImVec4(0.40, 0.12, 0.12, 1),
@@ -1299,7 +1493,7 @@ function()
 				menu.pageId = 1
 			end
 
-			imgui.SetCursorPos(imgui.ImVec2(170, 5))
+			imgui.SetCursorPos(imgui.ImVec2(165, 0))
 
 			if imgui.CustomButton(string.format("%s  %s Skins", fa("PERSON_BOOTH"), autobind.Settings.mode),
 				menu.pageId == 2 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
@@ -1310,7 +1504,7 @@ function()
 				menu.pageId = 2
 			end
 
-			imgui.SetCursorPos(imgui.ImVec2(335, 5))
+			imgui.SetCursorPos(imgui.ImVec2(330, 0))
 
 			if imgui.CustomButton(string.format("%s  Names", fa("PERSON_BOOTH")),
 				menu.pageId == 3 and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9),
@@ -1323,135 +1517,91 @@ function()
 		end
 		imgui.EndChild()
 
-		imgui.SetCursorPos(imgui.ImVec2(92, 112))
+		imgui.SetCursorPos(imgui.ImVec2(85, 100))
 
-		if imgui.BeginChild("##3", imgui.ImVec2(500, 276), true) then
+		if imgui.BeginChild("##3", imgui.ImVec2(500, 276), false) then
 			if menu.pageId == 1 then
-				imgui.SetCursorPos(imgui.ImVec2(5, 10))
-				imgui.BeginChild("##config", imgui.ImVec2(330, 255), false)
+				imgui.SetCursorPos(imgui.ImVec2(10, 10))
+				imgui.BeginChild("##config", imgui.ImVec2(300, 255), false)
 					-- Autobind/Capture
 					imgui.Text('Auto Bind:')
-					if imgui.Checkbox('Capture Spam', new.bool(captureSpam)) then
-						toggleCaptureSpam()
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Capture spam will automatically type /capturf every 1.5 seconds.')
-					end
-					imgui.SameLine()
-					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-
+					createRow('Capture Spam', 'Capture spam will automatically type /capturf every 1.5 seconds.', captureSpam, toggleCaptureSpam, true)
+				
 					local switchTurf = autobind.Settings.mode:lower() .. "Turf"
-					if imgui.Checkbox('Capture (Turfs)', new.bool(autobind.Settings[switchTurf])) then
+					createRow('Capture (Turfs)', 'Capture (Turfs) will automatically type /capturf at signcheck time.', autobind.Settings[switchTurf], function()
 						autobind.Settings[switchTurf] = not autobind.Settings[switchTurf]
-
 						if switchTurf == "familyTurf" then
 							autobind.Settings.capturePoint = false
 						end
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Capture (Turfs) will automatically type /capturf at signcheck time.')
-					end
-
+					end, false)
+				
 					if autobind.Settings.mode == "Family" then
-						-- Disable/Capture
-						if imgui.Checkbox('Disable after capturing', new.bool(autobind.Settings.disableAfterCapturing)) then
+						createRow('Disable capturing', 'Disable capturing after capturing: turns off auto capturing after the point/turf has been secured.', autobind.Settings.disableAfterCapturing, function()
 							autobind.Settings.disableAfterCapturing = not autobind.Settings.disableAfterCapturing
-						end
-						if imgui.IsItemHovered() then
-							imgui.SetTooltip('Disable after capturing: prevents capture spam after the point/turf has been secured.')
-						end
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						if imgui.Checkbox('Capture (Points)', new.bool(autobind.Settings.capturePoint)) then
+						end, true)
+				
+						createRow('Capture (Points)', 'Capture (Points) will automatically type /capturf at signcheck time.', autobind.Settings.capturePoint, function()
 							autobind.Settings.capturePoint = not autobind.Settings.capturePoint
 							if autobind.Settings.capturePoint then
 								autobind.Settings.familyTurf = false
 							end
-						end
-						if imgui.IsItemHovered() then
-							imgui.SetTooltip('Capture (Points) will automatically type /capturf at signcheck time.')
-						end
+						end, false)
 					end
-
-					if imgui.Checkbox('Accept Repair', new.bool(autobind.AutoBind.autoRepair)) then
+				
+					createRow('Accept Repair', 'Accept Repair will automatically accept repair requests.', autobind.AutoBind.autoRepair, function()
 						autobind.AutoBind.autoRepair = not autobind.AutoBind.autoRepair
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Accept Repair will automatically accept repair requests.')
-					end
-
+					end, false)
+				
 					if autobind.Settings.mode == "Faction" then
-						imgui.SameLine()
-						imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-						if imgui.Checkbox('Auto Badge', new.bool(autobind.AutoBind.autoBadge)) then 
-							autobind.AutoBind.autoBadge = not autobind.AutoBind.autoBadge 
-						end
-						if imgui.IsItemHovered() then
-							imgui.SetTooltip('Automatically types /badge after spawning from the hopsital.')
-						end
+						createRow('Auto Badge', 'Automatically types /badge after spawning from the hospital.', autobind.AutoBind.autoBadge, function()
+							autobind.AutoBind.autoBadge = not autobind.AutoBind.autoBadge
+						end, true)
 					end
-
+				
 					-- Auto Vest
+					imgui.NewLine()
 					imgui.Text('Auto Vest:')
-					if imgui.Checkbox("Enable", new.bool(autobind.AutoVest.enable)) then
+					createRow('Enable', 'Enable for automatic vesting.', autobind.AutoVest.enable, function()
 						autobind.AutoVest.enable = not autobind.AutoVest.enable
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Enable for automatic vesting.')
-					end
-					imgui.SameLine()
-					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					if imgui.Checkbox("Diamond Donator", new.bool(autobind.AutoVest.donor)) then
+					end, true)
+				
+					createRow('Diamond Donator', 'Enable for Diamond Donators. Uses /guardnear does not have armor/paused checks.', autobind.AutoVest.donor, function()
 						autobind.AutoVest.donor = not autobind.AutoVest.donor
 						timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Enable for Diamond Donators. Uses /guardnear does not have armor/paused checks.')
-					end
-
+					end, false)
+				
 					-- Accept
-					if imgui.Checkbox('Auto Accept', new.bool(accepter.enable)) then
+					createRow('Auto Accept', 'Accept Vest will automatically accept vest requests.', accepter.enable, function()
 						accepter.enable = not accepter.enable
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Accept Vest will automatically accept vest requests.')
-					end
-
+					end, false)
+				
+					imgui.NewLine()
 					imgui.Text('Frisk:')
-					if imgui.Checkbox("Targeting", new.bool(autobind.Settings.Frisk.target)) then
+					createRow('Targeting', 'Must be targeting a player to frisk. (Green Blip above the player)', autobind.Settings.Frisk.target, function()
 						autobind.Settings.Frisk.target = not autobind.Settings.Frisk.target
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Must be targeting a player to frisk. (Green Blip above the player)')
-					end
-					imgui.SameLine()
-					imgui.SetCursorPosX(imgui.GetWindowWidth() / 1.8)
-					if imgui.Checkbox("Must Aim", new.bool(autobind.Settings.Frisk.mustAim)) then
+					end, true)
+				
+					createRow('Must Aim', 'Must be aiming to frisk.', autobind.Settings.Frisk.mustAim, function()
 						autobind.Settings.Frisk.mustAim = not autobind.Settings.Frisk.mustAim
-					end
-					if imgui.IsItemHovered() then
-						imgui.SetTooltip('Must be aiming to frisk.')
-					end
+					end, false)
 				imgui.EndChild()
 
-				imgui.SetCursorPos(imgui.ImVec2(340, 5))
-				if imgui.BeginChild("##keybinds", imgui.ImVec2(155, 263), true) then
-					if imgui.Button(fa.CART_SHOPPING .. " BM Locker") then
-						menu.blackmarket[0] = not menu.blackmarket[0]
+				imgui.SetCursorPos(imgui.ImVec2(300, 10))
+				if imgui.BeginChild("##keybinds", imgui.ImVec2(200, 263), false) then
+					-- Define the key editor table
+					local keyEditors = {
+						{label = "Accept", key = "Accept"},
+						{label = "Offer", key = "Offer"},
+						{label = "Take Pills", key = "TakePills"},
+						{label = "Frisk", key = "Frisk"},
+						{label = "Bike Bind", key = "BikeBind"},
+						{label = "Sprint Bind", key = "SprintBind"}
+					}
+
+					-- Use the key editor table to call keyEditor for each entry
+					for _, editor in ipairs(keyEditors) do
+						keyEditor(editor.label, editor.key)
 					end
-					keyEditor('BlackMarket')
-					if autobind.Settings.mode == "Faction" then
-						if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
-							menu.factionlocker[0] = not menu.factionlocker[0]
-						end
-						keyEditor('FactionLocker')
-					end
-					keyEditor('Accept')
-					keyEditor('Offer')
-					keyEditor('TakePills')
-					keyEditor('BikeBind')
-					keyEditor('SprintBind')
-					keyEditor('Frisk')
 				end
 				imgui.EndChild()
 			end
@@ -1464,7 +1614,7 @@ function()
 						autobind.AutoVest.skinsUrl = u8:decode(str(url))
 					end
 					if imgui.IsItemHovered() then
-						imgui.SetTooltip("URL to fetch skins from, must be a JSON array of skin IDs")
+						imgui.CustomTooltip("URL to fetch skins from, must be a JSON array of skin IDs")
 					end
 					imgui.SameLine()
 					imgui.PopItemWidth()
@@ -1474,14 +1624,14 @@ function()
 						end)
 					end
 					if imgui.IsItemHovered() then
-						imgui.SetTooltip("Fetches skins from provided URL")
+						imgui.CustomTooltip("Fetches skins from provided URL")
 					end
 					imgui.SameLine()
 					if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchSkins)) then
 						autobind.AutoVest.autoFetchSkins = not autobind.AutoVest.autoFetchSkins
 					end
 					if imgui.IsItemHovered() then
-						imgui.SetTooltip("Fetch skins at startup")
+						imgui.CustomTooltip("Fetch skins at startup")
 					end
 
 					local columns = 8  -- Number of columns in the grid
@@ -1511,7 +1661,7 @@ function()
 						imgui.PopStyleColor(3)
 				
 						if imgui.IsItemHovered() then
-							imgui.SetTooltip("Skin "..skinId)
+							imgui.CustomTooltip("Skin "..skinId)
 						end
 					end
 				
@@ -1549,7 +1699,7 @@ function()
 						imgui.SetCursorPos(imgui.ImVec2(posX, posY))
 						imgui.Image(skinTexture[skinId], imageSize)
 						if imgui.IsItemHovered() then
-							imgui.SetTooltip("Skin "..skinId)
+							imgui.CustomTooltip("Skin "..skinId)
 						end
 					end
 				end
@@ -1562,7 +1712,7 @@ function()
 					autobind.AutoVest.namesUrl = u8:decode(str(url))
 				end
 				if imgui.IsItemHovered() then
-					imgui.SetTooltip("URL to fetch names from, must be a JSON array of names")
+					imgui.CustomTooltip("URL to fetch names from, must be a JSON array of names")
 				end
 				imgui.SameLine()
 				imgui.PopItemWidth()
@@ -1572,27 +1722,37 @@ function()
 					end)
 				end
 				if imgui.IsItemHovered() then
-					imgui.SetTooltip("Fetches names from provided URL")
+					imgui.CustomTooltip("Fetches names from provided URL")
 				end
 				imgui.SameLine()
 				if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchNames)) then
 					autobind.AutoVest.autoFetchNames = not autobind.AutoVest.autoFetchNames
 				end
 				if imgui.IsItemHovered() then
-					imgui.SetTooltip("Fetch names at startup")
+					imgui.CustomTooltip("Fetch names at startup")
 				end
-
+			
+				local itemsPerRow = 3  -- Number of items per row
+				local itemCount = 0
+			
 				for key, value in pairs(autobind.AutoVest.names) do
 					local nick = new.char[128](value)
-					if imgui.InputText('Nickname##'..key, nick, sizeof(nick)) then
+					imgui.PushItemWidth(130)  -- Adjust the width of the input field
+					if imgui.InputText('##Nickname'..key, nick, sizeof(nick)) then
 						autobind.AutoVest.names[key] = u8:decode(str(nick))
 					end
+					imgui.PopItemWidth()
 					imgui.SameLine()
-					if imgui.Button(u8"x##"..key) then
+					if imgui.Button(u8"X##"..key) then
 						table.remove(autobind.AutoVest.names, key)
 					end
+			
+					itemCount = itemCount + 1
+					if itemCount % itemsPerRow ~= 0 then
+						imgui.SameLine()
+					end
 				end
-				if imgui.Button(u8"Add Name") then
+				if imgui.Button(u8"Add Name", imgui.ImVec2(130, 20)) then
 					autobind.AutoVest.names[#autobind.AutoVest.names + 1] = "Name"
 				end
 			end
@@ -1600,19 +1760,29 @@ function()
 		imgui.EndChild()
 		imgui.SetCursorPos(imgui.ImVec2(92, 384))
 
-		if imgui.BeginChild("##5", imgui.ImVec2(500, 36), true) then
+		if imgui.BeginChild("##5", imgui.ImVec2(500, 36), false) then
 			if imgui.Checkbox('Autosave', new.bool(autobind.Settings.autoSave)) then
 				autobind.Settings.autoSave = not autobind.Settings.autoSave
 			end
 			if imgui.IsItemHovered() then
-				imgui.SetTooltip('Automatically saves your settings when you exit the game')
+				imgui.CustomTooltip('Automatically saves your settings when you exit the game')
 			end
 			imgui.SameLine()
 			if imgui.Checkbox('Everyone', new.bool(autobind.AutoVest.everyone)) then
 				autobind.AutoVest.everyone = not autobind.AutoVest.everyone
 			end
 			if imgui.IsItemHovered() then
-				imgui.SetTooltip('With this enabled, the vest will be applied to everyone on the server')
+				imgui.CustomTooltip('With this enabled, the vest will be applied to everyone on the server')
+			end
+			imgui.SameLine()
+			if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
+				menu.blackmarket[0] = not menu.blackmarket[0]
+			end
+			if autobind.Settings.mode == "Faction" then
+				imgui.SameLine()
+				if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
+					menu.factionlocker[0] = not menu.factionlocker[0]
+				end
 			end
 		end
 		imgui.EndChild()
@@ -1622,6 +1792,9 @@ end)
 
 imgui.OnFrame(function() return menu.settings[0] and menu.skins[0] end,
 function()
+	assert(isSampLoaded(), "Samp not loaded")
+	if not isSampAvailable() then return end
+
 	imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x, autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
 	imgui.SetNextWindowSize(imgui.ImVec2(505, 390), imgui.Cond.FirstUseEver)
 	imgui.Begin(u8("Skin Menu"), menu.skins, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoScrollbar)
@@ -1639,7 +1812,7 @@ function()
 				autobind.AutoVest.skins[skinEditor.selected] = i
 				menu.skins[0] = false
 			end
-			if imgui.IsItemHovered() then imgui.SetTooltip("Skin "..i.."") end
+			if imgui.IsItemHovered() then imgui.CustomTooltip("Skin "..i.."") end
 		end
 
 		imgui.SetCursorPos(imgui.ImVec2(555, 360))
@@ -1712,65 +1885,145 @@ local function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
 end
 
 local function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
-    imgui.Text(title)
+    imgui.Text(title.. ":")
+    local handledIndices = {}
+    
+    -- Handle exclusive groups first
+    for _, group in ipairs(exclusiveGroups) do
+        for _, index in ipairs(group) do
+            local item = items[index]
+            if item then
+                createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
+                imgui.SameLine()
+                table.insert(handledIndices, index)
+            end
+        end
+        imgui.NewLine()
+    end
+    
+    -- Handle remaining items
     for index, item in ipairs(items) do
-        createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
+        if not tableContains(handledIndices, index) then
+            createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
+        end
     end
 end
 
+local kitId = 1
+
 imgui.OnFrame(function() return menu.settings[0] and menu.blackmarket[0] end,
 function()
-    imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x - (autobind.Window.Size.x * 0.635), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    if imgui.Begin("BM Settings", menu.blackmarket, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.AlwaysAutoResize) then
-        createMenu('Black-Market Equipment:', blackMarketItems, autobind.BlackMarket, blackMarketExclusiveGroups, 4)
+
+	-- Returns if Samp is not loaded
+    assert(isSampLoaded(), "Samp not loaded")
+
+	-- Returns if Samp is not available
+    if not isSampAvailable() then return end
+
+	-- Blackmarket Window
+    imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x - (600 * 0.635), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+    if imgui.Begin(string.format("BM Settings - Kit: %d", kitId), menu.blackmarket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+        local availWidth = imgui.GetContentRegionAvail().x
+        local buttonWidth = availWidth / 3 - 5
+
+        if imgui.Button(fa.CART_SHOPPING .. " Kit 1", imgui.ImVec2(buttonWidth, 0)) then
+            kitId = 1
+        end
+        imgui.SameLine()
+        if imgui.Button(fa.CART_SHOPPING .. " Kit 2", imgui.ImVec2(buttonWidth, 0)) then
+            kitId = 2
+        end
+        imgui.SameLine()
+        if imgui.Button(fa.CART_SHOPPING .. " Kit 3", imgui.ImVec2(buttonWidth, 0)) then
+            kitId = 3
+        end
+
+        if kitId == 1 then
+            keyEditor("Keybind", 'BlackMarket1')
+            createMenu('Selection', blackMarketItems, autobind.BlackMarket.Kit1, blackMarketExclusiveGroups, 4)
+        elseif kitId == 2 then
+            keyEditor("Keybind", 'BlackMarket2')
+            createMenu('Selection', blackMarketItems, autobind.BlackMarket.Kit2, blackMarketExclusiveGroups, 4)
+        elseif kitId == 3 then
+            keyEditor("Keybind", 'BlackMarket3')
+            createMenu('Selection', blackMarketItems, autobind.BlackMarket.Kit3, blackMarketExclusiveGroups, 4)
+        end
     end
     imgui.End()
 end)
 
 imgui.OnFrame(function() return menu.settings[0] and menu.factionlocker[0] end,
 function()
-    imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x + (autobind.Window.Size.x * 0.607), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    if imgui.Begin("Faction Locker", menu.factionlocker, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.AlwaysAutoResize) then
-        createMenu('Locker Equipment:', lockerMenuItems, autobind.FactionLocker, lockerExclusiveGroups, 4)
+	-- Returns if Samp is not loaded
+    assert(isSampLoaded(), "Samp not loaded")
+
+	-- Returns if Samp is not available
+    if not isSampAvailable() then return end
+	
+	-- Faction Locker Window
+    imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x + (600 * 0.607), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+    if imgui.Begin("Faction Locker", menu.factionlocker, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+		keyEditor("Keybind", "FactionLocker")
+        createMenu('Selection', lockerMenuItems, autobind.FactionLocker, lockerExclusiveGroups, 4)
     end
     imgui.End()
 end)
 
+-- Custom function to display tooltips based on key type
+local function showKeyTypeTooltip(keyType)
+    local tooltips = {
+        KeyDown = "Triggers when the key is held down. (Repeats until the key is released)",
+        KeyPressed = "Triggers when the key is just pressed down. (Does not repeat until the key is released and pressed again)."
+    }
+    imgui.SetTooltip(tooltips[keyType] or "Unknown key type.")
+end
+
 -- Key Editor
-function keyEditor(name)
-    if not autobind.Keybinds[name] then
-        print("Warning: autobind.Keybinds[" .. name .. "] is nil")
+function keyEditor(title, index)
+    if not autobind.Keybinds[index] then
+        print("Warning: autobind.Keybinds[" .. index .. "] is nil")
         return
     end
 
-    if not autobind.Keybinds[name].Keys then
-        autobind.Keybinds[name].Keys = {}
+    if not autobind.Keybinds[index].Keys then
+        autobind.Keybinds[index].Keys = {}
     end
 
     imgui.BeginGroup()
 
-    imgui.Text(name .. ":")
+    imgui.AlignTextToFramePadding()
+    imgui.Text(title .. ":")
+    --[[if imgui.IsItemHovered() then
+        imgui.CustomTooltip(discription)
+    end]]
+    imgui.SameLine()
+    if imgui.Checkbox((autobind.Keybinds[index].Toggle and "Enabled" or "Disabled") .. "##" .. index, new.bool(autobind.Keybinds[index].Toggle)) then
+        autobind.Keybinds[index].Toggle = not autobind.Keybinds[index].Toggle
+    end
+    if imgui.IsItemHovered() then
+        imgui.CustomTooltip(string.format("Toggle this key binding. %s", autobind.Keybinds[index].Toggle and "{00FF00}(Enabled)" or "{FF0000}(Disabled)"))
+    end
 
-	if imgui.Checkbox((autobind.Keybinds[name].Toggle and "Enabled" or "Disabled") .. "##" .. name, new.bool(autobind.Keybinds[name].Toggle)) then
-		autobind.Keybinds[name].Toggle = not autobind.Keybinds[name].Toggle
-	end
-
-    for i, key in ipairs(autobind.Keybinds[name].Keys) do
-        local buttonText = changekey[name] and changekey[name] == i and fa.KEYBOARD_DOWN or 
+    for i, key in ipairs(autobind.Keybinds[index].Keys) do
+        local buttonText = changekey[index] and changekey[index] == i and fa.KEYBOARD_DOWN or 
             (key ~= 0 and vk.id_to_name(key) or fa.KEYBOARD)
 
-        if imgui.Button(buttonText .. '##' .. name .. i) then
-            changekey[name] = i
+        imgui.AlignTextToFramePadding()
+        if imgui.Button(buttonText .. '##' .. index .. i) then
+            changekey[index] = i
             lua_thread.create(function()
-                while changekey[name] == i do 
+                while changekey[index] == i do 
                     wait(0)
                     local keydown, result = getDownKeys()
                     if result then
-                        autobind.Keybinds[name].Keys[i] = keydown
-                        changekey[name] = false
+                        autobind.Keybinds[index].Keys[i] = keydown
+                        changekey[index] = false
                     end
                 end
             end)
+        end
+        if imgui.IsItemHovered() then
+            imgui.CustomTooltip(string.format("Press to change key %d", i))
         end
 
         -- Add a combo box for key type selection
@@ -1778,46 +2031,81 @@ function keyEditor(name)
         imgui.PushItemWidth(75)
         local keyTypes = {"KeyDown", "KeyPressed"}
         
-        local currentType = autobind.Keybinds[name].Type
+        local currentType = autobind.Keybinds[index].Type
         if type(currentType) == "table" then
             currentType = currentType[i] or "KeyDown"
         elseif type(currentType) ~= "string" then
             currentType = "KeyDown"
         end
         
-        if imgui.BeginCombo("##KeyType"..name..i, currentType:gsub("Key", "")) then
+        if imgui.BeginCombo("##KeyType"..index..i, currentType:gsub("Key", "")) then
             for _, keyType in ipairs(keyTypes) do
                 if imgui.Selectable(keyType:gsub("Key", ""), currentType == keyType) then
-                    if type(autobind.Keybinds[name].Type) ~= "table" then
-                        autobind.Keybinds[name].Type = {autobind.Keybinds[name].Type or "KeyDown"}
+                    if type(autobind.Keybinds[index].Type) ~= "table" then
+                        autobind.Keybinds[index].Type = {autobind.Keybinds[index].Type or "KeyDown"}
                     end
-                    autobind.Keybinds[name].Type[i] = keyType
+                    autobind.Keybinds[index].Type[i] = keyType
+                end
+                if imgui.IsItemHovered() then
+                    showKeyTypeTooltip(keyType)
                 end
             end
             imgui.EndCombo()
         end
+        if imgui.IsItemHovered() then
+            showKeyTypeTooltip(currentType)
+        end
         imgui.PopItemWidth()
-    end
 
-    if imgui.Button(fa.PLUS .. "##add" .. name) then
-        local nextIndex = #autobind.Keybinds[name].Keys + 1
-        if nextIndex <= 3 then
-            table.insert(autobind.Keybinds[name].Keys, 0)
-            if type(autobind.Keybinds[name].Type) ~= "table" then
-                autobind.Keybinds[name].Type = {autobind.Keybinds[name].Type or "KeyDown"}
+        -- Add the "-" button next to the first key slot if there are multiple keys
+        if i == 1 and #autobind.Keybinds[index].Keys > 1 then
+            imgui.SameLine()
+            imgui.AlignTextToFramePadding()
+            if imgui.Button("-##remove" .. index) then
+                if #autobind.Keybinds[index].Keys > 0 then
+                    table.remove(autobind.Keybinds[index].Keys)
+                    if type(autobind.Keybinds[index].Type) == "table" then
+                        table.remove(autobind.Keybinds[index].Type)
+                    end
+                end
             end
-            table.insert(autobind.Keybinds[name].Type, "KeyDown")
+            if imgui.IsItemHovered() then
+                imgui.CustomTooltip("Remove this key binding.")
+            end
+        end
+
+        -- Add the "+" button next to the last key slot
+        if i == #autobind.Keybinds[index].Keys then
+            imgui.SameLine()
+            imgui.AlignTextToFramePadding()
+            if imgui.Button("+##add" .. index) then
+                local nextIndex = #autobind.Keybinds[index].Keys + 1
+                if nextIndex <= 3 then
+                    table.insert(autobind.Keybinds[index].Keys, 0)
+                    if type(autobind.Keybinds[index].Type) ~= "table" then
+                        autobind.Keybinds[index].Type = {autobind.Keybinds[index].Type or "KeyDown"}
+                    end
+                    table.insert(autobind.Keybinds[index].Type, "KeyDown")
+                end
+            end
+            if imgui.IsItemHovered() then
+                imgui.CustomTooltip("Add a new key binding.")
+            end
         end
     end
 
-    imgui.SameLine()
-
-    if imgui.Button(fa.MINUS .. "##remove" .. name) then
-        if #autobind.Keybinds[name].Keys > 0 then
-            table.remove(autobind.Keybinds[name].Keys)
-            if type(autobind.Keybinds[name].Type) == "table" then
-                table.remove(autobind.Keybinds[name].Type)
+    -- If there are no keys, show the "+" button
+    if #autobind.Keybinds[index].Keys == 0 then
+        imgui.AlignTextToFramePadding()
+        if imgui.Button("+##add" .. index) then
+            table.insert(autobind.Keybinds[index].Keys, 0)
+            if type(autobind.Keybinds[index].Type) ~= "table" then
+                autobind.Keybinds[index].Type = {autobind.Keybinds[index].Type or "KeyDown"}
             end
+            table.insert(autobind.Keybinds[index].Type, "KeyDown")
+        end
+        if imgui.IsItemHovered() then
+            imgui.CustomTooltip("Add a new key binding.")
         end
     end
 
@@ -1826,20 +2114,41 @@ end
 
 -- Fetch Data From URL
 function fetchDataFromURL(url, path, callback)
+	-- Debug: Starting download
+	print("Starting download from URL:", url, "to path:", path)
+	
 	downloadFiles({{url = url, path = getFile(path), replace = true}}, function(result)
+		-- Debug: Download result
+		print("Download result:", result)
+		
 		if result then
 			local file = io.open(getFile(path), "r")
 			if file then
+				-- Debug: File opened successfully
+				print("File opened successfully:", path)
+				
 				local content = file:read("*all")
 				file:close()
 				
-				local success, decodedData = pcall(decodeJson, content)
-				if success and type(decodedData) == "table" then
-					callback(decodedData)
+				-- Debug: File content read
+				print("File content read:", content)
+				
+				local success, decoded = pcall(decodeJson, content)
+				if success then
+					-- Debug: JSON decoded successfully
+					print("JSON decoded successfully:", decoded)
+					
+					if next(decoded) == nil then
+						print("JSON format is empty. URL:", url)
+					else
+						callback(decoded)
+					end
 				else
-					print("Error decoding JSON or invalid data structure "..content)
+					-- Debug: Failed to decode JSON
+					print("Failed to decode JSON: " .. decoded, "URL: ", url)
 				end
 			else
+				-- Debug: Error opening file
 				print("Error opening file: " .. path)
 			end
 		end
@@ -1912,27 +2221,27 @@ function handleConfigFile(path, defaults, configVar, ignoreKeys)
                 print("Error renaming config: " .. err2)
                 os.remove(path)
             end
-            handleConfigFile(path, defaults, configVar)
+            return handleConfigFile(path, defaults, configVar)
         else
             local result = ensureDefaults(config, defaults, false, ignoreKeys)
             if result then
-                local success, err3 = saveConfig(path, config)
+                local success, err2 = saveConfig(path, config)
                 if not success then
-                    print("Error saving config: " .. err3)
+                    return false, nil, "Error saving config: " .. err2
                 end
             end
-            return config
+            return true, config, nil
         end
     else
         local result = ensureDefaults(configVar, defaults, true)
         if result then
             local success, err = saveConfig(path, configVar)
             if not success then
-                print("Error saving config: " .. err)
+                return false, nil, "Error saving config: " .. err
             end
         end
     end
-    return configVar
+    return true, configVar, nil
 end
 
 function ensureDefaults(config, defaults, reset, ignoreKeys)
@@ -2308,10 +2617,20 @@ function imgui.CustomButtonWithTooltip(name, color, colorHovered, colorActive, s
     imgui.PopStyleColor(3)
     if imgui.IsItemHovered() and tooltip then
         imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
-        imgui.SetTooltip(tooltip)
+        imgui.CustomTooltip(tooltip)
         imgui.PopStyleVar()
     end
     return result
+end
+
+function imgui.CustomTooltip(tooltip)
+    if imgui.IsItemHovered() and tooltip then
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
+        imgui.BeginTooltip()
+        imgui.TextColoredRGB(tooltip)
+        imgui.EndTooltip()
+        imgui.PopStyleVar()
+    end
 end
 
 function loadFontAwesome6Icons(iconList, fontSize, style)
