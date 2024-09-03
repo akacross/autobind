@@ -1546,21 +1546,22 @@ function()
 					end, false)
 				imgui.EndChild()
 
-				imgui.SetCursorPos(imgui.ImVec2(300, 1))
-				if imgui.BeginChild("##keybinds", imgui.ImVec2(197, 263), false) then
+				imgui.SetCursorPos(imgui.ImVec2(322, 1))
+				if imgui.BeginChild("##keybinds", imgui.ImVec2(175, 270), false) then
 					-- Define the key editor table
 					local keyEditors = {
-						{label = "Accept", key = "Accept"},
-						{label = "Offer", key = "Offer"},
-						{label = "Take-Pills", key = "TakePills"},
-						{label = "Frisk", key = "Frisk"},
-						{label = "Bike-Bind", key = "BikeBind"},
-						{label = "Sprint-Bind", key = "SprintBind"}
+						{label = "Accept", key = "Accept", description = "Accepts a vest from someone. (Options are to the left)"},
+						{label = "Offer", key = "Offer", description = "Offers a vest to someone. (Options are to the left)"},
+						{label = "Take-Pills", key = "TakePills", description = "Types /takepills."},
+						{label = "Frisk", key = "Frisk", description = "Frisks a player. (Options are to the left)"},
+						{label = "Bike-Bind", key = "BikeBind", description = "Makes bikes/motorcycles/quads faster by holding the bind key while riding."},
+						{label = "Sprint-Bind", key = "SprintBind", description = "Makes you sprint faster by holding the bind key while sprinting. (This is only the toggle)"},
 					}
 
 					-- Use the key editor table to call keyEditor for each entry
-					for _, editor in ipairs(keyEditors) do
-						keyEditor(editor.label, editor.key)
+					imgui.SetCursorPos(imgui.ImVec2(0, 6))
+					for index, editor in ipairs(keyEditors) do
+						keyEditor(editor.label, editor.key, editor.description)
 					end
 				end
 				imgui.EndChild()
@@ -1933,6 +1934,10 @@ local function showKeyTypeTooltip(keyType)
     imgui.CustomTooltip(tooltips[keyType] or "Unknown key type.")
 end
 
+local function correctKeyName(keyName)
+	return keyName:gsub("Left ", ""):gsub("Right ", ""):gsub("Context ", ""):gsub("Numpad", "Num")
+end
+
 -- Key Editor
 function keyEditor(title, index, description)
     if not autobind.Keybinds[index] then
@@ -1944,6 +1949,13 @@ function keyEditor(title, index, description)
         autobind.Keybinds[index].Keys = {}
     end
 
+    -- Adjustable parameters
+    local fontSize = 18  -- Font size for the text
+    local padding = imgui.ImVec2(8, 6)  -- Padding around buttons
+    local comboWidth = 70  -- Width of the combo box
+    local verticalSpacing = 2  -- Vertical spacing after the last key entry
+
+    -- Load the font with the desired size
     imgui.PushFont(skinEditor.font)
 
     imgui.BeginGroup()
@@ -1962,11 +1974,12 @@ function keyEditor(title, index, description)
     imgui.CustomTooltip(string.format("Toggle this key binding. %s", autobind.Keybinds[index].Toggle and "{00FF00}(Enabled)" or "{FF0000}(Disabled)"))
 
     for i, key in ipairs(autobind.Keybinds[index].Keys) do
-        local buttonText = changekey[index] and changekey[index] == i and fa.KEYBOARD_DOWN or (key ~= 0 and vk.id_to_name(key) or fa.KEYBOARD)
+        local buttonText = changekey[index] and changekey[index] == i and fa.KEYBOARD_DOWN or (key ~= 0 and correctKeyName(vk.id_to_name(key)) or fa.KEYBOARD)
+        local buttonSize = imgui.CalcTextSize(buttonText) + padding
 
         -- Button to change key
         imgui.AlignTextToFramePadding()
-        if imgui.Button(buttonText .. '##' .. index .. i) then
+        if imgui.Button(buttonText .. '##' .. index .. i, buttonSize) then
             changekey[index] = i
             lua_thread.create(function()
                 while changekey[index] == i do 
@@ -1992,7 +2005,7 @@ function keyEditor(title, index, description)
             currentType = "KeyDown"
         end
         
-		imgui.PushItemWidth(75)
+        imgui.PushItemWidth(comboWidth)
         if imgui.BeginCombo("##KeyType"..index..i, currentType:gsub("Key", "")) then
             for _, keyType in ipairs(keyTypes) do
                 if imgui.Selectable(keyType:gsub("Key", ""), currentType == keyType) then
@@ -2005,14 +2018,15 @@ function keyEditor(title, index, description)
             end
             imgui.EndCombo()
         end
-		imgui.PopItemWidth()
+        imgui.PopItemWidth()
         showKeyTypeTooltip(currentType)
 
         -- Add the "-" button next to the first key slot if there are multiple keys
         if i == 1 and #autobind.Keybinds[index].Keys > 1 then
             imgui.SameLine()
             imgui.AlignTextToFramePadding()
-            if imgui.Button("-##remove" .. index) then
+            local minusButtonSize = imgui.CalcTextSize("-") + padding
+            if imgui.Button("-##remove" .. index, minusButtonSize) then
                 table.remove(autobind.Keybinds[index].Keys)
                 if type(autobind.Keybinds[index].Type) == "table" then
                     table.remove(autobind.Keybinds[index].Type)
@@ -2025,7 +2039,8 @@ function keyEditor(title, index, description)
         if i == #autobind.Keybinds[index].Keys then
             imgui.SameLine()
             imgui.AlignTextToFramePadding()
-            if imgui.Button("+##add" .. index) then
+            local plusButtonSize = imgui.CalcTextSize("+") + padding
+            if imgui.Button("+##add" .. index, plusButtonSize) then
                 local nextIndex = #autobind.Keybinds[index].Keys + 1
                 if nextIndex <= 3 then
                     table.insert(autobind.Keybinds[index].Keys, 0)
@@ -2042,7 +2057,8 @@ function keyEditor(title, index, description)
     -- If there are no keys, show the "+" button
     if #autobind.Keybinds[index].Keys == 0 then
         imgui.AlignTextToFramePadding()
-        if imgui.Button("+##add" .. index) then
+        local plusButtonSize = imgui.CalcTextSize("+") + padding
+        if imgui.Button("+##add" .. index, plusButtonSize) then
             table.insert(autobind.Keybinds[index].Keys, 0)
             if type(autobind.Keybinds[index].Type) ~= "table" then
                 autobind.Keybinds[index].Type = {autobind.Keybinds[index].Type or "KeyDown"}
@@ -2051,6 +2067,9 @@ function keyEditor(title, index, description)
         end
         imgui.CustomTooltip("Add a new key binding.")
     end
+
+    -- Add vertical spacing after the last key entry
+    imgui.Dummy(imgui.ImVec2(0, verticalSpacing))
 
     imgui.EndGroup()
     imgui.PopFont()
