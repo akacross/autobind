@@ -292,7 +292,9 @@ local currentlyDragging = nil
 local skinTexture = {}
 local skinEditor = {
 	selected = -1,
-	page = 1
+	page = 1,
+	fontSize = 12,
+	font = nil
 }
 
 -- Bike
@@ -1362,19 +1364,33 @@ function sampev.onTogglePlayerSpectating(state)
 end
 
 imgui.OnInitialize(function()
+	-- Disable ini file
     imgui.GetIO().IniFilename = nil
-    local defaultIcons = {
+
+	-- Load FontAwesome Icons
+	local defaultIcons = {
 		"SHIELD_PLUS", "POWER_OFF", "FLOPPY_DISK", "REPEAT", "PERSON_BOOTH", "ERASER",
-		"RETWEET", "GEAR", "CART_SHOPPING", "KEYBOARD", "KEYBOARD_DOWN", "LINK",
+		"RETWEET", "GEAR", "CART_SHOPPING", "LINK",
     }
     loadFontAwesome6Icons(defaultIcons, 12, "solid")
 
+	-- Load the font with the desired size
+	local fontFile = getFolderPath(0x14) .. '\\trebucbd.ttf'
+	assert(doesFileExist(fontFile), '[autobind] Font "' .. fontFile .. '" doesn\'t exist!')
+	skinEditor.font = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, skinEditor.fontSize)
+
+	-- Load FontAwesome Icons
+	local keyEditorIcons = {"KEYBOARD", "KEYBOARD_DOWN"}
+    loadFontAwesome6Icons(keyEditorIcons, 12, "solid")
+
+	-- Load Skins
 	for i = 0, 311 do
 		if skinTexture[i] == nil then
 			skinTexture[i] = imgui.CreateTextureFromFile(string.format("%s\\Skin_%d.png", getPath("skins"), i))
 		end
 	end
 
+	-- Apply the custom style
     apply_custom_style()
 end)
 
@@ -1399,8 +1415,8 @@ function()
 	local newPos, status = imgui.handleWindowDragging("Settings", autobind.Window.Pos, imgui.ImVec2(600, 428), imgui.ImVec2(0.5, 0.5))
     if status and menu.settings[0] then autobind.Window.Pos = newPos end
     imgui.SetNextWindowPos(autobind.Window.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-	imgui.SetNextWindowSize(imgui.ImVec2(588, 415), imgui.Cond.Always)
-	if imgui.Begin(title, menu.settings, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollbar) then
+	imgui.SetNextWindowSize(imgui.ImVec2(588, 420), imgui.Cond.Always)
+	if imgui.Begin(title, menu.settings, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
 		-- Define button properties for the first child
 		local buttons1 = {
 			{icon = fa.POWER_OFF, tooltip = string.format('%s Toggles all functionalities. (%s%s{FFFFFF})', fa.POWER_OFF, autobind.Settings.enable and '{00FF00}' or '{FF0000}', autobind.Settings.enable and 'ON' or 'OFF'), action = function()
@@ -1435,7 +1451,7 @@ function()
 		}
 
 		-- First child
-		if imgui.BeginChild("##1", imgui.ImVec2(85, 392), false) then
+		if imgui.BeginChild("##1", imgui.ImVec2(85, 382), false) then
 			for i, button in ipairs(buttons1) do
 				imgui.SetCursorPos(imgui.ImVec2(0, (i - 1) * 76))
 				if imgui.CustomButton(button.icon, button.color and button.color() or imgui.ImVec4(0.16, 0.16, 0.16, 0.9), imgui.ImVec4(0.40, 0.12, 0.12, 1), imgui.ImVec4(0.30, 0.08, 0.08, 1), imgui.ImVec2(75, 75)) then
@@ -1607,7 +1623,7 @@ function()
 						local column = (addButtonIndex - 1) % columns
 						local row = math.floor((addButtonIndex - 1) / columns)
 						local posX = start.x + column * (imageSize.x + spacing)
-						local posY = start.y + row * (imageSize.y + spacing)
+						local posY = start.y + row * (imageSize.y + spacing / 4)
 					
 						imgui.SetCursorPos(imgui.ImVec2(posX, posY))
 						if imgui.Button(u8"Add\nSkin", imageSize) then
@@ -1695,7 +1711,7 @@ function()
 		imgui.EndChild()
 
 		imgui.SetCursorPos(imgui.ImVec2(92, 386.5))
-		if imgui.BeginChild("##5", imgui.ImVec2(500, 36), false) then
+		if imgui.BeginChild("##5", imgui.ImVec2(500, 20), false) then
 			if imgui.Checkbox('Autosave', new.bool(autobind.Settings.autoSave)) then
 				autobind.Settings.autoSave = not autobind.Settings.autoSave
 			end
@@ -1846,7 +1862,6 @@ local kitId = 1
 
 imgui.OnFrame(function() return menu.settings[0] and menu.blackmarket[0] end,
 function()
-
 	-- Returns if Samp is not loaded
     assert(isSampLoaded(), "Samp not loaded")
 
@@ -1888,7 +1903,6 @@ function()
 				createMenu('Selection', blackMarketItems, kit.menu, blackMarketExclusiveGroups, 4)
 			end
 		end
-		print(imgui.GetWindowSize())
     end
     imgui.End()
 end)
@@ -1920,7 +1934,7 @@ local function showKeyTypeTooltip(keyType)
 end
 
 -- Key Editor
-function keyEditor(title, index, discription)
+function keyEditor(title, index, description)
     if not autobind.Keybinds[index] then
         print("Warning: autobind.Keybinds[" .. index .. "] is nil")
         return
@@ -1930,13 +1944,16 @@ function keyEditor(title, index, discription)
         autobind.Keybinds[index].Keys = {}
     end
 
+    imgui.PushFont(skinEditor.font)
+
     imgui.BeginGroup()
 
+    -- Title and description
     imgui.AlignTextToFramePadding()
     imgui.Text(title .. ":")
-	if discription then
-		imgui.CustomTooltip(discription)
-	end
+    if description then
+        imgui.CustomTooltip(description)
+    end
 
     imgui.SameLine()
     if imgui.Checkbox((autobind.Keybinds[index].Toggle and "Enabled" or "Disabled") .. "##" .. index, new.bool(autobind.Keybinds[index].Toggle)) then
@@ -1945,9 +1962,9 @@ function keyEditor(title, index, discription)
     imgui.CustomTooltip(string.format("Toggle this key binding. %s", autobind.Keybinds[index].Toggle and "{00FF00}(Enabled)" or "{FF0000}(Disabled)"))
 
     for i, key in ipairs(autobind.Keybinds[index].Keys) do
-        local buttonText = changekey[index] and changekey[index] == i and fa.KEYBOARD_DOWN or 
-            (key ~= 0 and vk.id_to_name(key) or fa.KEYBOARD)
+        local buttonText = changekey[index] and changekey[index] == i and fa.KEYBOARD_DOWN or (key ~= 0 and vk.id_to_name(key) or fa.KEYBOARD)
 
+        -- Button to change key
         imgui.AlignTextToFramePadding()
         if imgui.Button(buttonText .. '##' .. index .. i) then
             changekey[index] = i
@@ -1962,11 +1979,10 @@ function keyEditor(title, index, discription)
                 end
             end)
         end
-        imgui.CustomTooltip(string.format("Press to change key %d", i))
+        imgui.CustomTooltip(string.format("Press to change, Key: %d", i))
 
-        -- Add a combo box for key type selection
+        -- Combo box for key type selection
         imgui.SameLine()
-        imgui.PushItemWidth(90)
         local keyTypes = {"KeyDown", "KeyPressed"}
         
         local currentType = autobind.Keybinds[index].Type
@@ -1976,6 +1992,7 @@ function keyEditor(title, index, discription)
             currentType = "KeyDown"
         end
         
+		imgui.PushItemWidth(75)
         if imgui.BeginCombo("##KeyType"..index..i, currentType:gsub("Key", "")) then
             for _, keyType in ipairs(keyTypes) do
                 if imgui.Selectable(keyType:gsub("Key", ""), currentType == keyType) then
@@ -1988,19 +2005,17 @@ function keyEditor(title, index, discription)
             end
             imgui.EndCombo()
         end
+		imgui.PopItemWidth()
         showKeyTypeTooltip(currentType)
-        imgui.PopItemWidth()
 
         -- Add the "-" button next to the first key slot if there are multiple keys
         if i == 1 and #autobind.Keybinds[index].Keys > 1 then
             imgui.SameLine()
             imgui.AlignTextToFramePadding()
             if imgui.Button("-##remove" .. index) then
-                if #autobind.Keybinds[index].Keys > 0 then
-                    table.remove(autobind.Keybinds[index].Keys)
-                    if type(autobind.Keybinds[index].Type) == "table" then
-                        table.remove(autobind.Keybinds[index].Type)
-                    end
+                table.remove(autobind.Keybinds[index].Keys)
+                if type(autobind.Keybinds[index].Type) == "table" then
+                    table.remove(autobind.Keybinds[index].Type)
                 end
             end
             imgui.CustomTooltip("Remove this key binding.")
@@ -2038,6 +2053,7 @@ function keyEditor(title, index, discription)
     end
 
     imgui.EndGroup()
+    imgui.PopFont()
 end
 
 -- Fetch Data From URL
