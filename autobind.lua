@@ -222,13 +222,13 @@ local commands = {
 
 -- Timers
 local timers = {
-	Vest = {timer = 0, last = 0},
-	VestCD = {timer = 1.5, last = 0},
-	AcceptCD = {timer = 1.5, last = 0},
-	Heal = {timer = 12, last = 0},
+	Vest = {timer = 0.0, last = 0},
+	VestCD = {timer = 0.8, last = 0},
+	AcceptCD = {timer = 0.8, last = 0},
+	Heal = {timer = 12.0, last = 0},
 	Find = {timer = 19.5, last = 0},
-	Muted = {timer = 13, last = 0},
-	Binds = {timer = 1, last = {}}
+	Muted = {timer = 13.0, last = 0},
+	Binds = {timer = 0.5, last = {}}
 }
 
 -- Guard
@@ -316,19 +316,19 @@ local invalidAnimsSet = {
 
 -- Black Market Equipment Menu
 local blackMarketItems = {
-    {label = 'Health/Armor', index = 2, weapon = nil}, -- 1
-    {label = 'Silenced', index = 6, weapon = 22}, -- 2
-    {label = '9mm', index = 7, weapon = 23}, -- 3
-    {label = 'Shotgun', index = 8, weapon = 25}, -- 4
-    {label = 'MP5', index = 9, weapon = 29}, -- 5
-    {label = 'UZI', index = 10, weapon = 28}, -- 6
-    {label = 'Tec-9', index = 11, weapon = 32}, -- 7
-    {label = 'Country Rifle', index = 12, weapon = 33}, -- 8
-    {label = 'Deagle', index = 13, weapon = 24}, -- 9
-    {label = 'AK-47', index = 14, weapon = 30}, -- 10
-    {label = 'M4', index = 15, weapon = 31}, -- 11
-    {label = 'Spas-12', index = 16, weapon = 27}, -- 12
-    {label = 'Sniper Rifle', index = 17, weapon = 34} -- 13
+    {label = 'Health/Armor', index = 2, weapon = nil, price = 350}, -- 1
+    {label = 'Silenced', index = 6, weapon = 22, price = 150}, -- 2
+    {label = '9mm', index = 7, weapon = 23, price = 200}, -- 3
+    {label = 'Shotgun', index = 8, weapon = 25, price = 400}, -- 4
+    {label = 'MP5', index = 9, weapon = 29, price = 550}, -- 5
+    {label = 'UZI', index = 10, weapon = 28, price = 700}, -- 6
+    {label = 'Tec-9', index = 11, weapon = 32, price = 700}, -- 7
+    {label = 'Country Rifle', index = 12, weapon = 33, price = 850}, -- 8
+    {label = 'Deagle', index = 13, weapon = 24, price = 1000}, -- 9
+    {label = 'AK-47', index = 14, weapon = 30, price = 1400}, -- 10
+    {label = 'M4', index = 15, weapon = 31, price = 1400}, -- 11
+    {label = 'Spas-12', index = 16, weapon = 27, price = 2250}, -- 12
+    {label = 'Sniper Rifle', index = 17, weapon = 34, price = 3850} -- 13
 }
 
 -- Black Market Exclusive Groups
@@ -390,7 +390,11 @@ function loadConfigs()
 		{"Keybinds", "Frisk"},
 		{"Keybinds", "TakePills"},
 		{"Keybinds", "Accept"},
-		{"Keybinds", "Offer"}
+		{"Keybinds", "Offer"},
+		{"BlackMarket", "Kit1"},
+		{"BlackMarket", "Kit2"},
+		{"BlackMarket", "Kit3"},
+		{"BlackMarket", "Locations"}
 	}
 
 	-- Handle Config File
@@ -730,6 +734,18 @@ local function createKeybindThread()
 		return false
 	end
 
+	-- Function to check if the player already has the item
+	local function playerHasItem(item)
+		if item.weapon then
+			return hasCharGotWeapon(ped, item.weapon)
+		elseif item.label == 'Health/Armor' then
+			local health = getCharHealth(ped) - 5000000
+			local armor = getCharArmour(ped)
+			return health == 100 and armor == 100
+		end
+		return false
+	end
+
 	-- Handle Black Market
 	local function handleBlackMarket(kitNumber)
 		if isPlayerControlOn(h) then
@@ -737,15 +753,19 @@ local function createKeybindThread()
 				if isInBlackMarketLocation() then
 					getItemFromBM = kitNumber
 					local kit = autobind.BlackMarket["Kit" .. kitNumber]
-					table.foreach(kit, function(_, index)
+					for _, index in ipairs(kit) do
 						local item = blackMarketItems[index]
 						if item then
-							currentKey = item.index
-							gettingItem = true
-							sampSendChat("/bm")
-							repeat wait(0) until not gettingItem
+							if not playerHasItem(item) then
+								currentKey = item.index
+								gettingItem = true
+								sampSendChat("/bm")
+								repeat wait(0) until not gettingItem
+							else
+								formattedAddChatMessage(string.format("{FFFF00}Skipping item: %s (already have it)", item.label))
+							end
 						end
-					end)
+					end
 					getItemFromBM = 0
 					gettingItem = false
 					currentKey = nil
@@ -1252,12 +1272,37 @@ function sampev.onServerMessage(color, text)
 		return false
 	end
 
+	-- Reset heal timer (5 seconds)
+	if text:match("You can't heal if you were recently shot, except within points, events, minigames, and paintball.") then
+		resetTimer(5, timers.Heal)
+	end
+
 	local nickname = text:match("%* Bodyguard (.+) wants to protect you for %$200, type %/accept bodyguard to accept%.")
 	if nickname and color == 869072810 then
-		accepter.playerName = nickname:gsub("%s+", "_") -- Overlay
-		accepter.playerId = sampGetPlayerIdByNickname(accepter.playerName)
-		accepter.received = true
+		lua_thread.create(function()
+			wait(0)
+			if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 and ((accepter.enable and not checkHeal()) or (accepter.enable and enteredPoint)) and not checkMuted() then
+				accepter.playerName = nickname:gsub("%s+", "_") -- Overlay
+				accepter.playerId = sampGetPlayerIdByNickname(accepter.playerName)
+				sampSendChat("/accept bodyguard")
+				accepter.received = false
+				wait(1000)
+			end
+
+			if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
+				accepter.playerName = nickname:gsub("%s+", "_") -- Overlay
+				accepter.playerId = sampGetPlayerIdByNickname(accepter.playerName)
+				accepter.received = true
+			end
+		end)
 	end
+
+	-- You can't afford the Protection!
+	if text:match("You can't afford the Protection!") then
+		accepter.received = false
+	end
+
+	-- needs to be renabled via /pay or /withdraw/awithdraw
 
 	local nickname = text:match("%* You accepted the protection for %$200 from (.+)%.")
 	if nickname then
@@ -1310,7 +1355,7 @@ function sampev.onServerMessage(color, text)
 	end
 
     if getItemFromBM > 0 then
-        if (text:match("You are not a Sapphire or Diamond Donator!") and color == -1077886209 then
+        if text:match("You are not a Sapphire or Diamond Donator!") and color == -1077886209 then
             getItemFromBM = 0
             gettingItem = false
             currentKey = nil
@@ -1328,6 +1373,7 @@ function sampev.onServerMessage(color, text)
 end
 
 function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
+	print("SENDER", senderID, "DAMAGE", damage, "WEAPON", weapon, "BODYPART", Bodypart)
 	if senderID ~= 65535 and damage > 0 then
 		if autobind.Settings.mode == "Family" then
 			if preventHeal then
@@ -1355,9 +1401,6 @@ function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedP
 end
 
 function sampev.onShowDialog(id, style, title, button1, button2, text)
-    -- Debug: Dialog shown
-    print("Dialog shown with ID:", id, "Title:", title)
-    
     if getItemFromBM > 0 then
         if not title:find("Black Market") then 
             getItemFromBM = 0 
@@ -1382,7 +1425,7 @@ imgui.OnInitialize(function()
 	-- Load FontAwesome Icons
 	local defaultIcons = {
 		"SHIELD_PLUS", "POWER_OFF", "FLOPPY_DISK", "REPEAT", "PERSON_BOOTH", "ERASER",
-		"RETWEET", "GEAR", "CART_SHOPPING", "LINK",
+		"RETWEET", "GEAR", "CART_SHOPPING", "LINK", "DOLLAR_SIGN"
     }
     loadFontAwesome6Icons(defaultIcons, 12, "solid")
 
@@ -1856,6 +1899,7 @@ local function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
             local item = items[index]
             if item then
                 createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
+				imgui.CustomTooltip(string.format("Price: $%s", formatNumber(item.price)))
                 imgui.SameLine()
                 table.insert(handledIndices, index)
             end
@@ -1867,6 +1911,7 @@ local function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
     for index, item in ipairs(items) do
         if not tableContains(handledIndices, index) then
             createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
+			imgui.CustomTooltip(string.format("Price: $%s", formatNumber(item.price)))
         end
     end
 end
@@ -1886,8 +1931,16 @@ function()
 	local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.BlackMarket.Pos, imgui.ImVec2(226, 290), imgui.ImVec2(0.5, 0.5))
     if status and menu.settings[0] then autobind.BlackMarket.Pos = newPos end
 
+	local totalPrice = 0
+	for _, index in ipairs(autobind.BlackMarket[string.format("Kit%d", kitId)]) do
+		local item = blackMarketItems[index]
+		if item and item.price then
+			totalPrice = totalPrice + item.price
+		end
+	end
+
     imgui.SetNextWindowPos(autobind.BlackMarket.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    if imgui.Begin(string.format("BM Settings - Kit: %d", kitId), menu.blackmarket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+    if imgui.Begin(string.format("BM - Kit: %d - $%s", kitId, formatNumber(totalPrice)), menu.blackmarket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
         local availWidth = imgui.GetContentRegionAvail().x
         local buttonWidth = availWidth / 3 - 5
 
@@ -2366,6 +2419,11 @@ end
 
 function removeHexBrackets(text)
     return string.gsub(text, "{%x+}", "")
+end
+
+function formatNumber(n)
+    n = tostring(n)
+    return n:reverse():gsub("...","%0,",math.floor((#n-1)/3)):reverse()
 end
 
 function compareVersions(version1, version2)
