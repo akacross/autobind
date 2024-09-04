@@ -189,7 +189,8 @@ local autobind_defaultSettings = {
 		Pos = {x = resX / 5, y = resY / 2},
         Kit1 = {1, 9, 13},
         Kit2 = {1, 9, 12},
-        Kit3 = {1, 9, 4}
+        Kit3 = {1, 9, 4},
+		Locations = {}
     },
     FactionLocker = {1, 2, 9, 8},
 	Keybinds = {
@@ -330,6 +331,7 @@ local blackMarketItems = {
     {label = 'Sniper Rifle', index = 17, weapon = 34} -- 13
 }
 
+-- Black Market Exclusive Groups
 local blackMarketExclusiveGroups = {
 	{2, 3, 9},  -- Silenced, 9mm, Deagle
 	{4, 12},    -- Shotgun, Spas-12
@@ -364,7 +366,6 @@ local preventHeal = false
 local getItemFromBM = 0
 local gettingItem = false
 local currentKey = nil
-local errorHandled = false
 
 ffi.cdef[[
 	struct stGangzone {
@@ -466,7 +467,7 @@ function main()
 	end
 
 	-- Resume Threads
-	while true do wait(5) 
+	while true do wait(1) 
 		resumeThreads()
 	end
 end
@@ -710,56 +711,65 @@ local function createKeybindThread()
 			formattedAddChatMessage(message)
 		end
 	end
+
+	-- Adjustable Z axis limits
+	local zTopLimit = 0.7  -- Top limit of the Z axis
+	local zBottomLimit = -0.7  -- Bottom limit of the Z axis
+
+	-- Function to check if the player is within any black market location
+	local function isInBlackMarketLocation()
+		local playerX, playerY, playerZ = getCharCoordinates(PLAYER_PED)
+		for _, location in pairs(autobind.BlackMarket.Locations) do
+			local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, location.x, location.y, location.z)
+			local zDifference = playerZ - location.z
+			print(distance, zDifference)
+			if distance <= location.radius and zDifference <= zTopLimit and zDifference >= zBottomLimit then
+				return true
+			end
+		end
+		return false
+	end
+
+	-- Handle Black Market
+	local function handleBlackMarket(kitNumber)
+		if isPlayerControlOn(h) then
+			if not checkMuted() then
+				if isInBlackMarketLocation() then
+					getItemFromBM = kitNumber
+					local kit = autobind.BlackMarket["Kit" .. kitNumber]
+					table.foreach(kit, function(_, index)
+						local item = blackMarketItems[index]
+						if item then
+							currentKey = item.index
+							gettingItem = true
+							sampSendChat("/bm")
+							repeat wait(0) until not gettingItem
+						end
+					end)
+					getItemFromBM = 0
+					gettingItem = false
+					currentKey = nil
+				else
+					formattedAddChatMessage("{FF0000}You are not at the black market!")
+				end
+			else
+				formattedAddChatMessage("{FF0000}You have been muted for spamming, please wait.")
+			end
+		else
+			formattedAddChatMessage("{FF0000}You are frozen, please wait.")
+		end
+	end
 	
 	local function blackMarket1()
-		getItemFromBM = 1
-		errorHandled = false
-		table.foreach(autobind.BlackMarket.Kit1, function(_, index)
-			local item = blackMarketItems[index]
-			if item then
-				currentKey = item.index
-				gettingItem = true
-				sampSendChat("/bm")
-				repeat wait(0) until not gettingItem
-			end
-		end)
-		getItemFromBM = 0
-		gettingItem = false
-		currentKey = nil
+		handleBlackMarket(1)
 	end
 	
 	local function blackMarket2()
-		getItemFromBM = 2
-		errorHandled = false
-		table.foreach(autobind.BlackMarket.Kit2, function(_, index)
-			local item = blackMarketItems[index]
-			if item then
-				currentKey = item.index
-				gettingItem = true
-				sampSendChat("/bm")
-				repeat wait(0) until not gettingItem
-			end
-		end)
-		getItemFromBM = 0
-		gettingItem = false
-		currentKey = nil
+		handleBlackMarket(2)
 	end
 	
 	local function blackMarket3()
-		getItemFromBM = 3
-		errorHandled = false
-		table.foreach(autobind.BlackMarket.Kit3, function(_, index)
-			local item = blackMarketItems[index]
-			if item then
-				currentKey = item.index
-				gettingItem = true
-				sampSendChat("/bm")
-				repeat wait(0) until not gettingItem
-			end
-		end)
-		getItemFromBM = 0
-		gettingItem = false
-		currentKey = nil
+		handleBlackMarket(3)
 	end
 	
 	local function factionLocker()
@@ -1300,13 +1310,10 @@ function sampev.onServerMessage(color, text)
 	end
 
     if getItemFromBM > 0 then
-        if (text:match("You are not a Sapphire or Diamond Donator!") or text:match("%s*You are not at the black market!")) and color == -1077886209 then
-            print("You are not a Sapphire or Diamond Donator or not at the black market!", color)
+        if (text:match("You are not a Sapphire or Diamond Donator!") and color == -1077886209 then
             getItemFromBM = 0
             gettingItem = false
             currentKey = nil
-            errorHandled = true
-            print(getItemFromBM, currentKey, gettingItem)
         end
     end
 
@@ -1340,6 +1347,13 @@ function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
 	end
 end
 
+-- Dynamic Black Market Locations (From the server)
+function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedPlayerId, attachedVehicleId, text)
+	if text:match("Type /blackmarket to purchase items") or text:match("Type /dlocker to purchase items") then
+		autobind.BlackMarket.Locations[id] = {x = position.x, y = position.y, z = position.z, radius = 13.0}
+	end
+end
+
 function sampev.onShowDialog(id, style, title, button1, button2, text)
     -- Debug: Dialog shown
     print("Dialog shown with ID:", id, "Title:", title)
@@ -1349,12 +1363,10 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
             getItemFromBM = 0 
             gettingItem = false
             currentKey = nil
-            errorHandled = false
             return false 
         end
         sampSendDialogResponse(id, 1, currentKey, nil)
         gettingItem = false
-        errorHandled = false
         return false
     end
 end
