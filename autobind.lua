@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.13a")
+script_version("1.8.14a")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -180,7 +180,7 @@ local autobind_defaultSettings = {
 		skins = {123},
 		names = {"Cross_Maddox"},
 		skinsUrl = "https://raw.githubusercontent.com/akacross/autobind/main/skins.json",
-		namesUrl = "https://raw.githubusercontent.com/akacross/autobind/main/names.json",
+		namesUrl = "https://raw.githubusercontent.com/akacross/autobind/main/names.json"
 	},
 	Window = {
 		Pos = {x = resX / 2, y = resY / 2}
@@ -213,11 +213,11 @@ local commands = {
 	repairnear = "repairnear",
 	sprintbind = "sprintbind",
 	bikebind = "bikebind",
-	find = "hfind",
+	find = "find",
 	tcap = "capspam",
 	autovest = "autovest",
 	autoaccept = "autoaccept",
-	ddmode = "donormode",
+	ddmode = "donormode"
 }
 
 -- Timers
@@ -277,6 +277,8 @@ local menu = {
 	blackmarket = new.bool(false),
 	factionlocker = new.bool(false)
 }
+
+local kitId = 1
 
 -- Change Key
 local changekey = {}
@@ -523,7 +525,7 @@ end
 function checkAdminDuty()
     local _, aduty = getSampfuncsGlobalVar("aduty")
     local _, HideMe = getSampfuncsGlobalVar("HideMe")
-	return aduty == 0 and (not specState or HideMe == 0)
+    return aduty == 1 and ((specState and HideMe == nil) or (HideMe == 1))
 end
 
 function toggleBind(bind)
@@ -596,7 +598,7 @@ function checkAndSendVest(prevest)
 		return "Autobind is disabled"
 	end
     
-    if not checkAdminDuty() then
+    if checkAdminDuty() then
         return
     end
 
@@ -640,7 +642,7 @@ function checkAndAcceptVest(autoaccept)
 		return "Autobind is disabled"
 	end
 
-	if not checkAdminDuty() then
+	if checkAdminDuty() then
         return
     end
 
@@ -668,7 +670,7 @@ function checkAndAcceptVest(autoaccept)
 				end
 			end
 		end
-		return accepter.received and string.format("You are not close enough to %s (%d)", accepter.playerName:gsub("_", " "), accepter.playerId) or "No one offered you bodyguard."
+		return accepter.received and string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId) or "No one offered you bodyguard."
 	else
 		return "You are already have a vest."
 	end
@@ -814,7 +816,7 @@ local function createKeybindThread()
 	end
 	
 	local function frisk()
-		if checkAdminDuty() and not checkMuted() then
+		if not checkAdminDuty() and not checkMuted() then
 			local targeting, _ = getCharPlayerIsTargeting(h)
 			for _, player in ipairs(getVisiblePlayers(5, "all")) do
 				if (isButtonPressed(h, gkeys.player.LOCKTARGET) and autobind.Settings.Frisk.mustAim) or not autobind.Settings.Frisk.mustAim then
@@ -828,8 +830,12 @@ local function createKeybindThread()
 	end
 	
 	local function takePills()
-		if checkAdminDuty() and not checkMuted() then
-			sampSendChat("/takepills")
+		if not checkAdminDuty() and not checkMuted() then
+			if not checkHeal() then
+				sampSendChat("/takepills")
+			else
+				formattedAddChatMessage("{FF0000}You have been damaged recently, you cannot take pills.")
+			end
 		end
 	end
 
@@ -889,7 +895,7 @@ local function createCaptureSpamThread()
 
     threads.captureSpam = coroutine.create(function()
         while true do
-            if autobind.Settings.enable and captureSpam and not checkMuted() and checkAdminDuty() then
+            if autobind.Settings.enable and captureSpam and not checkMuted() and not checkAdminDuty() then
                 local status, err = pcall(createCaptureSpam)
                 if not status then
                     print("Error in capture spam thread: " .. err)
@@ -992,7 +998,7 @@ function createThreads()
 end
 
 function toggleCaptureSpam()
-	if checkAdminDuty() then
+	if not checkAdminDuty() then
 		captureSpam = not captureSpam
 		formattedAddChatMessage(captureSpam and string.format("{FFFF00}Starting capture attempt... (type /%s to toggle)", commands.tcap) or "{FFFF00}Capture spam ended.")
 	end
@@ -1008,7 +1014,7 @@ function registerChatCommands()
 	end)
 
 	sampRegisterChatCommand(commands.repairnear, function()
-		if autobind.Settings.enable and not checkMuted() and checkAdminDuty() then
+		if autobind.Settings.enable and not checkMuted() and not checkAdminDuty() then
 			for _, player in ipairs(getVisiblePlayers(5, "car")) do
 				sampSendChat(string.format("/repair %d 1", player.playerId))
 				break
@@ -1029,7 +1035,7 @@ function registerChatCommands()
 					while autofind.enable do
 						local currentTime = localClock()
 						if sampIsPlayerConnected(autofind.playerId) then
-							if checkAdminDuty() then
+							if not checkAdminDuty() then
 								if currentTime - timers.Find.last >= timers.Find.timer and not checkMuted() then
 									timers.Find.last = currentTime
 									sampSendChat(string.format("/find %d", autofind.playerId))
@@ -1047,7 +1053,7 @@ function registerChatCommands()
 	
 				if not checkMuted() then
 					if string.len(params) > 0 then
-						if checkAdminDuty() then
+						if not checkAdminDuty() then
 							local result, playerid, name = findPlayer(params)
 							if result then
 								autofind.playerId = playerid
@@ -1120,7 +1126,7 @@ function registerChatCommands()
 	end)
 end
 
--- Save config on script terminate
+-- OnScriptTerminate
 function onScriptTerminate(scr, quitGame)
 	if scr == script.this then
 		-- Save config
@@ -1135,6 +1141,7 @@ function onScriptTerminate(scr, quitGame)
 	end
 end
 
+-- OnWindowMessage
 function onWindowMessage(msg, wparam, lparam)
 	if wparam == VK_ESCAPE and (menu.settings[0]) then
         if msg == wm.WM_KEYDOWN then
@@ -1147,7 +1154,7 @@ function onWindowMessage(msg, wparam, lparam)
 end
 
 --Your gang is already attempting to capture this turf.
---
+--OnServerMessage
 function sampev.onServerMessage(color, text)
 	local mode, motdMsg = text:match("([Family|LSPD|SASD|FBI|ARES].+) MOTD: (.+)")
 	if mode and motdMsg and color == -65366 then
@@ -1221,7 +1228,7 @@ function sampev.onServerMessage(color, text)
 	if text:find("The time is now") and color == -86 then
 		lua_thread.create(function()
 			wait(0)
-			if autobind.Settings.enable and not checkMuted() and checkAdminDuty() then
+			if autobind.Settings.enable and not checkMuted() and not checkAdminDuty() then
 				local mode = autobind.Settings.mode
 				if (autobind.Settings.factionTurf and mode == "Faction") or (autobind.Settings.familyTurf and mode == "Family") then
 					sampSendChat("/capturf")
@@ -1329,7 +1336,7 @@ function sampev.onServerMessage(color, text)
 	if text:find("wants to repair your car for $1") then
 		lua_thread.create(function()
 			wait(0)
-			if autobind.Settings.enable and not checkMuted() and checkAdminDuty() then
+			if autobind.Settings.enable and not checkMuted() and not checkAdminDuty() then
 				if autobind.AutoBind.autoRepair then
 					sampSendChat("/accept repair")
 				end
@@ -1341,7 +1348,7 @@ function sampev.onServerMessage(color, text)
 	if text:find("Your hospital bill") and color == -8224086 then
 		lua_thread.create(function()
 			wait(0)
-			if autobind.Settings.enable and not checkMuted() and checkAdminDuty() then
+			if autobind.Settings.enable and not checkMuted() and not checkAdminDuty() then
 				if autobind.AutoBind.autoBadge then
 					sampSendChat("/badge")
 				end
@@ -1372,9 +1379,9 @@ function sampev.onServerMessage(color, text)
 	end
 end
 
+-- OnSendTakeDamage
 function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
-	print("SENDER", senderID, "DAMAGE", damage, "WEAPON", weapon, "BODYPART", Bodypart)
-	if senderID ~= 65535 and damage > 0 then
+	if damage > 0 and (weapon <= 49 and weapon >= 54) and weapon ~= 255 then
 		if autobind.Settings.mode == "Family" then
 			if preventHeal then
 				local currentTime = os.time()
@@ -1393,14 +1400,21 @@ function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
 	end
 end
 
--- Dynamic Black Market Locations (From the server)
+-- OnCreate3DText
 function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedPlayerId, attachedVehicleId, text)
+	-- Dynamic Black Market Locations (From the server)
 	if text:match("Type /blackmarket to purchase items") or text:match("Type /dlocker to purchase items") then
+		-- Ensure the Locations table is initialized
+		if not autobind.BlackMarket.Locations then
+			autobind.BlackMarket.Locations = {}
+		end
 		autobind.BlackMarket.Locations[id] = {x = position.x, y = position.y, z = position.z, radius = 13.0}
 	end
 end
 
+-- OnShowDialog
 function sampev.onShowDialog(id, style, title, button1, button2, text)
+	-- Black Market
     if getItemFromBM > 0 then
         if not title:find("Black Market") then 
             getItemFromBM = 0 
@@ -1414,10 +1428,12 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
     end
 end
 
+-- Spectating
 function sampev.onTogglePlayerSpectating(state)
     specState = state
 end
 
+-- ImGUI Initialize
 imgui.OnInitialize(function()
 	-- Disable ini file
     imgui.GetIO().IniFilename = nil
@@ -1425,7 +1441,7 @@ imgui.OnInitialize(function()
 	-- Load FontAwesome Icons
 	local defaultIcons = {
 		"SHIELD_PLUS", "POWER_OFF", "FLOPPY_DISK", "REPEAT", "PERSON_BOOTH", "ERASER",
-		"RETWEET", "GEAR", "CART_SHOPPING", "LINK", "DOLLAR_SIGN"
+		"RETWEET", "GEAR", "CART_SHOPPING", "LINK"
     }
     loadFontAwesome6Icons(defaultIcons, 12, "solid")
 
@@ -1448,18 +1464,6 @@ imgui.OnInitialize(function()
 	-- Apply the custom style
     apply_custom_style()
 end)
-
-local function createRow(label, tooltip, setting, toggleFunction, sameLine)
-    if imgui.Checkbox(label, new.bool(setting)) then
-        toggleFunction()
-    end
-    imgui.CustomTooltip(tooltip)
-
-    if sameLine then
-        imgui.SameLine()
-        imgui.SetCursorPosX(imgui.GetWindowWidth() / 2.0)
-    end
-end
 
 imgui.OnFrame(function() return menu.settings[0] end,
 function()
@@ -1570,7 +1574,7 @@ function()
 					if autobind.Settings.mode == "Faction" then
 						createRow('Auto Badge', 'Automatically types /badge after spawning from the hospital.', autobind.AutoBind.autoBadge, function()
 							autobind.AutoBind.autoBadge = not autobind.AutoBind.autoBadge
-						end, true)
+						end, false)
 					end
 				
 					-- Auto Vest
@@ -1844,80 +1848,6 @@ function()
 	imgui.End()
 end)
 
--- Helper function to check if a table contains a value
-local function tableContains(tbl, value)
-    for _, v in ipairs(tbl) do
-        if v == value then
-            return true
-        end
-    end
-    return false
-end
-
-local function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
-    local isChecked = tableContains(tbl, index)
-    if imgui.Checkbox(label, new.bool(isChecked)) then
-        if isChecked then
-            for i, v in ipairs(tbl) do
-                if v == index then
-                    table.remove(tbl, i)
-                    break
-                end
-            end
-        else
-            if #tbl < maxSelections then
-                table.insert(tbl, index)
-                if exclusiveGroups then
-                    for _, group in ipairs(exclusiveGroups) do
-                        if tableContains(group, index) then
-                            for _, exclusiveIndex in ipairs(group) do
-                                if exclusiveIndex ~= index then
-                                    for i, v in ipairs(tbl) do
-                                        if v == exclusiveIndex then
-                                            table.remove(tbl, i)
-                                            break
-                                        end
-                                    end
-                                end
-                            end
-                            break  -- Exit the loop once the relevant group is found and processed
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-local function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
-    imgui.Text(title.. ":")
-    local handledIndices = {}
-    
-    -- Handle exclusive groups first
-    for _, group in ipairs(exclusiveGroups) do
-        for _, index in ipairs(group) do
-            local item = items[index]
-            if item then
-                createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
-				imgui.CustomTooltip(string.format("Price: $%s", formatNumber(item.price)))
-                imgui.SameLine()
-                table.insert(handledIndices, index)
-            end
-        end
-        imgui.NewLine()
-    end
-    
-    -- Handle remaining items
-    for index, item in ipairs(items) do
-        if not tableContains(handledIndices, index) then
-            createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
-			imgui.CustomTooltip(string.format("Price: $%s", formatNumber(item.price)))
-        end
-    end
-end
-
-local kitId = 1
-
 imgui.OnFrame(function() return menu.settings[0] and menu.blackmarket[0] end,
 function()
 	-- Returns if Samp is not loaded
@@ -1926,11 +1856,11 @@ function()
 	-- Returns if Samp is not available
     if not isSampAvailable() then return end
 
-	-- Blackmarket Window
-
+	-- Handle Window Dragging
 	local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.BlackMarket.Pos, imgui.ImVec2(226, 290), imgui.ImVec2(0.5, 0.5))
     if status and menu.settings[0] then autobind.BlackMarket.Pos = newPos end
 
+	-- Calculate total price
 	local totalPrice = 0
 	for _, index in ipairs(autobind.BlackMarket[string.format("Kit%d", kitId)]) do
 		local item = blackMarketItems[index]
@@ -1939,6 +1869,7 @@ function()
 		end
 	end
 
+	-- Blackmarket Window
     imgui.SetNextWindowPos(autobind.BlackMarket.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
     if imgui.Begin(string.format("BM - Kit: %d - $%s", kitId, formatNumber(totalPrice)), menu.blackmarket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
         local availWidth = imgui.GetContentRegionAvail().x
@@ -1989,6 +1920,89 @@ function()
     end
     imgui.End()
 end)
+
+function tableContains(tbl, value)
+    for _, v in ipairs(tbl) do
+        if v == value then
+            return true
+        end
+    end
+    return false
+end
+
+function createRow(label, tooltip, setting, toggleFunction, sameLine)
+    if imgui.Checkbox(label, new.bool(setting)) then
+        toggleFunction()
+    end
+    imgui.CustomTooltip(tooltip)
+
+    if sameLine then
+        imgui.SameLine()
+        imgui.SetCursorPosX(imgui.GetWindowWidth() / 2.0)
+    end
+end
+
+function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
+    local isChecked = tableContains(tbl, index)
+    if imgui.Checkbox(label, new.bool(isChecked)) then
+        if isChecked then
+            for i, v in ipairs(tbl) do
+                if v == index then
+                    table.remove(tbl, i)
+                    break
+                end
+            end
+        else
+            if #tbl < maxSelections then
+                table.insert(tbl, index)
+                if exclusiveGroups then
+                    for _, group in ipairs(exclusiveGroups) do
+                        if tableContains(group, index) then
+                            for _, exclusiveIndex in ipairs(group) do
+                                if exclusiveIndex ~= index then
+                                    for i, v in ipairs(tbl) do
+                                        if v == exclusiveIndex then
+                                            table.remove(tbl, i)
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
+    imgui.Text(title.. ":")
+    local handledIndices = {}
+    
+    -- Handle exclusive groups first
+    for _, group in ipairs(exclusiveGroups) do
+        for _, index in ipairs(group) do
+            local item = items[index]
+            if item then
+                createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
+				imgui.CustomTooltip(string.format("Price: $%s", formatNumber(item.price)))
+                imgui.SameLine()
+                table.insert(handledIndices, index)
+            end
+        end
+        imgui.NewLine()
+    end
+    
+    -- Handle remaining items
+    for index, item in ipairs(items) do
+        if not tableContains(handledIndices, index) then
+            createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
+			imgui.CustomTooltip(string.format("Price: $%s", formatNumber(item.price)))
+        end
+    end
+end
 
 -- Custom function to display tooltips based on key type
 local function showKeyTypeTooltip(keyType)
@@ -2236,6 +2250,39 @@ function downloadFiles(table, onCompleteCallback)
     end
 end
 
+-- Function to check if a table is a sparse array
+local function isSparseArray(tbl)
+    local count = 0
+    for k, v in pairs(tbl) do
+        if type(k) == "number" then
+            count = count + 1
+        end
+    end
+    return count ~= #tbl
+end
+
+-- Function to check for sparse arrays and nil values before saving
+local function checkForIssues(tbl, path)
+    path = path or ""
+    for k, v in pairs(tbl) do
+        local currentPath = path .. "." .. k
+        if v == nil then
+            print("Nil value found at key: " .. currentPath)
+            return false, "Nil value found at key: " .. currentPath
+        elseif type(v) == "table" then
+            if isSparseArray(v) then
+                print("Sparse array found at key: " .. currentPath)
+                return false, "Sparse array found at key: " .. currentPath
+            end
+            local success, err = checkForIssues(v, currentPath)
+            if not success then
+                return false, err
+            end
+        end
+    end
+    return true
+end
+
 function handleConfigFile(path, defaults, configVar, ignoreKeys)
     ignoreKeys = ignoreKeys or {}
     if doesFileExist(path) then
@@ -2359,6 +2406,11 @@ function loadConfig(filePath)
 end
 
 function saveConfig(filePath, config)
+    local success, err = checkForIssues(config)
+    if not success then
+        return false, err
+    end
+
     local file = io.open(filePath, "w")
     if not file then
         return false, "Could not save file."
