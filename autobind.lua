@@ -148,13 +148,32 @@ local resX, resY = getScreenResolution()
 
 -- Autobind Config
 local autobind = {
-	Settings = {},
+	--[[Settings = {
+		Frisk = {}
+	},
 	AutoBind = {},
-	AutoVest = {},
-	Window = {},
+	AutoVest = {
+		skins = {},
+		names = {}
+	},
+	Window = {
+		Pos = {}
+	},
 	Keybinds = {},
-	BlackMarket = {},
-	FactionLocker = {}
+	BlackMarket = {
+		Pos = {},
+		Kit1 = {},
+		Kit2 = {},
+		Kit3 = {},
+		Locations = {}
+	},
+	FactionLocker = {
+		Pos = {},
+		Kit1 = {},
+		Kit2 = {},
+		Kit3 = {},
+		Locations = {}
+	}]]
 }
 
 -- Default Settings
@@ -195,20 +214,28 @@ local autobind_defaultSettings = {
 		Pos = {x = resX / 2, y = resY / 2}
 	},
 	BlackMarket = {
-		Pos = {x = resX / 5, y = resY / 2},
+		Pos = {x = resX / 3.5, y = resY / 2},
         Kit1 = {1, 9, 13},
         Kit2 = {1, 9, 12},
         Kit3 = {1, 9, 4},
 		Locations = {}
     },
-    FactionLocker = {1, 2, 9, 8},
+    FactionLocker = {
+		Pos = {x = resX / 1.4, y = resY / 2},
+		Kit1 = {1, 2, 10, 11},
+        Kit2 = {1, 2, 10, 11},
+        Kit3 = {1, 2, 10, 11},
+		Locations = {}
+	},
 	Keybinds = {
         Accept = {Toggle = true, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}},
         Offer = {Toggle = true, Keys = {VK_MENU, VK_O}, Type = {'KeyDown', 'KeyPressed'}},
         BlackMarket1 = {Toggle = false, Keys = {VK_MENU, VK_1}, Type = {'KeyDown', 'KeyPressed'}},
         BlackMarket2 = {Toggle = false, Keys = {VK_MENU, VK_2}, Type = {'KeyDown', 'KeyPressed'}},
         BlackMarket3 = {Toggle = false, Keys = {VK_MENU, VK_3}, Type = {'KeyDown', 'KeyPressed'}},
-        FactionLocker = {Toggle = false, Keys = {VK_MENU, VK_X}, Type = {'KeyDown', 'KeyPressed'}},
+        FactionLocker1 = {Toggle = false, Keys = {VK_MENU, VK_X}, Type = {'KeyDown', 'KeyPressed'}},
+        FactionLocker2 = {Toggle = false, Keys = {VK_MENU, VK_C}, Type = {'KeyDown', 'KeyPressed'}},
+        FactionLocker3 = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}},
         BikeBind = {Toggle = false, Keys = {VK_SHIFT}, Type = {'KeyDown', 'KeyDown'}},
         SprintBind = {Toggle = true, Keys = {VK_F11}, Type = {'KeyPressed'}},
         Frisk = {Toggle = false, Keys = {VK_MENU, VK_F}, Type = {'KeyDown', 'KeyPressed'}},
@@ -280,35 +307,40 @@ local captureSpam = false
 
 -- Menu Variables
 local menu = {
-	settings = new.bool(false),
-	pageId = 1,
-	skins = new.bool(false),
-	blackmarket = new.bool(false),
-	factionlocker = new.bool(false)
+	forcePreload = new.bool(false),
+	settings = {
+		window = new.bool(false),
+		pageId = 1,
+	},
+	skins = {
+		window = new.bool(false),
+		pageId = 1,
+		selected = -1
+	},
+	blackmarket = {
+		window = new.bool(false), 
+		pageId = 1
+	},
+	factionlocker = {
+		window = new.bool(false), 
+		pageId = 1
+	}
 }
 
-local forcePreload = new.bool(false)
-local kitId = 1
-
--- Change Key
-local changekey = {}
-
--- Calculate Size
-local size = {
-    {x = 0, y = 0}
+-- Font Data
+local fontData = {
+	fontSize = 12,
+	font = nil
 }
 
 -- Currently Dragging
 local currentlyDragging = nil
 
+-- Change Key
+local changeKey = {}
+
 -- Skin Editor
 local skinTexture = {}
-local skinEditor = {
-	selected = -1,
-	page = 1,
-	fontSize = 12,
-	font = nil
-}
 
 -- Bike
 local bikeIds = {[481] = true, [509] = true, [510] = true}
@@ -354,15 +386,18 @@ local blackMarketExclusiveGroups = {
 
 -- Locker Equipment Menu
 local lockerMenuItems = {
-	{label = 'Deagle', index = 1},
-	{label = 'Shotgun', index = 2},
-	{label = 'SPAS-12', index = 3},
-	{label = 'MP5', index = 4},
-	{label = 'M4', index = 5},
-	{label = 'AK-47', index = 6},
-	{label = 'Sniper', index = 9},
-	{label = 'Armor', index = 10},
-	{label = 'Health', index = 11}
+	{label = 'Deagle', index = 1, weapons = 24, price = nil}, -- 1
+	{label = 'Shotgun', index = 2, weapons = 25, price = nil}, -- 2
+	{label = 'SPAS-12', index = 3, weapons = 27, price = 3200}, -- 3
+	{label = 'MP5', index = 4, weapons = 29, price = 250}, -- 4
+	{label = 'M4', index = 5, weapons = 31, price = 2100}, -- 5
+	{label = 'AK-47', index = 6, weapons = 30, price = 2100}, -- 6
+	{label = 'Teargas', index = 7, weapons = nil, price = nil}, -- 7
+	{label = 'Camera', index = 8, weapons = nil, price = nil}, -- 8
+	{label = 'Sniper', index = 9, weapons = 34, price = 5500}, -- 9
+	{label = 'Armor', index = 10, weapons = nil, price = nil}, -- 10
+	{label = 'Health', index = 11, weapons = nil, price = nil}, -- 11
+	{label = 'Baton/Mace', index = 12, weapons = nil, price = nil}, -- 12
 }
 
 local lockerExclusiveGroups = {
@@ -446,8 +481,13 @@ function main()
 
 	-- Register Menu Command
 	sampRegisterChatCommand(scriptName, function()
-		menu.pageId = 1
-		menu.settings[0] = not menu.settings[0]
+		menu.settings.pageId = 1
+		menu.settings.window[0] = not menu.settings.window[0]
+	end)
+
+	sampRegisterChatCommand("bms", function()
+		menu.blackmarket.pageId = 1
+		menu.blackmarket.window[0] = not menu.blackmarket.window[0]
 	end)
 
 	sampRegisterChatCommand("areyouin", function()
@@ -481,7 +521,11 @@ function main()
 
 	-- Create Threads
 	local startedThreads, failedThreads = createThreads()
-	print(string.format("%s v%s has loaded successfully! Threads: %s.", firstToUpper(scriptName), scriptVersion, table.concat(startedThreads, ", ")))
+
+	-- Print Loaded/Failed Threads and Success Message
+	local message = string.format("%s v%s has loaded successfully!", firstToUpper(scriptName), scriptVersion)
+	print(string.format("%s Threads: %s.", message, table.concat(startedThreads, ", ")))
+	formattedAddChatMessage(message)
 	if #failedThreads > 0 then
 		print("Threads failed to start: " .. table.concat(failedThreads, ", "))
 	end
@@ -494,7 +538,8 @@ end
 
 -- onD3DPresent
 function onD3DPresent()
-	if not autobind.Settings.enable or not autobind.Keybinds.SprintBind then
+	if not autobind.Settings or not autobind.Keybinds then
+		print("Autobind is not loaded properly.")
 		return
 	end
 
@@ -877,7 +922,7 @@ local function createKeybindThread()
 					}
 			
 					if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
-						if activeCheck(true, true, true, true, true) and not menu.settings[0] then
+						if activeCheck(true, true, true, true, true) and not menu.settings.window[0] then
 							if key == "BikeBind" or not timers.Binds.last[key] or (currentTime - timers.Binds.last[key]) >= timers.Binds.timer then
 								local success, error = pcall(keyFunctions[key])
 								if not success then
@@ -1157,24 +1202,26 @@ end
 
 -- OnWindowMessage
 function onWindowMessage(msg, wparam, lparam)
-	if wparam == VK_ESCAPE and (menu.settings[0]) then
+	if wparam == VK_ESCAPE and (menu.settings.window[0] or menu.blackmarket.window[0] or menu.factionlocker.window[0]) then
         if msg == wm.WM_KEYDOWN then
             consumeWindowMessage(true, false)
         end
         if msg == wm.WM_KEYUP then
-            menu.settings[0] = false
+            menu.settings.window[0] = false
+			menu.blackmarket.window[0] = false
+			menu.factionlocker.window[0] = false
         end
     end
 end
 
---  Todo
---Your gang is already attempting to capture this turf.
+--- Todo
+-- Your gang is already attempting to capture this turf.
 -- needs to be renabled via /pay or /withdraw/awithdraw
 
-	--[[local div, rank, nickname, message = text:match("%*%*%s*(%a*%s*)%s*(%a+)%s+([%a%s]+):%s*(.*)%s*%*%*")
-	if rank and nickname and message and color == -1920073729 then
-		print("Rank: " .. rank, "Nickname: " .. nickname, "Message: " .. message)
-	end]]
+--[[local div, rank, nickname, message = text:match("%*%*%s*(%a*%s*)%s*(%a+)%s+([%a%s]+):%s*(.*)%s*%*%*")
+if rank and nickname and message and color == -1920073729 then
+	print("Rank: " .. rank, "Nickname: " .. nickname, "Message: " .. message)
+end]]
 
 --OnServerMessage
 function sampev.onServerMessage(color, text)
@@ -1490,7 +1537,7 @@ imgui.OnInitialize(function()
 	-- Load the font with the desired size
 	local fontFile = getFolderPath(0x14) .. '\\trebucbd.ttf'
 	assert(doesFileExist(fontFile), '[autobind] Font "' .. fontFile .. '" doesn\'t exist!')
-	skinEditor.font = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, skinEditor.fontSize)
+	fontData.font = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSize)
 
 	-- Load FontAwesome Icons
 	local keyEditorIcons = {"KEYBOARD", "KEYBOARD_DOWN"}
@@ -1508,13 +1555,13 @@ imgui.OnInitialize(function()
 end)
 
 -- Force Preload (Fixes initial freeze when opening the menu)
-imgui.OnFrame(function() return forcePreload[0] end,
+imgui.OnFrame(function() return menu.forcePreload[0] end,
 function()
-	forcePreload[0] = false
+	menu.forcePreload[0] = false
 end).HideCursor = true
 
 -- Settings Window
-imgui.OnFrame(function() return menu.settings[0] end,
+imgui.OnFrame(function() return menu.settings.window[0] end,
 function()
 	-- Returns if Samp is not loaded
 	assert(isSampLoaded(), "Samp not loaded")
@@ -1524,7 +1571,7 @@ function()
 
 	-- Handle Window Dragging
 	local newPos, status = imgui.handleWindowDragging("Settings", autobind.Window.Pos, imgui.ImVec2(600, 428), imgui.ImVec2(0.5, 0.5))
-    if status and menu.settings[0] then autobind.Window.Pos = newPos end
+    if status and menu.settings.window[0] then autobind.Window.Pos = newPos end
     imgui.SetNextWindowPos(autobind.Window.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
 
 	-- Set Window Size
@@ -1532,7 +1579,7 @@ function()
 
 	-- Settings Window
 	local title = string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion)
-	if imgui.Begin(title, menu.settings, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
+	if imgui.Begin(title, menu.settings.window, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
 		-- Define button properties for the first child
 		local buttons1 = {
 			{icon = fa.POWER_OFF, tooltip = string.format('%s Toggles all functionalities. (%s%s{FFFFFF})', fa.POWER_OFF, autobind.Settings.enable and '{00FF00}' or '{FF0000}', autobind.Settings.enable and 'ON' or 'OFF'), action = function()
@@ -1584,10 +1631,10 @@ function()
 		if imgui.BeginChild("##2", imgui.ImVec2(500, 88), false) then
 			for i, button in ipairs(buttons2) do
 				imgui.SetCursorPos(imgui.ImVec2((i - 1) * 165, 0))
-				if imgui.CustomButton(string.format("%s  %s", button.icon, button.label), menu.pageId == button.pageId and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9), imgui.ImVec4(0.40, 0.12, 0.12, 1), imgui.ImVec4(0.30, 0.08, 0.08, 1), imgui.ImVec2(165, 75)) then
-					menu.pageId = button.pageId
+				if imgui.CustomButton(string.format("%s  %s", button.icon, button.label), menu.settings.pageId == button.pageId and imgui.ImVec4(0.56, 0.16, 0.16, 1) or imgui.ImVec4(0.16, 0.16, 0.16, 0.9), imgui.ImVec4(0.40, 0.12, 0.12, 1), imgui.ImVec4(0.30, 0.08, 0.08, 1), imgui.ImVec2(165, 75)) then
+					menu.settings.pageId = button.pageId
 				end
-				if menu.pageId ~= i then
+				if menu.settings.pageId ~= i then
 					imgui.CustomTooltip(button.tooltip)
 				end
 			end
@@ -1596,7 +1643,7 @@ function()
 
 		imgui.SetCursorPos(imgui.ImVec2(85, 110))
 		if imgui.BeginChild("##3", imgui.ImVec2(500, 276), false) then
-			if menu.pageId == 1 then
+			if menu.settings.pageId == 1 then
 				imgui.SetCursorPos(imgui.ImVec2(10, 1))
 				imgui.BeginChild("##config", imgui.ImVec2(300, 255), false)
 					-- Autobind/Capture
@@ -1626,7 +1673,7 @@ function()
 				
 					createRow('Accept Repair', 'Accept Repair will automatically accept repair requests.', autobind.AutoBind.autoRepair, function()
 						autobind.AutoBind.autoRepair = not autobind.AutoBind.autoRepair
-					end, false)
+					end, autobind.Settings.mode == "Faction" and true or false)
 				
 					if autobind.Settings.mode == "Faction" then
 						createRow('Auto Badge', 'Automatically types /badge after spawning from the hospital.', autobind.AutoBind.autoBadge, function()
@@ -1649,6 +1696,10 @@ function()
 					-- Accept
 					createRow('Auto Accept', 'Accept Vest will automatically accept vest requests.', accepter.enable, function()
 						accepter.enable = not accepter.enable
+					end, true)
+
+					createRow('Allow Everyone', 'With this enabled, the vest will be applied to everyone on the server.', autobind.AutoVest.everyone, function()
+						autobind.AutoVest.everyone = not autobind.AutoVest.everyone
 					end, false)
 				
 					imgui.NewLine()
@@ -1683,7 +1734,7 @@ function()
 				imgui.EndChild()
 			end
 
-			if menu.pageId == 2 then
+			if menu.settings.pageId == 2 then
 				imgui.SetCursorPos(imgui.ImVec2(10, 1))
 				if imgui.BeginChild("##skins", imgui.ImVec2(487, 270), false) then
 					if autobind.Settings.mode == "Family" then
@@ -1745,8 +1796,8 @@ function()
 						imgui.SetCursorPos(imgui.ImVec2(posX, posY))
 						if imgui.Button(u8"Add\nSkin", imageSize) then
 							autobind.AutoVest.skins[#autobind.AutoVest.skins + 1] = 0
-							menu.skins[0] = not menu.skins[0]
-							skinEditor.selected = #autobind.AutoVest.skins
+							menu.skins.window[0] = not menu.skins.window[0]
+							menu.skins.selected = #autobind.AutoVest.skins
 						end
 					elseif autobind.Settings.mode == "Faction" then
 						if imgui.Checkbox("Use Skins", new.bool(autobind.AutoVest.useSkins)) then
@@ -1775,7 +1826,7 @@ function()
 				imgui.EndChild()
 			end
 
-			if menu.pageId == 3 then
+			if menu.settings.pageId == 3 then
 				imgui.SetCursorPos(imgui.ImVec2(10, 1))
 				if imgui.BeginChild("##names", imgui.ImVec2(487, 263), false) then
 					imgui.PushItemWidth(326)
@@ -1833,20 +1884,16 @@ function()
 				autobind.Settings.autoSave = not autobind.Settings.autoSave
 			end
 			imgui.CustomTooltip('Automatically saves your settings when you exit the game')
-			imgui.SameLine()
-			if imgui.Checkbox('Everyone', new.bool(autobind.AutoVest.everyone)) then
-				autobind.AutoVest.everyone = not autobind.AutoVest.everyone
-			end
-			imgui.CustomTooltip('With this enabled, the vest will be applied to everyone on the server')
-			imgui.SameLine()
+
+			imgui.SameLine(autobind.Settings.mode == "Faction" and 270 or 388)
 			if imgui.Button(fa.CART_SHOPPING .. " BM Settings") then
-				menu.blackmarket[0] = not menu.blackmarket[0]
+				menu.blackmarket.window[0] = not menu.blackmarket.window[0]
 			end
 			imgui.CustomTooltip('Open the Black Market settings')
 			if autobind.Settings.mode == "Faction" then
 				imgui.SameLine()
 				if imgui.Button(fa.CART_SHOPPING .. " Faction Locker") then
-					menu.factionlocker[0] = not menu.factionlocker[0]
+					menu.factionlocker.window[0] = not menu.factionlocker.window[0]
 				end
 				imgui.CustomTooltip('Open the Faction Locker settings')
 			end
@@ -1857,7 +1904,7 @@ function()
 end)
 
 -- Skin Menu
-imgui.OnFrame(function() return menu.settings[0] and menu.skins[0] end,
+imgui.OnFrame(function() return menu.settings.window[0] and menu.skins.window[0] end,
 function()
 	-- Returns if Samp is not loaded
     assert(isSampLoaded(), "Samp not loaded")
@@ -1870,11 +1917,11 @@ function()
     imgui.SetNextWindowSize(imgui.ImVec2(505, 390), imgui.Cond.Always)
 
 	-- Skin Window
-    if imgui.Begin(u8("Skin Menu"), menu.skins, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+    if imgui.Begin(u8("Skin Menu"), menu.skins.window, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
         imgui.SetWindowFocus()
 
-        local startIdx = 21 + 21 * (skinEditor.page - 2)
-        local endIdx = (skinEditor.page == 15) and 299 or (41 + 21 * (skinEditor.page - 2))
+        local startIdx = 21 + 21 * (menu.skins.pageId - 2)
+        local endIdx = (menu.skins.pageId == 15) and 299 or (41 + 21 * (menu.skins.pageId - 2))
 
         for i = startIdx, endIdx do
             if (i - startIdx) % 7 ~= 0 then
@@ -1882,8 +1929,8 @@ function()
             end
 
             if imgui.ImageButton(skinTexture[i], imgui.ImVec2(55, 100)) then
-                autobind.AutoVest.skins[skinEditor.selected] = i
-                menu.skins[0] = false
+                autobind.AutoVest.skins[menu.skins.selected] = i
+                menu.skins.window[0] = false
             end
             imgui.CustomTooltip("Skin " .. i)
         end
@@ -1891,21 +1938,21 @@ function()
         imgui.SetCursorPos(imgui.ImVec2(555, 360))
         imgui.Indent(210)
 
-        if imgui.Button(u8"Previous", new.bool) and skinEditor.page > 0 then
-            skinEditor.page = (skinEditor.page == 1) and 15 or (skinEditor.page - 1)
+        if imgui.Button(u8"Previous", new.bool) and menu.skins.pageId > 0 then
+            menu.skins.pageId = (menu.skins.pageId == 1) and 15 or (menu.skins.pageId - 1)
         end
         imgui.SameLine()
-        if imgui.Button(u8"Next", new.bool) and skinEditor.page < 16 then
-            skinEditor.page = (skinEditor.page == 15) and 1 or (skinEditor.page + 1)
+        if imgui.Button(u8"Next", new.bool) and menu.skins.pageId < 16 then
+            menu.skins.pageId = (menu.skins.pageId == 15) and 1 or (menu.skins.pageId + 1)
         end
         imgui.SameLine()
-        imgui.Text("Page " .. skinEditor.page .. "/15")
+        imgui.Text("Page " .. menu.skins.pageId .. "/15")
     end
     imgui.End()
 end)
 
 -- Blackmarket Menu
-imgui.OnFrame(function() return menu.blackmarket[0] end,
+imgui.OnFrame(function() return menu.blackmarket.window[0] end,
 function()
 	-- Returns if Samp is not loaded
     assert(isSampLoaded(), "Samp not loaded")
@@ -1915,23 +1962,24 @@ function()
 
 	-- Handle Window Dragging
 	local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.BlackMarket.Pos, imgui.ImVec2(226, 290), imgui.ImVec2(0.5, 0.5))
-    if status and menu.blackmarket[0] then autobind.BlackMarket.Pos = newPos end
+    if status and menu.blackmarket.window[0] then autobind.BlackMarket.Pos = newPos end
 
 	-- Calculate total price
 	local totalPrice = 0
-	for _, index in ipairs(autobind.BlackMarket[string.format("Kit%d", kitId)]) do
+	for _, index in ipairs(autobind.BlackMarket[string.format("Kit%d", menu.blackmarket.pageId)]) do
 		local item = blackMarketItems[index]
 		if item and item.price then
 			totalPrice = totalPrice + item.price
 		end
 	end
 
-	-- Set the window position
+	-- Set the window position and size
     imgui.SetNextWindowPos(autobind.BlackMarket.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+	imgui.SetNextWindowSize(imgui.ImVec2(226, 290), imgui.Cond.Always)
 
 	-- Blackmarket Window
-	local title = string.format("BM - Kit: %d - $%s", kitId, formatNumber(totalPrice))
-    if imgui.Begin(u8(title), menu.blackmarket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+	local title = string.format("BM - Kit: %d - $%s", menu.blackmarket.pageId, formatNumber(totalPrice))
+    if imgui.Begin(u8(title), menu.blackmarket.window, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
         local availWidth = imgui.GetContentRegionAvail().x
         local buttonWidth = availWidth / 3 - 5
 
@@ -1945,7 +1993,7 @@ function()
 		-- Create buttons for each kit
 		for _, kit in ipairs(kits) do
 			if imgui.Button(fa.CART_SHOPPING .. " Kit " .. kit.id, imgui.ImVec2(buttonWidth, 0)) then
-				kitId = kit.id
+				menu.blackmarket.pageId = kit.id
 			end
 			imgui.SameLine()
 		end
@@ -1955,7 +2003,7 @@ function()
 
 		-- Display the key editor and menu based on the selected kitId
 		for _, kit in ipairs(kits) do
-			if kitId == kit.id then
+			if menu.blackmarket.pageId == kit.id then
 				keyEditor("Keybind", kit.key)
 				createMenu('Selection', blackMarketItems, kit.menu, blackMarketExclusiveGroups, 4)
 			end
@@ -1965,21 +2013,64 @@ function()
 end)
 
 -- Faction Locker Menu
-imgui.OnFrame(function() return menu.factionlocker[0] end,
+imgui.OnFrame(function() return menu.factionlocker.window[0] end,
 function()
-	-- Returns if Samp is not loaded
+    -- Returns if Samp is not loaded
     assert(isSampLoaded(), "Samp not loaded")
 
-	-- Returns if Samp is not available
+    -- Returns if Samp is not available
     if not isSampAvailable() then return end
 
-	-- Set the window position
-    imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x + (600 * 0.607), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+    -- Handle Window Dragging
+    local newPos, status = imgui.handleWindowDragging("FactionLocker", autobind.FactionLocker.Pos, imgui.ImVec2(226, 290), imgui.ImVec2(0.5, 0.5))
+    if newPos and status then 
+        autobind.FactionLocker.Pos = newPos 
+    end
 
-	-- Faction Locker Window
-    if imgui.Begin(u8("Faction Locker"), menu.factionlocker, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
-		keyEditor("Keybind", "FactionLocker")
-        createMenu('Selection', lockerMenuItems, autobind.FactionLocker, lockerExclusiveGroups, 4)
+    -- Calculate total price
+    local totalPrice = 0
+    for _, index in ipairs(autobind.FactionLocker[string.format("Kit%d", menu.factionlocker.pageId)]) do
+        local item = lockerMenuItems[index]
+        if item and item.price then
+            totalPrice = totalPrice + item.price
+        end
+    end
+
+    -- Set the window position and size
+    imgui.SetNextWindowPos(autobind.FactionLocker.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+    imgui.SetNextWindowSize(imgui.ImVec2(226, 290), imgui.Cond.Always)
+
+    -- Faction Locker Window
+    local title = string.format("Locker - Kit: %d - $%s", menu.factionlocker.pageId, formatNumber(totalPrice))
+    if imgui.Begin(u8(title), menu.factionlocker.window, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
+        local availWidth = imgui.GetContentRegionAvail().x
+        local buttonWidth = availWidth / 3 - 5
+
+        -- Define a table to map kitId to key and menu data
+        local kits = {
+            {id = 1, key = 'FactionLocker1', menu = autobind.FactionLocker.Kit1},
+            {id = 2, key = 'FactionLocker2', menu = autobind.FactionLocker.Kit2},
+            {id = 3, key = 'FactionLocker3', menu = autobind.FactionLocker.Kit3}
+        }
+
+        -- Create buttons for each kit
+        for _, kit in ipairs(kits) do
+            if imgui.Button(fa.CART_SHOPPING .. " Kit " .. kit.id, imgui.ImVec2(buttonWidth, 0)) then
+                menu.factionlocker.pageId = kit.id
+            end
+            imgui.SameLine()
+        end
+
+        -- Remove the last SameLine to avoid layout issues
+        imgui.NewLine()
+
+        -- Display the key editor and menu based on the selected kitId
+        for _, kit in ipairs(kits) do
+            if menu.factionlocker.pageId == kit.id then
+                keyEditor("Keybind", kit.key)
+                createMenu('Selection', lockerMenuItems, kit.menu, lockerExclusiveGroups, 6, {combineGroups = {{1, 4, 9}, {10, 11}, {7, 8}}})
+            end
+        end
     end
     imgui.End()
 end)
@@ -2045,7 +2136,10 @@ function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
 end
 
 -- Create Menu (Blackmarket & Faction Locker)
-function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
+function createMenu(title, items, tbl, exclusiveGroups, maxSelections, options)
+    options = options or {}
+    local combineGroups = options.combineGroups or {}
+
     imgui.Text(title.. ":")
     local handledIndices = {}
     
@@ -2055,7 +2149,7 @@ function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
             local item = items[index]
             if item then
                 createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
-				imgui.CustomTooltip(string.format("Price: $%s", formatNumber(item.price)))
+                imgui.CustomTooltip(string.format("Price: %s", item.price and formatNumber("$" .. item.price) or "Free"))
                 imgui.SameLine()
                 table.insert(handledIndices, index)
             end
@@ -2063,11 +2157,27 @@ function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
         imgui.NewLine()
     end
     
+    -- Handle combined groups
+    for _, group in ipairs(combineGroups) do
+        for i, index in ipairs(group) do
+            local item = items[index]
+            if item then
+                createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
+                imgui.CustomTooltip(string.format("Price: %s", item.price and formatNumber("$" .. item.price) or "Free"))
+                if i < #group then
+                    imgui.SameLine()
+                end
+                table.insert(handledIndices, index)
+            end
+        end
+        --imgui.NewLine()
+    end
+
     -- Handle remaining items
     for index, item in ipairs(items) do
         if not tableContains(handledIndices, index) then
             createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
-			imgui.CustomTooltip(string.format("Price: $%s", formatNumber(item.price)))
+            imgui.CustomTooltip(string.format("Price: %s", item.price and formatNumber("$" .. item.price) or "Free"))
         end
     end
 end
@@ -2088,24 +2198,26 @@ end
 
 -- Key Editor
 function keyEditor(title, index, description)
+	-- Error Handling
     if not autobind.Keybinds[index] then
         print("Warning: autobind.Keybinds[" .. index .. "] is nil")
         return
     end
 
+	-- Check if the Keys table exists, if not, create it
     if not autobind.Keybinds[index].Keys then
         autobind.Keybinds[index].Keys = {}
     end
 
     -- Adjustable parameters
-    local fontSize = 18  -- Font size for the text
     local padding = imgui.ImVec2(8, 6)  -- Padding around buttons
     local comboWidth = 70  -- Width of the combo box
     local verticalSpacing = 2  -- Vertical spacing after the last key entry
 
     -- Load the font with the desired size
-    imgui.PushFont(skinEditor.font)
+    imgui.PushFont(fontData.font)
 
+    -- Begin Group
     imgui.BeginGroup()
 
     -- Title and description
@@ -2122,20 +2234,20 @@ function keyEditor(title, index, description)
     imgui.CustomTooltip(string.format("Toggle this key binding. %s", autobind.Keybinds[index].Toggle and "{00FF00}(Enabled)" or "{FF0000}(Disabled)"))
 
     for i, key in ipairs(autobind.Keybinds[index].Keys) do
-        local buttonText = changekey[index] and changekey[index] == i and fa.KEYBOARD_DOWN or (key ~= 0 and correctKeyName(vk.id_to_name(key)) or fa.KEYBOARD)
+        local buttonText = changeKey[index] and changeKey[index] == i and fa.KEYBOARD_DOWN or (key ~= 0 and correctKeyName(vk.id_to_name(key)) or fa.KEYBOARD)
         local buttonSize = imgui.CalcTextSize(buttonText) + padding
 
         -- Button to change key
         imgui.AlignTextToFramePadding()
         if imgui.Button(buttonText .. '##' .. index .. i, buttonSize) then
-            changekey[index] = i
+            changeKey[index] = i
             lua_thread.create(function()
-                while changekey[index] == i do 
+                while changeKey[index] == i do 
                     wait(0)
                     local keydown, result = getDownKeys()
                     if result then
                         autobind.Keybinds[index].Keys[i] = keydown
-                        changekey[index] = false
+                        changeKey[index] = false
                     end
                 end
             end)
@@ -2285,7 +2397,7 @@ function downloadSkins()
         if result then 
             formattedAddChatMessage("All skins downloaded successfully!", -1) 
         end
-		forcePreload[0] = true
+		menu.forcePreload[0] = true
 	end)
 end
 
