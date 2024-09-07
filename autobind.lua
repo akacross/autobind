@@ -287,6 +287,7 @@ local menu = {
 	factionlocker = new.bool(false)
 }
 
+local forcePreload = new.bool(false)
 local kitId = 1
 
 -- Change Key
@@ -378,7 +379,9 @@ local getItemFromBM = 0
 local gettingItem = false
 local currentKey = nil
 
+-- C Definitions
 ffi.cdef[[
+	// Gangzone
 	struct stGangzone {
 		float fPosition[4];
 		uint32_t dwColor;
@@ -391,7 +394,9 @@ ffi.cdef[[
 	};
 ]]
 
+-- Load Configs
 function loadConfigs()
+	-- Ignore Keys
 	local ignoreKeys = {
 		{"AutoVest", "skins"}, {"AutoVest", "names"}, 
 		{"Keybinds", "BlackMarket1"}, {"Keybinds", "BlackMarket2"}, {"Keybinds", "BlackMarket3"},
@@ -1434,14 +1439,19 @@ end
 
 -- OnCreate3DText
 function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedPlayerId, attachedVehicleId, text)
-	-- Dynamic Black Market Locations (From the server)
-	if text:match("Type /blackmarket to purchase items") or text:match("Type /dlocker to purchase items") then
-		-- Ensure the Locations table is initialized
-		if not autobind.BlackMarket.Locations then
-			autobind.BlackMarket.Locations = {}
-		end
-		autobind.BlackMarket.Locations[id] = {x = position.x, y = position.y, z = position.z, radius = 13.0}
-	end
+    -- Dynamic Black Market Locations (From the server)
+    if text:match("Type /blackmarket to purchase items") or text:match("Type /dlocker to purchase items") then
+        -- Ensure the Locations table is initialized
+        autobind.BlackMarket.Locations = autobind.BlackMarket.Locations or {}
+        
+        -- Store the location data
+        autobind.BlackMarket.Locations[tostring(id)] = {
+            x = position.x,
+            y = position.y,
+            z = position.z,
+            radius = 13.0
+        }
+    end
 end
 
 -- OnShowDialog
@@ -1497,16 +1507,31 @@ imgui.OnInitialize(function()
     apply_custom_style()
 end)
 
+-- Force Preload (Fixes initial freeze when opening the menu)
+imgui.OnFrame(function() return forcePreload[0] end,
+function()
+	forcePreload[0] = false
+end).HideCursor = true
+
+-- Settings Window
 imgui.OnFrame(function() return menu.settings[0] end,
 function()
+	-- Returns if Samp is not loaded
 	assert(isSampLoaded(), "Samp not loaded")
+
+	-- Returns if Samp is not available
 	if not isSampAvailable() then return end
 
-	local title = string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion)
+	-- Handle Window Dragging
 	local newPos, status = imgui.handleWindowDragging("Settings", autobind.Window.Pos, imgui.ImVec2(600, 428), imgui.ImVec2(0.5, 0.5))
     if status and menu.settings[0] then autobind.Window.Pos = newPos end
     imgui.SetNextWindowPos(autobind.Window.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+
+	-- Set Window Size
 	imgui.SetNextWindowSize(imgui.ImVec2(588, 420), imgui.Cond.Always)
+
+	-- Settings Window
+	local title = string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion)
 	if imgui.Begin(title, menu.settings, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
 		-- Define button properties for the first child
 		local buttons1 = {
@@ -1662,7 +1687,7 @@ function()
 				imgui.SetCursorPos(imgui.ImVec2(10, 1))
 				if imgui.BeginChild("##skins", imgui.ImVec2(487, 270), false) then
 					if autobind.Settings.mode == "Family" then
-						imgui.PushItemWidth(334)
+						imgui.PushItemWidth(326)
 						local url = new.char[128](autobind.AutoVest.skinsUrl)
 						if imgui.InputText('##skins_url', url, sizeof(url)) then
 							autobind.AutoVest.skinsUrl = u8:decode(str(url))
@@ -1697,7 +1722,8 @@ function()
 							-- Set position and draw the image
 							imgui.SetCursorPos(imgui.ImVec2(posX, posY))
 							imgui.Image(skinTexture[skinId], imageSize)
-					
+							imgui.CustomTooltip("Skin "..skinId)
+
 							-- Draw the "X" button on top of the image
 							imgui.SetCursorPos(imgui.ImVec2(posX + imageSize.x - 20, posY))
 							imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0, 0, 0, 0))  -- Transparent background
@@ -1707,7 +1733,6 @@ function()
 								table.remove(autobind.AutoVest.skins, i)
 							end
 							imgui.PopStyleColor(3)
-							imgui.CustomTooltip("Skin "..skinId)
 						end
 					
 						-- Add the "Add Skin" button in the next available slot
@@ -1831,56 +1856,56 @@ function()
 	imgui.End()
 end)
 
+-- Skin Menu
 imgui.OnFrame(function() return menu.settings[0] and menu.skins[0] end,
 function()
-	assert(isSampLoaded(), "Samp not loaded")
-	if not isSampAvailable() then return end
+	-- Returns if Samp is not loaded
+    assert(isSampLoaded(), "Samp not loaded")
 
-	imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x, autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-	imgui.SetNextWindowSize(imgui.ImVec2(505, 390), imgui.Cond.FirstUseEver)
-	imgui.Begin(u8("Skin Menu"), menu.skins, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoScrollbar)
-		imgui.SetWindowFocus()
-		if skinEditor.page == 15 then max = 299 else max = 41+(21*(skinEditor.page-2)) end
-		for i = 21+(21*(skinEditor.page-2)), max do
-			if i <= 27+(21*(skinEditor.page-2)) and i ~= 21+(21*(skinEditor.page-2)) then
-				imgui.SameLine()
-			elseif i <= 34+(21*(skinEditor.page-2)) and i > 28+(21*(skinEditor.page-2)) then
-				imgui.SameLine()
-			elseif i <= 41+(21*(skinEditor.page-2)) and i > 35+(21*(skinEditor.page-2)) then
-				imgui.SameLine()
-			end
-			if imgui.ImageButton(skinTexture[i], imgui.ImVec2(55, 100)) then
-				autobind.AutoVest.skins[skinEditor.selected] = i
-				menu.skins[0] = false
-			end
-			imgui.CustomTooltip("Skin "..i.."")
-		end
+	-- Returns if Samp is not available
+    if not isSampAvailable() then return end
 
-		imgui.SetCursorPos(imgui.ImVec2(555, 360))
+	-- Set the window position and size
+    imgui.SetNextWindowPos(autobind.Window.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+    imgui.SetNextWindowSize(imgui.ImVec2(505, 390), imgui.Cond.Always)
 
-		imgui.Indent(210)
+	-- Skin Window
+    if imgui.Begin(u8("Skin Menu"), menu.skins, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+        imgui.SetWindowFocus()
 
-		if imgui.Button(u8"Previous", new.bool) and skinEditor.page > 0 then
-			if skinEditor.page == 1 then
-				skinEditor.page = 15
-			else
-				skinEditor.page = skinEditor.page - 1
-			end
-		end
-		imgui.SameLine()
-		if imgui.Button(u8"Next", new.bool) and skinEditor.page < 16 then
-			if skinEditor.page == 15 then
-				skinEditor.page = 1
-			else
-				skinEditor.page = skinEditor.page + 1
-			end
-		end
-		imgui.SameLine()
-		imgui.Text("Page "..skinEditor.page.."/15")
-	imgui.End()
+        local startIdx = 21 + 21 * (skinEditor.page - 2)
+        local endIdx = (skinEditor.page == 15) and 299 or (41 + 21 * (skinEditor.page - 2))
+
+        for i = startIdx, endIdx do
+            if (i - startIdx) % 7 ~= 0 then
+                imgui.SameLine()
+            end
+
+            if imgui.ImageButton(skinTexture[i], imgui.ImVec2(55, 100)) then
+                autobind.AutoVest.skins[skinEditor.selected] = i
+                menu.skins[0] = false
+            end
+            imgui.CustomTooltip("Skin " .. i)
+        end
+
+        imgui.SetCursorPos(imgui.ImVec2(555, 360))
+        imgui.Indent(210)
+
+        if imgui.Button(u8"Previous", new.bool) and skinEditor.page > 0 then
+            skinEditor.page = (skinEditor.page == 1) and 15 or (skinEditor.page - 1)
+        end
+        imgui.SameLine()
+        if imgui.Button(u8"Next", new.bool) and skinEditor.page < 16 then
+            skinEditor.page = (skinEditor.page == 15) and 1 or (skinEditor.page + 1)
+        end
+        imgui.SameLine()
+        imgui.Text("Page " .. skinEditor.page .. "/15")
+    end
+    imgui.End()
 end)
 
-imgui.OnFrame(function() return menu.settings[0] and menu.blackmarket[0] end,
+-- Blackmarket Menu
+imgui.OnFrame(function() return menu.blackmarket[0] end,
 function()
 	-- Returns if Samp is not loaded
     assert(isSampLoaded(), "Samp not loaded")
@@ -1890,7 +1915,7 @@ function()
 
 	-- Handle Window Dragging
 	local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.BlackMarket.Pos, imgui.ImVec2(226, 290), imgui.ImVec2(0.5, 0.5))
-    if status and menu.settings[0] then autobind.BlackMarket.Pos = newPos end
+    if status and menu.blackmarket[0] then autobind.BlackMarket.Pos = newPos end
 
 	-- Calculate total price
 	local totalPrice = 0
@@ -1901,9 +1926,12 @@ function()
 		end
 	end
 
-	-- Blackmarket Window
+	-- Set the window position
     imgui.SetNextWindowPos(autobind.BlackMarket.Pos, imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    if imgui.Begin(string.format("BM - Kit: %d - $%s", kitId, formatNumber(totalPrice)), menu.blackmarket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+
+	-- Blackmarket Window
+	local title = string.format("BM - Kit: %d - $%s", kitId, formatNumber(totalPrice))
+    if imgui.Begin(u8(title), menu.blackmarket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
         local availWidth = imgui.GetContentRegionAvail().x
         local buttonWidth = availWidth / 3 - 5
 
@@ -1936,23 +1964,28 @@ function()
     imgui.End()
 end)
 
-imgui.OnFrame(function() return menu.settings[0] and menu.factionlocker[0] end,
+-- Faction Locker Menu
+imgui.OnFrame(function() return menu.factionlocker[0] end,
 function()
 	-- Returns if Samp is not loaded
     assert(isSampLoaded(), "Samp not loaded")
 
 	-- Returns if Samp is not available
     if not isSampAvailable() then return end
-	
-	-- Faction Locker Window
+
+	-- Set the window position
     imgui.SetNextWindowPos(imgui.ImVec2(autobind.Window.Pos.x + (600 * 0.607), autobind.Window.Pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-    if imgui.Begin("Faction Locker", menu.factionlocker, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
+
+	-- Faction Locker Window
+    if imgui.Begin(u8("Faction Locker"), menu.factionlocker, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize) then
 		keyEditor("Keybind", "FactionLocker")
         createMenu('Selection', lockerMenuItems, autobind.FactionLocker, lockerExclusiveGroups, 4)
     end
     imgui.End()
 end)
 
+--- Custom Functions
+-- Table Contains
 function tableContains(tbl, value)
     for _, v in ipairs(tbl) do
         if v == value then
@@ -1962,6 +1995,7 @@ function tableContains(tbl, value)
     return false
 end
 
+-- Create Row (Settings)
 function createRow(label, tooltip, setting, toggleFunction, sameLine)
     if imgui.Checkbox(label, new.bool(setting)) then
         toggleFunction()
@@ -1974,6 +2008,7 @@ function createRow(label, tooltip, setting, toggleFunction, sameLine)
     end
 end
 
+-- Create Checkbox (Blackmarket & Faction Locker)
 function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
     local isChecked = tableContains(tbl, index)
     if imgui.Checkbox(label, new.bool(isChecked)) then
@@ -2009,6 +2044,7 @@ function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
     end
 end
 
+-- Create Menu (Blackmarket & Faction Locker)
 function createMenu(title, items, tbl, exclusiveGroups, maxSelections)
     imgui.Text(title.. ":")
     local handledIndices = {}
@@ -2045,6 +2081,7 @@ local function showKeyTypeTooltip(keyType)
     imgui.CustomTooltip(tooltips[keyType] or "Unknown key type.")
 end
 
+-- Key Name Shortener
 local function correctKeyName(keyName)
 	return keyName:gsub("Left ", ""):gsub("Right ", ""):gsub("Context ", ""):gsub("Numpad", "Num")
 end
@@ -2248,6 +2285,7 @@ function downloadSkins()
         if result then 
             formattedAddChatMessage("All skins downloaded successfully!", -1) 
         end
+		forcePreload[0] = true
 	end)
 end
 
@@ -2315,6 +2353,7 @@ local function checkForIssues(tbl, path)
     return true
 end
 
+-- Handle Config File
 function handleConfigFile(path, defaults, configVar, ignoreKeys)
     ignoreKeys = ignoreKeys or {}
     if doesFileExist(path) then
@@ -2351,6 +2390,7 @@ function handleConfigFile(path, defaults, configVar, ignoreKeys)
     return true, configVar, nil
 end
 
+-- Ensure Defaults
 function ensureDefaults(config, defaults, reset, ignoreKeys)
     ignoreKeys = ignoreKeys or {}
     local status = false
@@ -2412,6 +2452,7 @@ function ensureDefaults(config, defaults, reset, ignoreKeys)
     return status
 end
 
+-- Load Config
 function loadConfig(filePath)
     local file = io.open(filePath, "r")
     if not file then
@@ -2437,6 +2478,7 @@ function loadConfig(filePath)
     end
 end
 
+-- Save Config
 function saveConfig(filePath, config)
     local success, err = checkForIssues(config)
     if not success then
@@ -2452,6 +2494,7 @@ function saveConfig(filePath, config)
     return true
 end
 
+-- Save Config With Error Handling
 function saveConfigWithErrorHandling(path, config)
     local success, err = saveConfig(path, config)
     if not success then
@@ -2460,6 +2503,7 @@ function saveConfigWithErrorHandling(path, config)
     return success
 end
 
+-- Convert Color
 function convertColor(color, normalize, includeAlpha, hexColor)
     if type(color) ~= "number" then
         error("Invalid color value. Expected a number.")
@@ -2481,6 +2525,7 @@ function convertColor(color, normalize, includeAlpha, hexColor)
     end
 end
 
+-- Join ARGB
 function joinARGB(a, r, g, b, normalized)
     if normalized then
         a, r, g, b = math.floor(a * 255), math.floor(r * 255), math.floor(g * 255), math.floor(b * 255)
@@ -2493,30 +2538,44 @@ function joinARGB(a, r, g, b, normalized)
     return bit.bor(bit.lshift(clamp(a), 24), bit.lshift(clamp(r), 16), bit.lshift(clamp(g), 8), clamp(b))
 end
 
+-- Formatted Add Chat Message
 function formattedAddChatMessage(string)
     sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} %s", firstToUpper(scriptName), string), -1)
 end
 
+-- First To Upper
 function firstToUpper(string)
     return (string:gsub("^%l", string.upper))
 end
 
+-- Remove Hex Brackets
 function removeHexBrackets(text)
     return string.gsub(text, "{%x+}", "")
 end
 
+-- Format Number
 function formatNumber(n)
     n = tostring(n)
     return n:reverse():gsub("...","%0,",math.floor((#n-1)/3)):reverse()
 end
 
+-- Compare Versions
 function compareVersions(version1, version2)
+    local letterWeights = {
+        A = 1, B = 2, C = 3, D = 4, E = 5, -- Add more as needed
+        alpha = 1, beta = 2, rc = 3, p = 4, h = 5 -- Common suffixes
+    }
+
     local function parseVersion(version)
         local parts = {}
-        for part in version:gmatch("(%d+)") do
-            table.insert(parts, tonumber(part))
+        for numPart, letterPart in version:gmatch("(%d+)(%a*)") do
+            table.insert(parts, {num = tonumber(numPart), letter = letterPart:lower()})
         end
         return parts
+    end
+
+    local function getLetterWeight(letter)
+        return letterWeights[letter] or 0
     end
 
     local v1 = parseVersion(version1)
@@ -2524,15 +2583,23 @@ function compareVersions(version1, version2)
 
     local maxLength = math.max(#v1, #v2)
     for i = 1, maxLength do
-        local part1 = v1[i] or 0
-        local part2 = v2[i] or 0
-        if part1 ~= part2 then
-            return (part1 > part2) and 1 or -1
+        local part1 = v1[i] or {num = 0, letter = ""}
+        local part2 = v2[i] or {num = 0, letter = ""}
+        
+        if part1.num ~= part2.num then
+            return (part1.num > part2.num) and 1 or -1
+        end
+        
+        local weight1 = getLetterWeight(part1.letter)
+        local weight2 = getLetterWeight(part2.letter)
+        if weight1 ~= weight2 then
+            return (weight1 > weight2) and 1 or -1
         end
     end
     return 0
 end
 
+-- Get Down Keys
 function getDownKeys()
     local keyslist = nil
     local bool = false
@@ -2545,6 +2612,7 @@ function getDownKeys()
     return keyslist, bool
 end
 
+-- Key Check
 function keycheck(bind)
     local r = true
     if not bind.keys then
@@ -2556,6 +2624,7 @@ function keycheck(bind)
     return r
 end
 
+-- Has Number
 function has_number(tab, val)
     for index, value in ipairs(tab) do
         if tonumber(value) == val then
@@ -2565,12 +2634,14 @@ function has_number(tab, val)
     return false
 end
 
+-- Set Game Key Up Down
 function setGameKeyUpDown(key, value, delay)
 	setGameKeyState(key, value)
 	wait(delay)
 	setGameKeyState(key, 0)
 end
 
+-- Custom Button
 function imgui.CustomButton(name, color, colorHovered, colorActive, size)
     local clr = imgui.Col
     imgui.PushStyleColor(clr.Button, color)
@@ -2582,6 +2653,7 @@ function imgui.CustomButton(name, color, colorHovered, colorActive, size)
     return result
 end
 
+-- Find Player
 function findPlayer(target)
     if not target then return nil end
 
@@ -2602,6 +2674,7 @@ function findPlayer(target)
     return nil
 end
 
+-- Get Player Id By Nickname
 function sampGetPlayerIdByNickname(nick)
 	nick = tostring(nick)
 	local _, myid = sampGetPlayerIdByCharHandle(ped)
@@ -2613,6 +2686,7 @@ function sampGetPlayerIdByNickname(nick)
 	end
 end
 
+-- Calculate Window Size
 function calculateWindowSize(lines, padding)
     local totalHeight = 0
     local maxWidth = 0
@@ -2635,6 +2709,7 @@ function calculateWindowSize(lines, padding)
     return windowSize
 end
 
+-- Handle Window Dragging
 function imgui.handleWindowDragging(menuId, pos, size, pivot)
     local mpos = imgui.GetMousePos()
     local offset = {x = size.x * pivot.x, y = size.y * pivot.y}
@@ -2671,6 +2746,7 @@ function imgui.handleWindowDragging(menuId, pos, size, pivot)
     return {x = pos.x, y = pos.y}, false
 end
 
+-- Text Colored RGB
 function imgui.TextColoredRGB(text)
     local style = imgui.GetStyle()
     local colors = style.Colors
@@ -2734,6 +2810,7 @@ function imgui.TextColoredRGB(text)
     end
 end
 
+-- Custom Button With Tooltip
 function imgui.CustomButtonWithTooltip(name, color, colorHovered, colorActive, size, tooltip)
     local clr = imgui.Col
     imgui.PushStyleColor(clr.Button, color)
@@ -2750,6 +2827,7 @@ function imgui.CustomButtonWithTooltip(name, color, colorHovered, colorActive, s
     return result
 end
 
+-- Custom Tooltip
 function imgui.CustomTooltip(tooltip)
     if imgui.IsItemHovered() and tooltip then
         imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
@@ -2760,6 +2838,7 @@ function imgui.CustomTooltip(tooltip)
     end
 end
 
+-- Load Font Awesome 6 Icons
 function loadFontAwesome6Icons(iconList, fontSize, style)
     local config = imgui.ImFontConfig()
     config.MergeMode = true
@@ -2776,6 +2855,7 @@ function loadFontAwesome6Icons(iconList, fontSize, style)
     imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85(style), fontSize, config, glyphRanges[0].Data)
 end
 
+-- Apply Custom Style
 function apply_custom_style()
 	imgui.SwitchContext()
 	local ImVec4 = imgui.ImVec4
