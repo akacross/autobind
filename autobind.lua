@@ -5,6 +5,15 @@ script_authors("akacross")
 script_url("https://akacross.net/")
 
 local changelog = {
+	["1.8.14a"] = {
+
+	},
+	["1.8.13a"] = {
+
+	},
+	["1.8.12"] = {
+		
+	},
 	["1.8.11"] = {
 		"Fixed: Autoaccept now waits if the player is attacked. (You can still be prisoned if you heal while in a gunfight)",
 		"Fixed: Autoaccept automatically detects when you are in a point. (You no longer need to manually toggle it, it will deactivate when point ends)" -- WIP
@@ -223,10 +232,10 @@ local commands = {
 -- Timers
 local timers = {
 	Vest = {timer = 0.0, last = 0},
-	VestCD = {timer = 0.8, last = 0},
-	AcceptCD = {timer = 0.8, last = 0},
+	VestCD = {timer = 0.5, last = 0},
+	AcceptCD = {timer = 0.5, last = 0},
 	Heal = {timer = 12.0, last = 0},
-	Find = {timer = 19.5, last = 0},
+	Find = {timer = 20, last = 0},
 	Muted = {timer = 13.0, last = 0},
 	Binds = {timer = 0.5, last = {}}
 }
@@ -718,12 +727,12 @@ local function createKeybindThread()
 		end
 	end
 
-	-- Adjustable Z axis limits
-	local zTopLimit = 0.7  -- Top limit of the Z axis
-	local zBottomLimit = -0.7  -- Bottom limit of the Z axis
-
 	-- Function to check if the player is within any black market location
 	local function isInBlackMarketLocation()
+		-- Adjustable Z axis limits
+		local zTopLimit = 0.7  -- Top limit of the Z axis
+		local zBottomLimit = -0.7  -- Bottom limit of the Z axis
+
 		local playerX, playerY, playerZ = getCharCoordinates(PLAYER_PED)
 		for _, location in pairs(autobind.BlackMarket.Locations) do
 			local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, location.x, location.y, location.z)
@@ -1153,9 +1162,19 @@ function onWindowMessage(msg, wparam, lparam)
     end
 end
 
+--  Todo
 --Your gang is already attempting to capture this turf.
+-- needs to be renabled via /pay or /withdraw/awithdraw
+
+	--[[local div, rank, nickname, message = text:match("%*%*%s*(%a*%s*)%s*(%a+)%s+([%a%s]+):%s*(.*)%s*%*%*")
+	if rank and nickname and message and color == -1920073729 then
+		print("Rank: " .. rank, "Nickname: " .. nickname, "Message: " .. message)
+	end]]
+
 --OnServerMessage
 function sampev.onServerMessage(color, text)
+	--- Mode/Frequency
+	-- Family, LSPD, SASD, FBI, ARES MOTD
 	local mode, motdMsg = text:match("([Family|LSPD|SASD|FBI|ARES].+) MOTD: (.+)")
 	if mode and motdMsg and color == -65366 then
 		if mode:match("Family") then
@@ -1197,6 +1216,7 @@ function sampev.onServerMessage(color, text)
 		end
 	end
 
+	-- You have set the frequency of your portable radio to (Number) kHz.
 	local freq = text:match("You have set the frequency of your portable radio to (-?%d+) kHz.")
 	if freq then
 		if tonumber(freq) == 0 then
@@ -1212,11 +1232,7 @@ function sampev.onServerMessage(color, text)
 		end
 	end
 
-	--[[local div, rank, nickname, message = text:match("%*%*%s*(%a*%s*)%s*(%a+)%s+([%a%s]+):%s*(.*)%s*%*%*")
-	if rank and nickname and message and color == -1920073729 then
-		print("Rank: " .. rank, "Nickname: " .. nickname, "Message: " .. message)
-	end]]
-
+	-- ** Radio (xxxx kHz) ** (Nickname): Message
 	local freq, playerName, message = text:match("%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)")
 	if freq and playerName and message then
 		local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
@@ -1224,7 +1240,8 @@ function sampev.onServerMessage(color, text)
 		return {color, string.format("** %s Radio ** {%s}%s (%d): {FFFFFF}%s", autobind.Settings.mode, playerColor, playerName, playerId, message)}
 	end
 
-	-- Auto Capture
+	--- Auto Capture
+	-- The time is now
 	if text:find("The time is now") and color == -86 then
 		lua_thread.create(function()
 			wait(0)
@@ -1246,44 +1263,52 @@ function sampev.onServerMessage(color, text)
 		end)
 	end
 
-	-- Vest/Accept
-	if text:find("That player isn't near you.") and color == -1347440726 then
+	--- Vest/Accept
+	-- That player isn't near you.
+	if text:find("That player isn't near you%.") and color == -1347440726 then
 		resetTimer(2, timers.Vest)
 	end
 	
-	if text:find("You can't /guard while aiming.") and color == -1347440726 then
+	-- You can't /guard while aiming.
+	if text:find("You can't /guard while aiming%.") and color == -1347440726 then
 		resetTimer(0.5, timers.Vest)
 	end
 	
+	-- You must wait (x) seconds? before selling another vest.
 	local cooldown = text:match("You must wait (%d+) seconds? before selling another vest%.?")
 	if cooldown then
 		resetTimer(tonumber(cooldown) + 0.5, timers.Vest)
 	end
 
+	-- You offered protection to (Nickname) for $200.
 	local nickname = text:match("%* You offered protection to (.+) for %$200%.")
 	if nickname then
 		-- = nickname -- Overlay
 		timers.Vest.last = localClock()
 	end
 
+	-- You are not a bodyguard.
 	if text:find("You are not a bodyguard.") and color ==  -1347440726 then
 		isBodyguard = false
 	end
 
-	if text:match("%* You are now a Bodyguard, type /help to see your new commands.") then
+	-- You are now a Bodyguard, type /help to see your new commands.
+	if text:match("%* You are now a Bodyguard, type /help to see your new commands%.") then
 		isBodyguard = true
 	end
 
+	-- You are not near the person offering you guard!
 	if text:find("You are not near the person offering you guard!") and color == -1347440726 then
 		formattedAddChatMessage(string.format("You are not close enough to %s.", accepter.playerName:gsub("_", " ")))
 		return false
 	end
 
-	-- Reset heal timer (5 seconds)
+	-- You can't heal if you were recently shot, except within points, events, minigames, and paintball.
 	if text:match("You can't heal if you were recently shot, except within points, events, minigames, and paintball.") then
 		resetTimer(5, timers.Heal)
 	end
 
+	-- * Bodyguard (Nickname) wants to protect you for $200, type /accept bodyguard to accept.
 	local nickname = text:match("%* Bodyguard (.+) wants to protect you for %$200, type %/accept bodyguard to accept%.")
 	if nickname and color == 869072810 then
 		lua_thread.create(function()
@@ -1309,31 +1334,33 @@ function sampev.onServerMessage(color, text)
 		accepter.received = false
 	end
 
-	-- needs to be renabled via /pay or /withdraw/awithdraw
-
-	local nickname = text:match("%* You accepted the protection for %$200 from (.+)%.")
-	if nickname then
+	-- You accepted the protection for $200 from (Nickname).
+	if text:match("%* You accepted the protection for %$200 from (.+)%.") then
 		accepter.playerName = ""
 		accepter.playerId = -1
 		accepter.received = false
 	end
 
-	if text:match("You are not a Diamond Donator!") then
+	-- You are not a Diamond Donator!
+	if text:match("You are not a Diamond Donator%!") then
 		timers.Vest.timer = guardTime
 		autobind.AutoVest.donor = false
 	end
 
-	-- Find
-	if text:match("You have already searched for someone - wait a little.") then
+	--- Find
+	-- You have already searched for someone - wait a little.
+	if text:match("You have already searched for someone %- wait a little%.") then
 		resetTimer(5, timers.Find)
 	end
 
-	if text:match("You can't find that person as they're hidden in one of their turfs.") then
+	-- You can't find that person as they're hidden in one of their turfs.
+	if text:match("You can't find that person as they%'re hidden in one of their turfs%.") then
 		resetTimer(5, timers.Find)
 	end
 
-	-- Accept Repair
-	if text:find("wants to repair your car for $1") then
+	--- Accept Repair
+	-- wants to repair your car for $1
+	if text:find("wants to repair your car for %$1") then
 		lua_thread.create(function()
 			wait(0)
 			if autobind.Settings.enable and not checkMuted() and not checkAdminDuty() then
@@ -1344,7 +1371,8 @@ function sampev.onServerMessage(color, text)
 		end)
 	end
 
-	-- Auto Badge
+	--- Auto Badge
+	-- Your hospital bill
 	if text:find("Your hospital bill") and color == -8224086 then
 		lua_thread.create(function()
 			wait(0)
@@ -1356,12 +1384,15 @@ function sampev.onServerMessage(color, text)
 		end)
 	end
 
-	-- Muted
-	if text:match("You have been muted automatically for spamming. Please wait 10 seconds and try again.") then
+	--- Muted
+	-- You have been muted automatically for spamming. Please wait 10 seconds and try again.
+	if text:match("You have been muted automatically for spamming%. Please wait %d+ seconds and try again%.") then
 		timers.Muted.last = localClock()
 	end
 
+	--- Black Market
     if getItemFromBM > 0 then
+		-- You are not a Sapphire or Diamond Donator!
         if text:match("You are not a Sapphire or Diamond Donator!") and color == -1077886209 then
             getItemFromBM = 0
             gettingItem = false
@@ -1369,7 +1400,8 @@ function sampev.onServerMessage(color, text)
         end
     end
 
-	-- Help
+	--- Help Command Additions
+	-- *** OTHER *** /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp
 	if text:match("*** OTHER *** /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp") then
 		lua_thread.create(function()
 			wait(0)
