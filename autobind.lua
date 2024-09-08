@@ -128,14 +128,7 @@ end
 local new, str, sizeof = imgui.new, ffi.string, ffi.sizeof
 local ped, h = playerPed, playerHandle
 
--- Define thread variables
-local threads = {
-	autovest = nil,
-	autoaccept = nil,
-	captureSpam = nil,
-	keybinds = nil,
-	pointbounds = nil
-}
+local runningThreads = {}
 
 -- Key Press Type
 local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
@@ -148,32 +141,13 @@ local resX, resY = getScreenResolution()
 
 -- Autobind Config
 local autobind = {
-	--[[Settings = {
-		Frisk = {}
-	},
+	Settings = {},
 	AutoBind = {},
-	AutoVest = {
-		skins = {},
-		names = {}
-	},
-	Window = {
-		Pos = {}
-	},
-	Keybinds = {},
-	BlackMarket = {
-		Pos = {},
-		Kit1 = {},
-		Kit2 = {},
-		Kit3 = {},
-		Locations = {}
-	},
-	FactionLocker = {
-		Pos = {},
-		Kit1 = {},
-		Kit2 = {},
-		Kit3 = {},
-		Locations = {}
-	}]]
+	AutoVest = {skins = {}, names = {}},
+	Window = {Pos = {}},
+	BlackMarket = {Pos = {}, Kit1 = {}, Kit2 = {}, Kit3 = {}, Locations = {}},
+	FactionLocker = {Pos = {}, Kit1 = {}, Kit2 = {}, Kit3 = {}, Locations = {}},
+	Keybinds = {}
 }
 
 -- Default Settings
@@ -294,8 +268,9 @@ local autofind ={
 -- Factions
 local factions = {
 	skins = {
-		61, 71, 73, 141, 163, 164, 165, 166, 179, 191, 206, 253, 255, 265, 266, 267, 280, 281, 
-		282, 283, 284, 285, 286, 287, 288, 294, 300, 301, 306, 309, 310, 311, 120, 253
+		61, 71, 73, 163, 164, 165, 166, 179, 191, 206, 285, 287, -- Ares
+		141, 253, 255, 265, 266, 267, 280, 281, 
+		282, 283, 284, 286, 288, 294, 300, 301, 306, 309, 310, 311, 120, 253
 	},
 	colors = {
 		-14269954, -7500289, -14911565, -3368653
@@ -405,11 +380,13 @@ local lockerExclusiveGroups = {
 	{5, 6} -- M4, AK-47
 }
 
+-- Point Bounds
 local gzData = nil
 local enteredPoint = false
 local leaveTime = nil
 local preventHeal = false
 
+-- Black Market
 local getItemFromBM = 0
 local gettingItem = false
 local currentKey = nil
@@ -435,7 +412,7 @@ function loadConfigs()
 	local ignoreKeys = {
 		{"AutoVest", "skins"}, {"AutoVest", "names"}, 
 		{"Keybinds", "BlackMarket1"}, {"Keybinds", "BlackMarket2"}, {"Keybinds", "BlackMarket3"},
-		{"Keybinds", "FactionLocker"},
+		{"Keybinds", "FactionLocker1"}, {"Keybinds", "FactionLocker2"}, {"Keybinds", "FactionLocker3"},
 		{"Keybinds", "BikeBind"},
 		{"Keybinds", "SprintBind"},
 		{"Keybinds", "Frisk"},
@@ -445,7 +422,11 @@ function loadConfigs()
 		{"BlackMarket", "Kit1"},
 		{"BlackMarket", "Kit2"},
 		{"BlackMarket", "Kit3"},
-		{"BlackMarket", "Locations"}
+		{"BlackMarket", "Locations"},
+		{"FactionLocker", "Kit1"},
+		{"FactionLocker", "Kit2"},
+		{"FactionLocker", "Kit3"},
+		{"FactionLocker", "Locations"}
 	}
 
 	-- Handle Config File
@@ -485,13 +466,14 @@ function main()
 		menu.settings.window[0] = not menu.settings.window[0]
 	end)
 
+	-- Black Market Command
 	sampRegisterChatCommand("bms", function()
 		menu.blackmarket.pageId = 1
 		menu.blackmarket.window[0] = not menu.blackmarket.window[0]
 	end)
 
-	sampRegisterChatCommand("areyouin", function()
-		formattedAddChatMessage("Entered Point: " .. (enteredPoint and "true" or "false"))
+	sampRegisterChatCommand("whatskin", function()
+		formattedAddChatMessage(tostring(getCharModel(ped)))
 	end)
 
 	-- Register Chat Commands
@@ -519,16 +501,8 @@ function main()
 		end)
 	end
 
-	-- Create Threads
-	local startedThreads, failedThreads = createThreads()
-
 	-- Print Loaded/Failed Threads and Success Message
-	local message = string.format("%s v%s has loaded successfully!", firstToUpper(scriptName), scriptVersion)
-	print(string.format("%s Threads: %s.", message, table.concat(startedThreads, ", ")))
-	formattedAddChatMessage(message)
-	if #failedThreads > 0 then
-		print("Threads failed to start: " .. table.concat(failedThreads, ", "))
-	end
+	startAndPrintThreadStatus()
 
 	-- Resume Threads
 	while true do wait(1) 
@@ -587,6 +561,7 @@ function checkAdminDuty()
     return aduty == 1 and ((specState and HideMe == nil) or (HideMe == 1))
 end
 
+-- Toggle Bind
 function toggleBind(bind)
 	autobind.Keybinds[bind].Toggle = not autobind.Keybinds[bind].Toggle
 	formattedAddChatMessage(string.format("%s: %s", bind, autobind.Keybinds[bind].Toggle and '{008000}on' or '{FF0000}off'))
@@ -597,6 +572,7 @@ local function checkBodyguardCondition()
     return isBodyguard or autobind.AutoVest.donor
 end
 
+-- Check Animation
 local function checkAnimationCondition(playerId)
     local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
     local pAnimId2 = sampGetPlayerAnimationId(playerId)
@@ -735,130 +711,168 @@ function checkAndAcceptVest(autoaccept)
 	end
 end
 
--- Threads
-local function createAutovestThread()
-	timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
+--- Threads
+-- Function to call a function using loadstring
+function callFuncStr(func)
+    assert(loadstring(func .. '()'))()
+end
 
-    threads.autovest = coroutine.create(function()
+-- Helper function to create and manage threads
+local function createThread(name, funcName)
+    if runningThreads[name] and coroutine.status(runningThreads[name]) ~= "dead" then
+        return -- Do not create if the thread is still running
+    end
+
+    runningThreads[name] = coroutine.create(function()
         while true do
-            local success, message = pcall(checkAndSendVest, false)
-            if not success then
-                print("Error in checkAndSendVest: " .. tostring(message))
+            if autobind.Settings.enable then
+                local success, err = pcall(callFuncStr, funcName)
+                if not success then
+                    print(string.format("Error in %s thread: %s", name, err))
+                end
             end
             coroutine.yield()
         end
     end)
+
+    coroutine.resume(runningThreads[name])
 end
 
+-- Autovest Thread
+local function createAutovestThread()
+    timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
+
+    local function autovest()
+        checkAndSendVest(false)
+    end
+
+    _G.autovest = autovest
+    createThread("autovest", "autovest")
+end
+
+-- Auto Accept Thread
 local function createAutoacceptThread()
-	threads.autoaccept = coroutine.create(function()
-		while true do
-			local success, message = pcall(checkAndAcceptVest, accepter.enable)
-			if not success then
-				print("Error in checkAndAcceptVest: " .. tostring(message))
-			end
-			coroutine.yield()
-		end
-	end)
+    local function autoaccept()
+        checkAndAcceptVest(accepter.enable)
+    end
+
+    _G.autoaccept = autoaccept
+    createThread("autoaccept", "autoaccept")
 end
 
+-- Keybind Thread
 local function createKeybindThread()
-	local function acceptBodyguard()
-		local message = checkAndAcceptVest(true)
-		if message then
-			formattedAddChatMessage(message)
-		end
-	end
-	
-	local function offerBodyguard()
-		local message = checkAndSendVest(true)
-		if message then
-			formattedAddChatMessage(message)
-		end
-	end
+    local function acceptBodyguard()
+        local message = checkAndAcceptVest(true)
+        if message then
+            formattedAddChatMessage(message)
+        end
+    end
+    
+    local function offerBodyguard()
+        local message = checkAndSendVest(true)
+        if message then
+            formattedAddChatMessage(message)
+        end
+    end
 
-	-- Function to check if the player is within any black market location
-	local function isInBlackMarketLocation()
-		-- Adjustable Z axis limits
-		local zTopLimit = 0.7  -- Top limit of the Z axis
-		local zBottomLimit = -0.7  -- Bottom limit of the Z axis
+    -- Function to check if the player is within any black market location
+    local function isInBlackMarketLocation()
+        -- Adjustable Z axis limits
+        local zTopLimit = 0.7  -- Top limit of the Z axis
+        local zBottomLimit = -0.7  -- Bottom limit of the Z axis
 
-		local playerX, playerY, playerZ = getCharCoordinates(PLAYER_PED)
-		for _, location in pairs(autobind.BlackMarket.Locations) do
-			local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, location.x, location.y, location.z)
-			local zDifference = playerZ - location.z
-			print(distance, zDifference)
-			if distance <= location.radius and zDifference <= zTopLimit and zDifference >= zBottomLimit then
-				return true
-			end
-		end
-		return false
-	end
+        local playerX, playerY, playerZ = getCharCoordinates(PLAYER_PED)
+        for _, location in pairs(autobind.BlackMarket.Locations) do
+            local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, location.x, location.y, location.z)
+            local zDifference = playerZ - location.z
+            print(distance, zDifference)
+            if distance <= location.radius and zDifference <= zTopLimit and zDifference >= zBottomLimit then
+                return true
+            end
+        end
+        return false
+    end
 
-	-- Function to check if the player already has the item
-	local function playerHasItem(item)
-		if item.weapon then
-			return hasCharGotWeapon(ped, item.weapon)
-		elseif item.label == 'Health/Armor' then
-			local health = getCharHealth(ped) - 5000000
-			local armor = getCharArmour(ped)
-			return health == 100 and armor == 100
-		end
-		return false
-	end
+    -- Function to check if the player already has the item
+    local function playerHasItem(item)
+        if item.weapon then
+            return hasCharGotWeapon(ped, item.weapon)
+        elseif item.label == 'Health/Armor' then
+            local health = getCharHealth(ped) - 5000000
+            local armor = getCharArmour(ped)
+            return health == 100 and armor == 100
+        end
+        return false
+    end
 
-	-- Handle Black Market
-	local function handleBlackMarket(kitNumber)
-		if isPlayerControlOn(h) then
-			if not checkMuted() then
-				if isInBlackMarketLocation() then
-					getItemFromBM = kitNumber
-					local kit = autobind.BlackMarket["Kit" .. kitNumber]
-					for _, index in ipairs(kit) do
-						local item = blackMarketItems[index]
-						if item then
-							if not playerHasItem(item) then
-								currentKey = item.index
-								gettingItem = true
-								sampSendChat("/bm")
-								repeat wait(0) until not gettingItem
-							else
-								formattedAddChatMessage(string.format("{FFFF00}Skipping item: %s (already have it)", item.label))
-							end
-						end
-					end
-					getItemFromBM = 0
-					gettingItem = false
-					currentKey = nil
-				else
-					formattedAddChatMessage("{FF0000}You are not at the black market!")
-				end
-			else
-				formattedAddChatMessage("{FF0000}You have been muted for spamming, please wait.")
-			end
-		else
-			formattedAddChatMessage("{FF0000}You are frozen, please wait.")
-		end
-	end
-	
-	local function blackMarket1()
-		handleBlackMarket(1)
-	end
-	
-	local function blackMarket2()
-		handleBlackMarket(2)
-	end
-	
-	local function blackMarket3()
-		handleBlackMarket(3)
-	end
-	
-	local function factionLocker()
+    -- Handle Black Market
+    local function handleBlackMarket(kitNumber)
+        local function resetBlackMarket()
+            getItemFromBM = 0
+            gettingItem = false
+            currentKey = nil
+        end
 
-	end
-	
-	local function bikeBind()
-		if isCharOnAnyBike(ped) then
+        if isPlayerControlOn(h) then
+            if not checkMuted() then
+                if isInBlackMarketLocation() then
+                    getItemFromBM = kitNumber
+                    local kit = autobind.BlackMarket["Kit" .. kitNumber]
+                    for _, index in ipairs(kit) do
+                        local item = blackMarketItems[index]
+                        if item then
+                            if not playerHasItem(item) then
+                                currentKey = item.index
+                                gettingItem = true
+                                sampSendChat("/bm")
+                                repeat wait(0) until not gettingItem
+                            else
+                                formattedAddChatMessage(string.format("{FFFF00}Skipping item: %s (already have it)", item.label))
+                            end
+                        end
+                    end
+                    resetBlackMarket()
+                else
+                    formattedAddChatMessage("{FF0000}You are not at the black market!")
+                    resetBlackMarket()
+                end
+            else
+                formattedAddChatMessage("{FF0000}You have been muted for spamming, please wait.")
+                resetBlackMarket()
+            end
+        else
+            formattedAddChatMessage("{FF0000}You are frozen, please wait.")
+            resetBlackMarket()
+        end
+    end
+    
+    local function blackMarket1()
+        handleBlackMarket(1)
+    end
+    
+    local function blackMarket2()
+        handleBlackMarket(2)
+    end
+    
+    local function blackMarket3()
+        handleBlackMarket(3)
+    end
+    
+    local function factionLocker1()
+
+    end
+
+    local function factionLocker2()
+
+    end
+
+    local function factionLocker3()
+
+    end
+    
+    local function bikeBind()
+        if isCharOnAnyBike(ped) then
             local veh = storeCarCharIsInNoSave(ped)
             if not isCarInAirProper(veh) then
                 if bikeIds[getCarModel(veh)] then
@@ -868,75 +882,76 @@ local function createKeybindThread()
                 end
             end
         end
-	end
-	
-	local function sprintBind()
-		toggleBind("SprintBind")
-	end
-	
-	local function frisk()
-		if not checkAdminDuty() and not checkMuted() then
-			local targeting, _ = getCharPlayerIsTargeting(h)
-			for _, player in ipairs(getVisiblePlayers(5, "all")) do
-				if (isButtonPressed(h, gkeys.player.LOCKTARGET) and autobind.Settings.Frisk.mustAim) or not autobind.Settings.Frisk.mustAim then
-					if (targeting and autobind.Settings.Frisk.target) or not autobind.Settings.Frisk.target then
-						sampSendChat(string.format("/frisk %d", player.playerId))
-						break
-					end
-				end
-			end
-		end
-	end
-	
-	local function takePills()
-		if not checkAdminDuty() and not checkMuted() then
-			if not checkHeal() then
-				sampSendChat("/takepills")
-			else
-				formattedAddChatMessage("{FF0000}You have been damaged recently, you cannot take pills.")
-			end
-		end
-	end
-
-    threads.keybinds = coroutine.create(function()
-        while true do
-            if autobind.Settings.enable then
-				local currentTime = localClock()
-				local keyFunctions = {
-					Accept = acceptBodyguard,
-					Offer = offerBodyguard,
-					BlackMarket1 = blackMarket1,
-					BlackMarket2 = blackMarket2,
-					BlackMarket3 = blackMarket3,
-					FactionLocker = factionLocker,
-					BikeBind = bikeBind,
-					SprintBind = sprintBind,
-					Frisk = frisk,
-					TakePills = takePills
-				}
-			
-				for key, value in pairs(autobind.Keybinds) do
-					local bind = {
-						keys = value.Keys,
-						type = value.Type
-					}
-			
-					if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
-						if activeCheck(true, true, true, true, true) and not menu.settings.window[0] then
-							if key == "BikeBind" or not timers.Binds.last[key] or (currentTime - timers.Binds.last[key]) >= timers.Binds.timer then
-								local success, error = pcall(keyFunctions[key])
-								if not success then
-									print(string.format("Error in %s function: %s", key, error))
-								end
-								timers.Binds.last[key] = currentTime
-							end
-						end
-					end
-				end
-			end
-			coroutine.yield()
+    end
+    
+    local function sprintBind()
+        toggleBind("SprintBind")
+    end
+    
+    local function frisk()
+        if not checkAdminDuty() and not checkMuted() then
+            local targeting, _ = getCharPlayerIsTargeting(h)
+            for _, player in ipairs(getVisiblePlayers(5, "all")) do
+                if (isButtonPressed(h, gkeys.player.LOCKTARGET) and autobind.Settings.Frisk.mustAim) or not autobind.Settings.Frisk.mustAim then
+                    if (targeting and autobind.Settings.Frisk.target) or not autobind.Settings.Frisk.target then
+                        sampSendChat(string.format("/frisk %d", player.playerId))
+                        break
+                    end
+                end
+            end
         end
-    end)
+    end
+    
+    local function takePills()
+        if not checkAdminDuty() and not checkMuted() then
+            if not checkHeal() then
+                sampSendChat("/takepills")
+            else
+                formattedAddChatMessage("{FF0000}You have been damaged recently, you cannot take pills.")
+            end
+        end
+    end
+
+    -- Keybinds
+    local function Keybinds()
+        if autobind.Settings.enable then
+            local currentTime = localClock()
+            local keyFunctions = {
+                Accept = acceptBodyguard,
+                Offer = offerBodyguard,
+                BlackMarket1 = blackMarket1,
+                BlackMarket2 = blackMarket2,
+                BlackMarket3 = blackMarket3,
+                FactionLocker = factionLocker,
+                BikeBind = bikeBind,
+                SprintBind = sprintBind,
+                Frisk = frisk,
+                TakePills = takePills
+            }
+        
+            for key, value in pairs(autobind.Keybinds) do
+                local bind = {
+                    keys = value.Keys,
+                    type = value.Type
+                }
+        
+                if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
+                    if activeCheck(true, true, true, true, true) and not menu.settings.window[0] then
+                        if key == "BikeBind" or not timers.Binds.last[key] or (currentTime - timers.Binds.last[key]) >= timers.Binds.timer then
+                            local success, error = pcall(keyFunctions[key])
+                            if not success then
+                                print(string.format("Error in %s function: %s", key, error))
+                            end
+                            timers.Binds.last[key] = currentTime
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    _G.Keybinds = Keybinds
+    createThread("keybinds", "Keybinds")
 end
 
 -- Capture Spam Thread
@@ -945,79 +960,58 @@ local function createCaptureSpamThread()
     local captureInterval = 1.5
 
     local function createCaptureSpam()
-        local currentTime = localClock()
-        if currentTime - lastCaptureTime >= captureInterval then
-            sampSendChat("/capturf")
-            lastCaptureTime = currentTime
-        end
+		if autobind.Settings.enable and captureSpam and not checkMuted() and not checkAdminDuty() then
+			local currentTime = localClock()
+			if currentTime - lastCaptureTime >= captureInterval then
+				sampSendChat("/capturf")
+				lastCaptureTime = currentTime
+			end
+		end
     end
 
-    threads.captureSpam = coroutine.create(function()
-        while true do
-            if autobind.Settings.enable and captureSpam and not checkMuted() and not checkAdminDuty() then
-                local status, err = pcall(createCaptureSpam)
-                if not status then
-                    print("Error in capture spam thread: " .. err)
-                end
-            end
-            coroutine.yield()
-        end
-    end)
+    _G.createCaptureSpam = createCaptureSpam
+    createThread("captureSpam", "createCaptureSpam")
 end
 
 -- Pointbounds Thread
 local function createPointboundsThread()
-	-- Get the gangzone pool pointer
-	gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
+    gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
 
-	-- Create the pointbounds
-	local function createPointbounds()
-		if autobind.Settings.mode == "Family" then
-			if not enteredPoint then
-				for i = 0, 1023 do
-					if gzData.iIsListed[i] ~= 0 and gzData.pGangzone[i] ~= nil then
-						local pos = gzData.pGangzone[i].fPosition
-						local color = gzData.pGangzone[i].dwColor
-						local ped_pos = { getCharCoordinates(PLAYER_PED) }
-				
-						local min1, max1 = math.min(pos[0], pos[2]), math.max(pos[0], pos[2])
-						local min2, max2 = math.min(pos[1], pos[3]), math.max(pos[1], pos[3])
-				
-						-- Check if player is within the gangzone
-						if i >= 34 and i <= 45 then
-							if ped_pos[1] >= min1 and ped_pos[1] <= max1 and ped_pos[2] >= min2 and ped_pos[2] <= max2 and color == 2348810495 then
-								enteredPoint = true
-								break
-							else
-								if enteredPoint then
-									leaveTime = os.time()
-									preventHeal = true
-								end
-								enteredPoint = false
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-
-    threads.pointbounds = coroutine.create(function()
-        while true do
-            if autobind.Settings.enable then
-                local status, err = pcall(createPointbounds)
-                if not status then
-                    print("Error in pointbounds thread: " .. err)
+    local function createPointbounds()
+        if autobind.Settings.mode == "Family" then
+            for i = 0, 1023 do
+                if gzData.iIsListed[i] ~= 0 and gzData.pGangzone[i] ~= nil then
+                    local pos = gzData.pGangzone[i].fPosition
+                    local color = gzData.pGangzone[i].dwColor
+                    local ped_pos = { getCharCoordinates(PLAYER_PED) }
+                
+                    local min1, max1 = math.min(pos[0], pos[2]), math.max(pos[0], pos[2])
+                    local min2, max2 = math.min(pos[1], pos[3]), math.max(pos[1], pos[3])
+                
+                    if i >= 34 and i <= 45 then
+                        if ped_pos[1] >= min1 and ped_pos[1] <= max1 and ped_pos[2] >= min2 and ped_pos[2] <= max2 and color == 2348810495 then
+                            enteredPoint = true
+                            break
+                        else
+                            if enteredPoint then
+                                leaveTime = os.time()
+                                preventHeal = true
+                            end
+                            enteredPoint = false
+                        end
+                    end
                 end
             end
-            coroutine.yield()
         end
-    end)
+    end
+
+    _G.createPointbounds = createPointbounds
+    createThread("pointbounds", "createPointbounds")
 end
 
 -- Resume threads
 function resumeThreads()
-    for threadName, thread in pairs(threads) do
+    for threadName, thread in pairs(runningThreads) do
         if thread then
             local status = coroutine.status(thread)
             if status == "suspended" then
@@ -1027,7 +1021,7 @@ function resumeThreads()
                 end
             elseif status == "dead" then
                 print(string.format("Thread '%s' has finished execution", threadName))
-                threads[threadName] = nil  -- Remove dead thread from the table
+                runningThreads[threadName] = nil
             else
                 print(string.format("Thread '%s' is in an unexpected state: %s", threadName, status))
             end
@@ -1037,25 +1031,37 @@ end
 
 -- Create threads
 function createThreads()
-	createAutovestThread()
-	createAutoacceptThread()
-	createKeybindThread()
-	createCaptureSpamThread()
-	createPointboundsThread()
+    createAutovestThread()
+    createAutoacceptThread()
+    createKeybindThread()
+    createCaptureSpamThread()
+    createPointboundsThread()
 
-	local startedThreads = {}
-	local failedThreads = {}
-	for name, thread in pairs(threads) do
-		if thread and coroutine.status(thread) == "suspended" then
-			table.insert(startedThreads, name)
-		else
-			table.insert(failedThreads, name)
-		end
-	end
+    local startedThreads = {}
+    local failedThreads = {}
+    for name, thread in pairs(runningThreads) do
+        if thread and coroutine.status(thread) == "suspended" then
+            table.insert(startedThreads, name)
+        else
+            table.insert(failedThreads, name)
+        end
+    end
 
-	return startedThreads, failedThreads
+    return startedThreads, failedThreads
 end
 
+-- Print Loaded/Failed Threads and Success Message
+function startAndPrintThreadStatus()
+    local startedThreads, failedThreads = createThreads()
+    local message = string.format("%s v%s has loaded successfully!", firstToUpper(scriptName), scriptVersion)
+    print(string.format("%s Threads: %s.", message, table.concat(startedThreads, ", ")))
+    formattedAddChatMessage(message)
+    if #failedThreads > 0 then
+        print("Threads failed to start: " .. table.concat(failedThreads, ", "))
+    end
+end
+
+-- Toggle Capture Spam
 function toggleCaptureSpam()
 	if not checkAdminDuty() then
 		captureSpam = not captureSpam
@@ -1202,12 +1208,13 @@ end
 
 -- OnWindowMessage
 function onWindowMessage(msg, wparam, lparam)
-	if wparam == VK_ESCAPE and (menu.settings.window[0] or menu.blackmarket.window[0] or menu.factionlocker.window[0]) then
+	if wparam == VK_ESCAPE and (menu.settings.window[0] or menu.skins.window[0] or menu.blackmarket.window[0] or menu.factionlocker.window[0]) then
         if msg == wm.WM_KEYDOWN then
             consumeWindowMessage(true, false)
         end
         if msg == wm.WM_KEYUP then
             menu.settings.window[0] = false
+			menu.skins.window[0] = false
 			menu.blackmarket.window[0] = false
 			menu.factionlocker.window[0] = false
         end
