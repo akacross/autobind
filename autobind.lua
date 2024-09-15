@@ -429,9 +429,8 @@ local commands = {
 
 -- Timers
 local timers = {
-	Vest = {timer = 0.0, last = 0},
-	VestCD = {timer = 0.5, last = 0},
-	AcceptCD = {timer = 0.5, last = 0},
+	Vest = {timer = 13.5, last = 0},
+	Accept = {timer = 0.5, last = 0},
 	Heal = {timer = 12.0, last = 0},
 	Find = {timer = 20, last = 0},
 	Muted = {timer = 13.0, last = 0},
@@ -702,11 +701,16 @@ function main()
 	-- Wait for SAMP to be connected
 	while sampGetGamestate() ~= 3 do wait(100) end
 
-    timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
+    -- Set Vest Timer
+    timers.Vest.timer = autobind.AutoVest.Donor and ddguardTime or guardTime
 
+    -- Setup Gangzones
     gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
 
+    -- Start Functions Loop
     functionsLoop()
+
+    -- Stop Script from terminating
     wait(-1)
 end
 
@@ -856,7 +860,7 @@ end
 -- Check and send vest
 function checkAndSendVest(prevest)
 	local currentTime = localClock()
-	if not autobind.Settings.enable or checkAdminDuty() or (not autobind.AutoVest.enable and not prevest) or (currentTime - timers.VestCD.last < timers.VestCD.timer) then
+	if not autobind.Settings.enable or checkAdminDuty() or (not autobind.AutoVest.enable and not prevest) then
 		return
 	end
 
@@ -873,22 +877,24 @@ function checkAndSendVest(prevest)
         return string.format("You must wait %d seconds before sending vest.", timeLeft > 1 and timeLeft or 1)
     end
 
-    for _, player in ipairs(getVisiblePlayers(6, prevest and "all" or "armor")) do
-        if checkAnimationCondition(player.playerId) then
-            if vestModeConditions(player.playerId) then
-                sampSendChat(autobind.AutoVest.donor and '/guardnear' or string.format("/guard %d 200", player.playerId))
-                timers.VestCD.last = currentTime
-				return
+    if not bodyguard.received then
+        for _, player in ipairs(getVisiblePlayers(7, prevest and "all" or "armor")) do
+            if checkAnimationCondition(player.playerId) then
+                if vestModeConditions(player.playerId) then
+                    sampSendChat(autobind.AutoVest.donor and '/guardnear' or string.format("/guard %d 200", player.playerId))
+                    bodyguard.received = true
+                    return
+                end
             end
         end
+        return "No suitable player found to vest."
     end
-	return "No suitable player found to vest."
 end
 
 -- Check and accept vest
 function checkAndAcceptVest(autoaccept)
 	local currentTime = localClock()
-	if not autobind.Settings.enable or checkAdminDuty() or (currentTime - timers.AcceptCD.last < timers.AcceptCD.timer) then
+	if not autobind.Settings.enable or checkAdminDuty() or (currentTime - timers.Accept.last < timers.Accept.timer) then
 		return
 	end
 
@@ -902,11 +908,11 @@ function checkAndAcceptVest(autoaccept)
 	end
 
 	if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
-		for _, player in ipairs(getVisiblePlayers(4, "all")) do
+		for _, player in ipairs(getVisiblePlayers(5, "all")) do
 			if autoaccept and accepter.received then
 				if sampGetPlayerNickname(player.playerId) == accepter.playerName then
 					sampSendChat("/accept bodyguard")
-					timers.AcceptCD.last = currentTime
+					timers.Accept.last = currentTime
 					return
 				end
 			end
@@ -1171,35 +1177,35 @@ local functionsToRun = {
     {
         name = "Autovest",
         func = autovest,
-        interval = 0.01,  -- Adjust as needed
+        interval = 0,
         lastRun = os.clock(),
         enabled = true,
     },
     {
         name = "Autoaccept",
         func = autoaccept,
-        interval = 0.01,  -- Adjust as needed
+        interval = 0,
         lastRun = os.clock(),
         enabled = true,
     },
     {
         name = "Keybinds",
         func = Keybinds,
-        interval = 0.01,  -- Run every loop
+        interval = 0,
         lastRun = os.clock(),
         enabled = true,
     },
     {
         name = "CaptureSpam",
         func = createCaptureSpam,
-        interval = 0.01,  -- Since you're checking a custom interval within the function
+        interval = 0,
         lastRun = os.clock(),
         enabled = true,
     },
     {
         name = "Pointbounds",
         func = createPointbounds,
-        interval = 1.5,  -- Adjust as needed
+        interval = 1.5,
         lastRun = os.clock(),
         enabled = true,
     },
@@ -1208,7 +1214,7 @@ local functionsToRun = {
 -- Functions Loop
 function functionsLoop()
     while true do
-        wait(5)  -- Adjust wait time to balance performance
+        wait(1)  -- Adjust wait time to balance performance
         local currentTime = os.clock()
         if autobind.Settings.enable then
             for _, item in ipairs(functionsToRun) do
@@ -1486,27 +1492,32 @@ function sampev.onServerMessage(color, text)
 		end)
 	end
 
-	--- Vest/Accept
+	--- Bodyguard
 	-- That player isn't near you.
 	if text:find("That player isn't near you%.") and color == -1347440726 then
+        bodyguard.received = false
 		resetTimer(2, timers.Vest)
 	end
 	
 	-- You can't /guard while aiming.
 	if text:find("You can't /guard while aiming%.") and color == -1347440726 then
+        bodyguard.received = false
 		resetTimer(0.5, timers.Vest)
 	end
 	
 	-- You must wait (x) seconds? before selling another vest.
 	local cooldown = text:match("You must wait (%d+) seconds? before selling another vest%.?")
 	if cooldown then
+        bodyguard.received = false
 		resetTimer(tonumber(cooldown) + 0.5, timers.Vest)
 	end
 
 	-- You offered protection to (Nickname) for $200.
 	local nickname = text:match("%* You offered protection to (.+) for %$200%.")
 	if nickname then
-		-- = nickname -- Overlay
+		bodyguard.playerName = nickname:gsub("%s+", "_")
+        bodyguard.playerId = sampGetPlayerIdByNickname(bodyguard.playerName)
+		bodyguard.received = false
 		timers.Vest.last = localClock()
 	end
 
@@ -1514,6 +1525,9 @@ function sampev.onServerMessage(color, text)
 	if text:find("You are not a bodyguard.") and color ==  -1347440726 then
 		formattedAddChatMessage("You are not a bodyguard, disabling bodyguard related features.")
 		isBodyguard = false
+        bodyguard.playerName = ""
+        bodyguard.playerId = -1
+        bodyguard.received = false
 		return not autobind.Settings.enable
 	end
 
@@ -1524,6 +1538,7 @@ function sampev.onServerMessage(color, text)
 		return not autobind.Settings.enable
 	end
 
+    --- Accept
 	-- You are not near the person offering you guard!
 	if text:find("You are not near the person offering you guard!") and color == -1347440726 then
 		formattedAddChatMessage(string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId))
