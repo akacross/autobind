@@ -48,13 +48,17 @@ local dependencies = {
     {name = 'game.keys', var = 'gkeys'},
     {name = 'windows.message', var = 'wm'},
     {name = 'fAwesome6', var = 'fa'},
-    {name = 'encoding', var = 'encoding'}
+    {name = 'encoding', var = 'encoding'},
+    {name = 'lanes', var = 'lanes', callback = function(module) return module.configure() end}, -- Add lanes with callback
 }
 
 -- Load modules
 local loadedModules, statusMessages = {}, {success = {}, failed = {}}
 for _, dep in ipairs(dependencies) do
     local loadedModule, errorMsg = safeRequire(dep.name)
+    if loadedModule and dep.callback then
+        loadedModule = dep.callback(loadedModule) -- Call the callback function if needed
+    end
     loadedModules[dep.var] = loadedModule
     table.insert(statusMessages[loadedModule and "success" or "failed"], loadedModule and dep.name or string.format("%s (%s)", dep.name, errorMsg))
 end
@@ -123,6 +127,199 @@ local function fetchUrls(type, isBeta)
     }
     return paths[type] or error("Invalid URL type")
 end
+
+-- DownloadManager Class
+local DownloadManager = {}
+DownloadManager.__index = DownloadManager
+
+-- Ensure Global `lanes.download_manager` Exists with `lane` and `linda`
+if not _G['lanes.download_manager'] then
+    -- Create a new linda for communication
+    local linda = lanes.linda()
+
+    -- Define the lane generator, passing `linda` as an argument
+    local lane_gen = lanes.gen('*', {
+        package = {
+            path = package.path,
+            cpath = package.cpath
+        }
+    },
+    function(linda)
+        local lanes = require('lanes')
+        local requests = require('requests') -- Ensure 'requests' library is accessible
+        local lfs = require('lfs') -- Require LuaFileSystem
+
+        while true do
+            -- Wait for a 'request' with a timeout of 10 ms
+            local key, val = linda:receive(0.01, 'request')
+            if key == 'request' and val then
+                local url = val.url
+                local filePath = val.filePath
+                local identifier = val.identifier
+
+                -- Ensure the output directory exists
+                local dir = filePath:match("^(.*[/\\])")
+                if dir then
+                    local success, err = pcall(function() lfs.mkdir(dir) end)
+                    if not success then
+                        linda:send('error', {identifier = identifier, error = "Directory Creation Error: " .. tostring(err)})
+                        goto continue
+                    end
+                end
+
+                -- Open file for writing
+                local outputFile, err = io.open(filePath, "wb")
+                if not outputFile then
+                    linda:send('error', {identifier = identifier, error = "File Open Error: " .. tostring(err)})
+                    goto continue
+                end
+
+                -- Perform the HTTP GET request
+                local ok, response = pcall(requests.get, url, {
+                    headers = {["Accept-Encoding"] = "identity"},
+                })
+
+                if ok and response.status_code == 200 then
+                    outputFile:write(response.text)
+                    outputFile:close()
+                    linda:send('completed', {identifier = identifier})
+                else
+                    outputFile:close()
+                    os.remove(filePath)
+                    local errorMsg = response and ("HTTP Error: " .. tostring(response.status_code)) or "Request failed"
+                    linda:send('error', {identifier = identifier, error = errorMsg})
+                end
+
+                ::continue::
+            else
+                -- No request received, sleep briefly to prevent CPU hogging
+                lanes.sleep(0.01)
+            end
+        end
+    end)
+
+    -- Start the lane, passing `linda` as an argument
+    local success, lane = pcall(lane_gen, linda)
+    if success then
+        -- Assign the lane and linda to the global table
+        _G['lanes.download_manager'] = { lane = lane, linda = linda }
+    else
+        print("Failed to start lane:", lane)  -- Print the error message
+    end
+end
+
+function DownloadManager:new(maxConcurrentDownloads)
+    local manager = {
+        downloadQueue = {},
+        activeDownloads = 0,
+        maxConcurrentDownloads = maxConcurrentDownloads or 5,
+        isDownloading = false,
+        onCompleteCallback = nil,
+        onProgressCallback = nil,
+        totalFiles = 0,
+        completedFiles = 0,
+        lanesHttp = _G['lanes.download_manager'].linda, -- Reference to the global linda
+        hasCompleted = false,  -- Initialize the hasCompleted flag
+    }
+    setmetatable(manager, DownloadManager)
+    return manager
+end
+
+function DownloadManager:queueDownloads(fileTable, onComplete, onProgress)
+    self.onCompleteCallback = onComplete
+    self.onProgressCallback = onProgress
+
+    self.hasCompleted = false  -- Reset the hasCompleted flag for new batch
+
+    for _, file in ipairs(fileTable) do
+        if not doesFileExist(file.path) or file.replace then
+            table.insert(self.downloadQueue, file)
+            self.totalFiles = self.totalFiles + 1
+        end
+    end
+
+    if not self.isDownloading then
+        self.isDownloading = true
+        self:startDownloads()
+    end
+end
+
+function DownloadManager:startDownloads()
+    self:processQueue()
+end
+
+function DownloadManager:processQueue()
+    while self.activeDownloads < self.maxConcurrentDownloads and #self.downloadQueue > 0 do
+        local file = table.remove(self.downloadQueue, 1)
+        self.activeDownloads = self.activeDownloads + 1
+        self:downloadFile(file)
+    end
+
+    -- Check if all downloads are complete and the callback hasn't been called yet
+    if self.activeDownloads == 0 and #self.downloadQueue == 0 and not self.hasCompleted then
+        self.hasCompleted = true  -- Set the flag to true to prevent multiple callbacks
+        self.isDownloading = false
+        if self.onCompleteCallback then
+            self.onCompleteCallback(self.completedFiles > 0)
+        end
+    end
+end
+
+function DownloadManager:downloadFile(file)
+    local identifier = file.index or tostring(file.url)
+    local linda = self.lanesHttp
+
+    -- Send the download request to the lane
+    linda:send('request', {
+        url = file.url,          -- String
+        filePath = file.path,    -- String
+        identifier = identifier, -- String or Number
+    })
+
+    -- Monitor the download
+    self:monitorLane(identifier, file)
+end
+
+function DownloadManager:monitorLane(identifier, file)
+    local linda = self.lanesHttp
+    local downloadManager = self
+
+    while true do
+        -- Wait for a message with a timeout of 0 seconds (non-blocking)
+        local key, val = linda:receive(0, 'completed', 'error')
+        if key and val then
+            if val.identifier == identifier then
+                if key == 'completed' then
+                    downloadManager.completedFiles = downloadManager.completedFiles + 1
+                    downloadManager.activeDownloads = downloadManager.activeDownloads - 1
+                    downloadManager:processQueue()
+                    break
+                elseif key == 'error' then
+                    -- Handle error
+                    print("Failed to download:", val.error)
+                    downloadManager.completedFiles = downloadManager.completedFiles + 1
+                    downloadManager.activeDownloads = downloadManager.activeDownloads - 1
+                    downloadManager:processQueue()
+                    break
+                end
+            else
+                print("Identifier mismatch. Expected:", identifier, "Received:", val.identifier)  -- Debug print
+            end
+        else
+            -- No relevant message received, yield briefly
+            wait(0)
+        end
+    end
+end
+
+-- Global Variables to Store Download Progress
+local downloadProgress = {
+    currentFile = "",
+    fileProgress = 0,
+    overallProgress = 0,
+    downloadedSize = 0,
+    totalSize = 0
+}
 
 -- Global Variables
 local new, str, sizeof = imgui.new, ffi.string, ffi.sizeof
@@ -238,7 +435,8 @@ local timers = {
 	Heal = {timer = 12.0, last = 0},
 	Find = {timer = 20, last = 0},
 	Muted = {timer = 13.0, last = 0},
-	Binds = {timer = 0.5, last = {}}
+	Binds = {timer = 0.5, last = {}},
+    Capture = {timer = 1.5, last = 0}
 }
 
 -- Guard
@@ -258,11 +456,18 @@ local accepter = {
 	playerId = -1
 }
 
+local bodyguard = {
+	received = false,
+	playerName = "",
+	playerId = -1
+}
+
 -- Auto Find
 local autofind ={
 	enable = false,
 	playerName = "",
-	playerId = -1
+	playerId = -1,
+    counter = 0
 }
 
 -- Factions
@@ -472,48 +677,44 @@ function main()
 		menu.blackmarket.window[0] = not menu.blackmarket.window[0]
 	end)
 
-	sampRegisterChatCommand("whatskin", function()
-		formattedAddChatMessage(tostring(getCharModel(ped)))
-	end)
-
 	-- Register Chat Commands
 	if autobind.Settings.enable then
 		registerChatCommands()
 	end
 
-	-- Download Skins
+	-- Fetch Skins
+	if autobind.AutoVest.autoFetchSkins then
+		fetchDataFromURL(autobind.AutoVest.skinsUrl, getFile("skins"), function(decodedData)
+			autobind.AutoVest.skins = decodedData
+		end, "401")
+	end
+
+	-- Fetch Names
+	if autobind.AutoVest.autoFetchNames then
+		fetchDataFromURL(autobind.AutoVest.namesUrl, getFile("names"), function(decodedData)
+			autobind.AutoVest.names = decodedData
+		end, "402")
+	end
+
+    -- Download Skins
 	downloadSkins()
 
 	-- Wait for SAMP to be connected
 	while sampGetGamestate() ~= 3 do wait(100) end
 
-	-- Fetch Skins
-	if autobind.AutoVest.autoFetchSkins then
-		fetchDataFromURL(autobind.AutoVest.skinsUrl, 'skins', function(decodedData)
-			autobind.AutoVest.skins = decodedData
-		end)
-	end
+    timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
 
-	-- Fetch Names
-	if autobind.AutoVest.autoFetchNames then
-		fetchDataFromURL(autobind.AutoVest.namesUrl, 'names', function(decodedData)
-			autobind.AutoVest.names = decodedData
-		end)
-	end
+    gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
 
-	-- Print Loaded/Failed Threads and Success Message
-	startAndPrintThreadStatus()
-
-	-- Resume Threads
-	while true do wait(1) 
-		resumeThreads()
-	end
+    functionsLoop()
+    wait(-1)
 end
+
+local myFont = renderCreateFont("Arial", 9, 13)
 
 -- onD3DPresent
 function onD3DPresent()
 	if not autobind.Settings or not autobind.Keybinds then
-		print("Autobind is not loaded properly.")
 		return
 	end
 
@@ -521,6 +722,31 @@ function onD3DPresent()
 	if autobind.Settings.enable and autobind.Keybinds.SprintBind.Toggle and (isButtonPressed(h, gkeys.player.SPRINT) and (isCharOnFoot(ped) or isCharInWater(ped))) then
 		setGameKeyState(gkeys.player.SPRINT, 0)
 	end
+
+    -- Draw Download Progress
+    if downloadProgress.currentFile ~= "" then
+        local x, y = 700, 500 -- Position on the screen
+        local text = string.format(
+            "Downloading: %s\nFile Progress: %.2f%%\nOverall Progress: %.2f%%\nDownloaded: %d of %d bytes",
+            downloadProgress.currentFile,         -- %s
+            downloadProgress.fileProgress,        -- %.2f
+            downloadProgress.overallProgress,     -- %.2f
+            downloadProgress.downloadedSize,      -- %d
+            downloadProgress.totalSize or 1       -- %d
+        )
+        renderFontDrawText(myFont, text, x, y, 0xFFFFFFFF)
+
+        if downloadProgress.overallProgress >= 100 then
+            lua_thread.create(function()
+                wait(5000)
+                downloadProgress.currentFile = ""
+                downloadProgress.fileProgress = 0
+                downloadProgress.overallProgress = 0
+                downloadProgress.downloadedSize = 0
+                downloadProgress.totalSize = 0
+            end)
+        end
+    end
 end
 
 -- Get visible players
@@ -558,7 +784,7 @@ end
 function checkAdminDuty()
     local _, aduty = getSampfuncsGlobalVar("aduty")
     local _, HideMe = getSampfuncsGlobalVar("HideMe")
-    return aduty == 1 and ((specState and HideMe == nil) or (HideMe == 1))
+    return aduty == 1 or (aduty == 1 and (specState or HideMe == 1))
 end
 
 -- Toggle Bind
@@ -629,25 +855,13 @@ end
 
 -- Check and send vest
 function checkAndSendVest(prevest)
-	if not autobind.Settings.enable then
-		return "Autobind is disabled"
+	local currentTime = localClock()
+	if not autobind.Settings.enable or checkAdminDuty() or (not autobind.AutoVest.enable and not prevest) or (currentTime - timers.VestCD.last < timers.VestCD.timer) then
+		return
 	end
-    
-    if checkAdminDuty() then
-        return
-    end
-
-	if not autobind.AutoVest.enable and not prevest then
-        return
-    end
 
 	if not checkBodyguardCondition() then
 		return "You are not a bodyguard."
-	end
-
-    local currentTime = localClock()
-	if currentTime - timers.VestCD.last < timers.VestCD.timer then
-		return
 	end
 
 	if checkMuted() then
@@ -673,16 +887,8 @@ end
 
 -- Check and accept vest
 function checkAndAcceptVest(autoaccept)
-	if not autobind.Settings.enable then
-		return "Autobind is disabled"
-	end
-
-	if checkAdminDuty() then
-        return
-    end
-
 	local currentTime = localClock()
-	if currentTime - timers.AcceptCD.last < timers.AcceptCD.timer then
+	if not autobind.Settings.enable or checkAdminDuty() or (currentTime - timers.AcceptCD.last < timers.AcceptCD.timer) then
 		return
 	end
 
@@ -711,57 +917,97 @@ function checkAndAcceptVest(autoaccept)
 	end
 end
 
---- Threads
--- Function to call a function using loadstring
-function callFuncStr(func)
-    assert(loadstring(func .. '()'))()
-end
+--- Black Market Functions
+-- Function to check if the player is within any black market location
+function isInBlackMarketLocation()
+    -- Adjustable Z axis limits
+    local zTopLimit = 0.7  -- Top limit of the Z axis
+    local zBottomLimit = -0.7  -- Bottom limit of the Z axis
 
--- Helper function to create and manage threads
-local function createThread(name, funcName)
-    if runningThreads[name] and coroutine.status(runningThreads[name]) ~= "dead" then
-        return -- Do not create if the thread is still running
-    end
-
-    runningThreads[name] = coroutine.create(function()
-        while true do
-            if autobind.Settings.enable then
-                local success, err = pcall(callFuncStr, funcName)
-                if not success then
-                    print(string.format("Error in %s thread: %s", name, err))
-                end
-            end
-            coroutine.yield()
+    local playerX, playerY, playerZ = getCharCoordinates(PLAYER_PED)
+    for _, location in pairs(autobind.BlackMarket.Locations) do
+        local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, location.x, location.y, location.z)
+        local zDifference = playerZ - location.z
+        if distance <= location.radius and zDifference <= zTopLimit and zDifference >= zBottomLimit then
+            return true
         end
-    end)
-
-    coroutine.resume(runningThreads[name])
+    end
+    return false
 end
 
--- Autovest Thread
-local function createAutovestThread()
-    timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
+-- Function to check if the player already has the item
+function playerHasItem(item)
+    if item.weapon then
+        return hasCharGotWeapon(ped, item.weapon)
+    elseif item.label == 'Health/Armor' then
+        local health = getCharHealth(ped) - 5000000
+        local armor = getCharArmour(ped)
+        return health == 100 and armor == 100
+    end
+    return false
+end
 
-    local function autovest()
-        checkAndSendVest(false)
+-- Handle Black Market
+function handleBlackMarket(kitNumber)
+    local function resetBlackMarket()
+        getItemFromBM = 0
+        gettingItem = false
+        currentKey = nil
     end
 
-    _G.autovest = autovest
-    createThread("autovest", "autovest")
-end
-
--- Auto Accept Thread
-local function createAutoacceptThread()
-    local function autoaccept()
-        checkAndAcceptVest(accepter.enable)
+    if isPlayerControlOn(h) then
+        if not checkMuted() then
+            if isInBlackMarketLocation() then
+                getItemFromBM = kitNumber
+                local kit = autobind.BlackMarket["Kit" .. kitNumber]
+                for _, index in ipairs(kit) do
+                    local item = blackMarketItems[index]
+                    if item then
+                        if not playerHasItem(item) then
+                            currentKey = item.index
+                            gettingItem = true
+                            sampSendChat("/bm")
+                            repeat wait(0) until not gettingItem
+                        else
+                            formattedAddChatMessage(string.format("{FFFF00}Skipping item: %s (already have it)", item.label))
+                        end
+                    end
+                end
+                resetBlackMarket()
+            else
+                formattedAddChatMessage("{FF0000}You are not at the black market!")
+                resetBlackMarket()
+            end
+        else
+            formattedAddChatMessage("{FF0000}You have been muted for spamming, please wait.")
+            resetBlackMarket()
+        end
+    else
+        formattedAddChatMessage("{FF0000}You are frozen, please wait.")
+        resetBlackMarket()
     end
-
-    _G.autoaccept = autoaccept
-    createThread("autoaccept", "autoaccept")
 end
 
--- Keybind Thread
-local function createKeybindThread()
+-- Toggle Capture Spam
+function toggleCaptureSpam()
+	if not checkAdminDuty() then
+		captureSpam = not captureSpam
+		formattedAddChatMessage(captureSpam and string.format("{FFFF00}Starting capture attempt... (type /%s to toggle)", commands.tcap) or "{FFFF00}Capture spam ended.")
+	end
+end
+
+-- Autovest
+function autovest()
+	checkAndSendVest(false)
+end
+
+-- Autoaccept
+function autoaccept()
+    checkAndAcceptVest(accepter.enable)
+end
+
+-- Keybinds
+function Keybinds()
     local function acceptBodyguard()
         local message = checkAndAcceptVest(true)
         if message then
@@ -773,77 +1019,6 @@ local function createKeybindThread()
         local message = checkAndSendVest(true)
         if message then
             formattedAddChatMessage(message)
-        end
-    end
-
-    -- Function to check if the player is within any black market location
-    local function isInBlackMarketLocation()
-        -- Adjustable Z axis limits
-        local zTopLimit = 0.7  -- Top limit of the Z axis
-        local zBottomLimit = -0.7  -- Bottom limit of the Z axis
-
-        local playerX, playerY, playerZ = getCharCoordinates(PLAYER_PED)
-        for _, location in pairs(autobind.BlackMarket.Locations) do
-            local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, location.x, location.y, location.z)
-            local zDifference = playerZ - location.z
-            print(distance, zDifference)
-            if distance <= location.radius and zDifference <= zTopLimit and zDifference >= zBottomLimit then
-                return true
-            end
-        end
-        return false
-    end
-
-    -- Function to check if the player already has the item
-    local function playerHasItem(item)
-        if item.weapon then
-            return hasCharGotWeapon(ped, item.weapon)
-        elseif item.label == 'Health/Armor' then
-            local health = getCharHealth(ped) - 5000000
-            local armor = getCharArmour(ped)
-            return health == 100 and armor == 100
-        end
-        return false
-    end
-
-    -- Handle Black Market
-    local function handleBlackMarket(kitNumber)
-        local function resetBlackMarket()
-            getItemFromBM = 0
-            gettingItem = false
-            currentKey = nil
-        end
-
-        if isPlayerControlOn(h) then
-            if not checkMuted() then
-                if isInBlackMarketLocation() then
-                    getItemFromBM = kitNumber
-                    local kit = autobind.BlackMarket["Kit" .. kitNumber]
-                    for _, index in ipairs(kit) do
-                        local item = blackMarketItems[index]
-                        if item then
-                            if not playerHasItem(item) then
-                                currentKey = item.index
-                                gettingItem = true
-                                sampSendChat("/bm")
-                                repeat wait(0) until not gettingItem
-                            else
-                                formattedAddChatMessage(string.format("{FFFF00}Skipping item: %s (already have it)", item.label))
-                            end
-                        end
-                    end
-                    resetBlackMarket()
-                else
-                    formattedAddChatMessage("{FF0000}You are not at the black market!")
-                    resetBlackMarket()
-                end
-            else
-                formattedAddChatMessage("{FF0000}You have been muted for spamming, please wait.")
-                resetBlackMarket()
-            end
-        else
-            formattedAddChatMessage("{FF0000}You are frozen, please wait.")
-            resetBlackMarket()
         end
     end
     
@@ -913,160 +1088,149 @@ local function createKeybindThread()
     end
 
     -- Keybinds
-    local function Keybinds()
-        if autobind.Settings.enable then
-            local currentTime = localClock()
-            local keyFunctions = {
-                Accept = acceptBodyguard,
-                Offer = offerBodyguard,
-                BlackMarket1 = blackMarket1,
-                BlackMarket2 = blackMarket2,
-                BlackMarket3 = blackMarket3,
-                FactionLocker = factionLocker,
-                BikeBind = bikeBind,
-                SprintBind = sprintBind,
-                Frisk = frisk,
-                TakePills = takePills
+    if autobind.Settings.enable then
+        local currentTime = localClock()
+        local keyFunctions = {
+            Accept = acceptBodyguard,
+            Offer = offerBodyguard,
+            BlackMarket1 = blackMarket1,
+            BlackMarket2 = blackMarket2,
+            BlackMarket3 = blackMarket3,
+            FactionLocker1 = factionLocker1,
+            FactionLocker2 = factionLocker2,
+            FactionLocker3 = factionLocker3,
+            BikeBind = bikeBind,
+            SprintBind = sprintBind,
+            Frisk = frisk,
+            TakePills = takePills
+        }
+        
+        for key, value in pairs(autobind.Keybinds) do
+            local bind = {
+                keys = value.Keys,
+                type = value.Type
             }
         
-            for key, value in pairs(autobind.Keybinds) do
-                local bind = {
-                    keys = value.Keys,
-                    type = value.Type
-                }
-        
-                if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
-                    if activeCheck(true, true, true, true, true) and not menu.settings.window[0] then
-                        if key == "BikeBind" or not timers.Binds.last[key] or (currentTime - timers.Binds.last[key]) >= timers.Binds.timer then
-                            local success, error = pcall(keyFunctions[key])
-                            if not success then
-                                print(string.format("Error in %s function: %s", key, error))
-                            end
-                            timers.Binds.last[key] = currentTime
+            if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
+                if activeCheck(true, true, true, true, true) and not menu.settings.window[0] then
+                    if key == "BikeBind" or not timers.Binds.last[key] or (currentTime - timers.Binds.last[key]) >= timers.Binds.timer then
+                        local success, error = pcall(keyFunctions[key])
+                        if not success then
+                            print(string.format("Error in %s function: %s", key, error))
                         end
+                        timers.Binds.last[key] = currentTime
                     end
                 end
             end
         end
     end
-
-    _G.Keybinds = Keybinds
-    createThread("keybinds", "Keybinds")
 end
 
--- Capture Spam Thread
-local function createCaptureSpamThread()
-    local lastCaptureTime = 0
-    local captureInterval = 1.5
-
-    local function createCaptureSpam()
-		if autobind.Settings.enable and captureSpam and not checkMuted() and not checkAdminDuty() then
-			local currentTime = localClock()
-			if currentTime - lastCaptureTime >= captureInterval then
-				sampSendChat("/capturf")
-				lastCaptureTime = currentTime
-			end
+-- Capture Spam
+function createCaptureSpam()
+	if autobind.Settings.enable and captureSpam and not checkMuted() and not checkAdminDuty() then
+		local currentTime = localClock()
+		if currentTime - timers.Capture.last >= timers.Capture.timer then
+			sampSendChat("/capturf")
+			timers.Capture.last = currentTime
 		end
-    end
-
-    _G.createCaptureSpam = createCaptureSpam
-    createThread("captureSpam", "createCaptureSpam")
+	end
 end
 
--- Pointbounds Thread
-local function createPointboundsThread()
-    gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
-
-    local function createPointbounds()
-        if autobind.Settings.mode == "Family" then
-            for i = 0, 1023 do
-                if gzData.iIsListed[i] ~= 0 and gzData.pGangzone[i] ~= nil then
-                    local pos = gzData.pGangzone[i].fPosition
-                    local color = gzData.pGangzone[i].dwColor
-                    local ped_pos = { getCharCoordinates(PLAYER_PED) }
+-- Pointbounds
+function createPointbounds()
+    if autobind.Settings.mode == "Family" and sampGetGamestate() == 3 then
+        for i = 0, 1023 do
+            if gzData.iIsListed[i] ~= 0 and gzData.pGangzone[i] ~= nil then
+                local pos = gzData.pGangzone[i].fPosition
+                local color = gzData.pGangzone[i].dwColor
+                local ped_pos = { getCharCoordinates(PLAYER_PED) }
                 
-                    local min1, max1 = math.min(pos[0], pos[2]), math.max(pos[0], pos[2])
-                    local min2, max2 = math.min(pos[1], pos[3]), math.max(pos[1], pos[3])
+                local min1, max1 = math.min(pos[0], pos[2]), math.max(pos[0], pos[2])
+                local min2, max2 = math.min(pos[1], pos[3]), math.max(pos[1], pos[3])
                 
-                    if i >= 34 and i <= 45 then
-                        if ped_pos[1] >= min1 and ped_pos[1] <= max1 and ped_pos[2] >= min2 and ped_pos[2] <= max2 and color == 2348810495 then
-                            enteredPoint = true
-                            break
-                        else
-                            if enteredPoint then
-                                leaveTime = os.time()
-                                preventHeal = true
-                            end
-                            enteredPoint = false
+                if i >= 34 and i <= 45 then
+                    if ped_pos[1] >= min1 and ped_pos[1] <= max1 and ped_pos[2] >= min2 and ped_pos[2] <= max2 and color == 2348810495 then
+                        enteredPoint = true
+                        break
+                    else
+                        if enteredPoint then
+                            leaveTime = os.time()
+                            preventHeal = true
                         end
+                        enteredPoint = false
                     end
                 end
             end
         end
     end
-
-    _G.createPointbounds = createPointbounds
-    createThread("pointbounds", "createPointbounds")
 end
 
--- Resume threads
-function resumeThreads()
-    for threadName, thread in pairs(runningThreads) do
-        if thread then
-            local status = coroutine.status(thread)
-            if status == "suspended" then
-                local success, result = pcall(coroutine.resume, thread)
-                if not success then
-                    print(string.format("Error resuming thread '%s': %s", threadName, result))
+-- Functions Table
+local functionsToRun = {
+    {
+        name = "Autovest",
+        func = autovest,
+        interval = 0.01,  -- Adjust as needed
+        lastRun = os.clock(),
+        enabled = true,
+    },
+    {
+        name = "Autoaccept",
+        func = autoaccept,
+        interval = 0.01,  -- Adjust as needed
+        lastRun = os.clock(),
+        enabled = true,
+    },
+    {
+        name = "Keybinds",
+        func = Keybinds,
+        interval = 0.01,  -- Run every loop
+        lastRun = os.clock(),
+        enabled = true,
+    },
+    {
+        name = "CaptureSpam",
+        func = createCaptureSpam,
+        interval = 0.01,  -- Since you're checking a custom interval within the function
+        lastRun = os.clock(),
+        enabled = true,
+    },
+    {
+        name = "Pointbounds",
+        func = createPointbounds,
+        interval = 1.5,  -- Adjust as needed
+        lastRun = os.clock(),
+        enabled = true,
+    },
+}
+
+-- Functions Loop
+function functionsLoop()
+    while true do
+        wait(5)  -- Adjust wait time to balance performance
+        local currentTime = os.clock()
+        if autobind.Settings.enable then
+            for _, item in ipairs(functionsToRun) do
+                if item.enabled and (currentTime - item.lastRun >= item.interval) then
+                    local success, err = pcall(item.func)
+                    if not success then
+                        print(string.format("Error in %s function: %s", item.name, err))
+                        item.errorCount = (item.errorCount or 0) + 1
+                        if item.errorCount >= 5 then
+                            print(string.format("%s function disabled after repeated errors.", item.name))
+                            item.enabled = false
+                        end
+                    else
+                        item.errorCount = 0  -- Reset error count on success
+                    end
+                    item.lastRun = currentTime
                 end
-            elseif status == "dead" then
-                print(string.format("Thread '%s' has finished execution", threadName))
-                runningThreads[threadName] = nil
-            else
-                print(string.format("Thread '%s' is in an unexpected state: %s", threadName, status))
             end
-        end
-    end
-end
-
--- Create threads
-function createThreads()
-    createAutovestThread()
-    createAutoacceptThread()
-    createKeybindThread()
-    createCaptureSpamThread()
-    createPointboundsThread()
-
-    local startedThreads = {}
-    local failedThreads = {}
-    for name, thread in pairs(runningThreads) do
-        if thread and coroutine.status(thread) == "suspended" then
-            table.insert(startedThreads, name)
         else
-            table.insert(failedThreads, name)
+            wait(1000)  -- Wait longer when the script is disabled
         end
     end
-
-    return startedThreads, failedThreads
-end
-
--- Print Loaded/Failed Threads and Success Message
-function startAndPrintThreadStatus()
-    local startedThreads, failedThreads = createThreads()
-    local message = string.format("%s v%s has loaded successfully!", firstToUpper(scriptName), scriptVersion)
-    print(string.format("%s Threads: %s.", message, table.concat(startedThreads, ", ")))
-    formattedAddChatMessage(message)
-    if #failedThreads > 0 then
-        print("Threads failed to start: " .. table.concat(failedThreads, ", "))
-    end
-end
-
--- Toggle Capture Spam
-function toggleCaptureSpam()
-	if not checkAdminDuty() then
-		captureSpam = not captureSpam
-		formattedAddChatMessage(captureSpam and string.format("{FFFF00}Starting capture attempt... (type /%s to toggle)", commands.tcap) or "{FFFF00}Capture spam ended.")
-	end
 end
 
 -- Register chat commands
@@ -1348,23 +1512,29 @@ function sampev.onServerMessage(color, text)
 
 	-- You are not a bodyguard.
 	if text:find("You are not a bodyguard.") and color ==  -1347440726 then
+		formattedAddChatMessage("You are not a bodyguard, disabling bodyguard related features.")
 		isBodyguard = false
+		return not autobind.Settings.enable
 	end
 
 	-- You are now a Bodyguard, type /help to see your new commands.
 	if text:match("%* You are now a Bodyguard, type /help to see your new commands%.") then
+		formattedAddChatMessage("You are now a bodyguard, enabling bodyguard related features.")
 		isBodyguard = true
+		return not autobind.Settings.enable
 	end
 
 	-- You are not near the person offering you guard!
 	if text:find("You are not near the person offering you guard!") and color == -1347440726 then
-		formattedAddChatMessage(string.format("You are not close enough to %s.", accepter.playerName:gsub("_", " ")))
-		return false
+		formattedAddChatMessage(string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId))
+		return not autobind.Settings.enable
 	end
 
 	-- You can't heal if you were recently shot, except within points, events, minigames, and paintball.
 	if text:match("You can't heal if you were recently shot, except within points, events, minigames, and paintball.") then
+        formattedAddChatMessage("You can't heal after being shot recently. Timer extended by 5 seconds.")
 		resetTimer(5, timers.Heal)
+        return not autobind.Settings.enable
 	end
 
 	-- * Bodyguard (Nickname) wants to protect you for $200, type /accept bodyguard to accept.
@@ -1409,13 +1579,55 @@ function sampev.onServerMessage(color, text)
 	--- Find
 	-- You have already searched for someone - wait a little.
 	if text:match("You have already searched for someone %- wait a little%.") then
+        if autofind.counter > 0 then
+            autofind.counter = 0
+        end
 		resetTimer(5, timers.Find)
 	end
 
 	-- You can't find that person as they're hidden in one of their turfs.
 	if text:match("You can't find that person as they%'re hidden in one of their turfs%.") then
+        if autofind.counter > 0 then
+            autofind.counter = 0
+        end
 		resetTimer(5, timers.Find)
 	end
+
+    -- You are not a detective. (Disables autofind)
+    if text:match("You are not a detective%.") then
+        if autofind.counter > 0 then
+            autofind.counter = 0
+        end
+        autofind.enable = false
+        formattedAddChatMessage("You are no longer finding anyone because you are not a detective.")
+        return not autobind.Settings.enable
+    end
+
+    -- * You are now a Detective, type /help to see your new commands * (Re-enables autofind once you get the job if you have someone set)
+    if text:match("* You are now a Detective, type /help to see your new commands%.") then
+        if autofind.playerName ~= "" and autofind.playerId ~= -1 then
+            if autofind.counter > 0 then
+                autofind.counter = 0
+            end
+            autofind.enable = true
+            formattedAddChatMessage(string.format("You are now a detective and re-enabling autofind on %s (ID: %d).", autofind.playerName:gsub("_", " "), autofind.playerId))
+            return not autobind.Settings.enable
+        end
+    end
+
+    -- You are unable to find this person. (Disable after 5 retries)
+    if text:match("You are unable to find this person%.") then
+        autofind.counter = autofind.counter + 1
+        if autofind.counter >= 5 then
+            autofind.enable = false
+            autofind.playerId = -1
+            autofind.playerName = ""
+            autofind.counter = 0
+            formattedAddChatMessage("You are no longer finding anyone because you are unable to find this person.")
+            return not autobind.Settings.enable
+        end
+        resetTimer(5, timers.Find)
+    end
 
 	--- Accept Repair
 	-- wants to repair your car for $1
@@ -1454,8 +1666,6 @@ function sampev.onServerMessage(color, text)
 		-- You are not a Sapphire or Diamond Donator!
         if text:match("You are not a Sapphire or Diamond Donator!") and color == -1077886209 then
             getItemFromBM = 0
-            gettingItem = false
-            currentKey = nil
         end
     end
 
@@ -1585,7 +1795,7 @@ function()
 	imgui.SetNextWindowSize(imgui.ImVec2(588, 420), imgui.Cond.Always)
 
 	-- Settings Window
-	local title = string.format("%s %s - v%s", fa.SHIELD_PLUS, firstToUpper(scriptName), scriptVersion)
+	local title = string.format("%s %s - v%s", fa.SHIELD_PLUS, scriptName:capitalizeFirst(), scriptVersion)
 	if imgui.Begin(title, menu.settings.window, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
 		-- Define button properties for the first child
 		local buttons1 = {
@@ -1754,9 +1964,11 @@ function()
 						imgui.SameLine()
 						imgui.PopItemWidth()
 						if imgui.Button("Fetch") then
-							fetchDataFromURL(autobind.AutoVest.skinsUrl, 'skins', function(decodedData)
-								autobind.AutoVest.skins = decodedData
-							end)
+                            lua_thread.create(function()
+                                fetchDataFromURL(autobind.AutoVest.skinsUrl, getFile("skins"), function(decodedData)
+                                    autobind.AutoVest.skins = decodedData
+                                end)
+                            end)
 						end
 						imgui.CustomTooltip("Fetches skins from provided URL")
 						imgui.SameLine()
@@ -1845,9 +2057,11 @@ function()
 					imgui.SameLine()
 					imgui.PopItemWidth()
 					if imgui.Button("Fetch") then
-						fetchDataFromURL(autobind.AutoVest.namesUrl, 'names', function(decodedData)
-							autobind.AutoVest.names = decodedData
-						end)
+                        lua_thread.create(function()
+                            fetchDataFromURL(autobind.AutoVest.namesUrl, getFile("names"), function(decodedData)
+                                autobind.AutoVest.names = decodedData
+                            end)
+                        end)
 					end
 					imgui.CustomTooltip("Fetches names from provided URL")
 					imgui.SameLine()
@@ -2342,101 +2556,87 @@ function keyEditor(title, index, description)
     imgui.PopFont()
 end
 
--- Fetch Data From URL
-function fetchDataFromURL(url, path, callback)
-	-- Debug: Starting download
-	print("Starting download from URL:", url, "to path:", path)
-	
-	downloadFiles({{url = url, path = getFile(path), replace = true}}, function(result)
-		-- Debug: Download result
-		print("Download result:", result)
-		
-		if result then
-			local file = io.open(getFile(path), "r")
-			if file then
-				-- Debug: File opened successfully
-				print("File opened successfully:", path)
-				
-				local content = file:read("*all")
-				file:close()
-				
-				-- Debug: File content read
-				print("File content read:", content)
-				
-				local success, decoded = pcall(decodeJson, content)
-				if success then
-					-- Debug: JSON decoded successfully
-					print("JSON decoded successfully:", decoded)
-					
-					if next(decoded) == nil then
-						print("JSON format is empty. URL:", url)
-					else
-						callback(decoded)
-					end
-				else
-					-- Debug: Failed to decode JSON
-					print("Failed to decode JSON: " .. decoded, "URL: ", url)
-				end
-			else
-				-- Debug: Error opening file
-				print("Error opening file: " .. path)
-			end
-		end
-	end)
+-- Function to Fetch Data From URL
+function fetchDataFromURL(url, path, callback, index)
+    local function onComplete(downloadsStarted)
+        if downloadsStarted then
+            local file = io.open(path, "r")
+            if file then
+                local content = file:read("*all")
+                file:close()
+
+                local success, decoded = pcall(decodeJson, content)
+                if success then
+                    if decoded and next(decoded) ~= nil then
+                        callback(decoded)
+                    else
+                        print("JSON format is empty or invalid. URL:", url)
+                    end
+                else
+                    print("Failed to decode JSON:", decoded, "URL:", url)
+                end
+            else
+                print("Error opening file:", path)
+            end
+        end
+    end
+
+    local function onProgress(identifier, fileProgress, overallProgress, fileInfo)
+        if fileInfo then
+            downloadProgress.currentFile = fileInfo.url
+            downloadProgress.fileProgress = fileProgress
+            downloadProgress.overallProgress = overallProgress
+            downloadProgress.downloadedSize = math.floor((fileProgress / 100) * (downloadProgress.totalSize or 1))
+            downloadProgress.totalSize = fileInfo.size or 1
+        end
+    end
+
+    local manager = DownloadManager:new(1)
+    manager:queueDownloads({{url = url, path = path, replace = true, index = index}}, onComplete, onProgress)
 end
 
--- Generate Skins Urls
-local function generateSkinsUrls()
+-- Function to Generate Skins URLs
+function generateSkinsUrls()
     local files = {}
     for i = 0, 311 do
         table.insert(files, {
-            url = string.format("%s/Skin_%d.png", fetchUrls("skins"), i),
-            path = string.format("%s/Skin_%d.png", getPath("skins"), i),
-            replace = false
+            url = string.format("%sSkin_%d.png", fetchUrls("skins"), i),
+            path = string.format("%sSkin_%d.png", getPath("skins"), i),
+            replace = false,
+            index = tostring(i + 1)
         })
     end
+
+    -- Sort the files by index
+    table.sort(files, function(a, b) return tonumber(a.index) < tonumber(b.index) end)
+
     return files
 end
 
--- Download Skins
+-- Function to Initiate the Skin Download Process
 function downloadSkins()
-	downloadFiles(generateSkinsUrls(), function(result)
-        if result then 
-            formattedAddChatMessage("All skins downloaded successfully!", -1) 
+    local function onComplete(downloadsStarted)
+        if downloadsStarted then
+            print("All files downloaded successfully.")
+            formattedAddChatMessage("All skins downloaded successfully!", -1)
+        else
+            print("No files needed to be downloaded.")
         end
-		menu.forcePreload[0] = true
-	end)
-end
+        menu.forcePreload[0] = true
+    end
 
--- Utility Functions
-function downloadFiles(table, onCompleteCallback)
-    local downloadsInProgress = 0
-    local downloadsStarted = false
-    local callbackCalled = false
-
-    local function download_handler(id, status, p1, p2)
-        if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-            downloadsInProgress = downloadsInProgress - 1
-        end
-
-        if downloadsInProgress == 0 and onCompleteCallback and not callbackCalled then
-            callbackCalled = true
-            onCompleteCallback(downloadsStarted)
+    local function onProgress(identifier, fileProgress, overallProgress, fileInfo)
+        if fileInfo then
+            downloadProgress.currentFile = fileInfo.url
+            downloadProgress.fileProgress = fileProgress
+            downloadProgress.overallProgress = overallProgress
+            downloadProgress.downloadedSize = math.floor((fileProgress / 100) * (downloadProgress.totalSize or 1))
+            downloadProgress.totalSize = downloadProgress.totalSize or 1
         end
     end
 
-    for _, file in ipairs(table) do
-        if not doesFileExist(file.path) or file.replace then
-            downloadsInProgress = downloadsInProgress + 1
-            downloadsStarted = true
-            downloadUrlToFile(file.url, file.path, download_handler)
-        end
-    end
-
-    if not downloadsStarted and onCompleteCallback and not callbackCalled then
-        callbackCalled = true
-        onCompleteCallback(downloadsStarted)
-    end
+    local manager = DownloadManager:new(10)
+    manager:queueDownloads(generateSkinsUrls(), onComplete, onProgress)
 end
 
 -- Function to check if a table is a sparse array
@@ -2659,12 +2859,22 @@ end
 
 -- Formatted Add Chat Message
 function formattedAddChatMessage(string)
-    sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} %s", firstToUpper(scriptName), string), -1)
+    sampAddChatMessage(string.format("{ABB2B9}[%s]{FFFFFF} %s", scriptName:capitalizeFirst(), string), -1)
 end
 
--- First To Upper
-function firstToUpper(string)
-    return (string:gsub("^%l", string.upper))
+-- Capitalize First Letter
+function string:capitalizeFirst()
+    return (self:gsub("^%l", string.upper))
+end
+
+-- Split String
+function string:split(delimiter)
+    local result = {}
+    local pattern = string.format("([^%s]+)", delimiter)
+    self:gsub(pattern, function(c)
+        table.insert(result, c)
+    end)
+    return result
 end
 
 -- Remove Hex Brackets
