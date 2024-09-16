@@ -1,29 +1,31 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.14a")
+script_version("1.8.15")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
+local betaTesters = { -- WIP
+    {nickName = "Kenny", bugFinds = 14, hoursWasted = 3.0, discord = "ubergnomeage"},
+    {nickName = "Wolly", bugFinds = 9, hoursWasted = 1.0, discord = "xwollyx"},
+    {nickName = "Allen", bugFinds = 5, hoursWasted = 0.7, discord = "allen_7"},
+    {nickName = "Moorice", bugFinds = 2, hoursWasted = 0.3, discord = "moorice"},
+    {nickName = "Dwayne", bugFinds = -1, hoursWasted = 0.8, discord = "dickshaft"}
+}
+
 local changelog = {
-	["1.8.14a"] = {
-
-	},
-	["1.8.13a"] = {
-
-	},
-	["1.8.12"] = {
-		
-	},
-	["1.8.11"] = {
-		"Fixed: Autoaccept now waits if the player is attacked. (You can still be prisoned if you heal while in a gunfight)",
-		"Fixed: Autoaccept automatically detects when you are in a point. (You no longer need to manually toggle it, it will deactivate when point ends)" -- WIP
-	},
-	["1.8.10"] = {
-		"Improved: Autovest is much more reliable now and responsive. (I am going to start changelog from here on.)",
-	},
-	["1.8.09"] = {
-		"Initial Rerelease."
-	}
+    ["1.8.15"] = {
+        "Improved: Completely redesigned the menus interface to make it more user-friendly and visually appealing.",
+        "New: Added a new menu for the Black Market and Faction Locker with kits. (Faction Locker is WIP)",
+        "New: Built a custom download manager using Lua Lanes and requests for downloading files and updating the script.",
+        "Added: The project now requires the following dependencies: lanes, requests (with sockets and SSL), and LFS.",
+        "Lanes: Utilized for parallel processing, allowing the download manager to run concurrently with the main game thread.",
+        "Requests (with Sockets and SSL): Essential for the custom-built download manager to handle secure HTTP/S operations.",
+        "LuaFileSystem (LFS): Used for managing file system operations, it is only used for the download manager.",
+        "Fixed: Resolved the issue causing the main looping functions to crash the mod, ensuring stability.",
+        "Improved: The script now has a more efficient and streamlined structure, making it easier to maintain and update.",
+        "Changed: Completely overhauled the script to improve performance, stability, and readability.",
+        "Changed: There is no longer a need to check your VestMode, it is automatically fetched via MOTD, There is an option to allow everyone."
+    }
 }
 
 -- Script Information
@@ -208,6 +210,7 @@ if not _G['lanes.download_manager'] then
     end
 end
 
+-- Create New Download Manager
 function DownloadManager:new(maxConcurrentDownloads)
     local manager = {
         downloadQueue = {},
@@ -225,6 +228,7 @@ function DownloadManager:new(maxConcurrentDownloads)
     return manager
 end
 
+-- Queue Downloads
 function DownloadManager:queueDownloads(fileTable, onComplete, onProgress)
     self.onCompleteCallback = onComplete
     self.onProgressCallback = onProgress
@@ -244,10 +248,12 @@ function DownloadManager:queueDownloads(fileTable, onComplete, onProgress)
     end
 end
 
+-- Start Downloads
 function DownloadManager:startDownloads()
     self:processQueue()
 end
 
+-- Process Queue
 function DownloadManager:processQueue()
     while self.activeDownloads < self.maxConcurrentDownloads and #self.downloadQueue > 0 do
         local file = table.remove(self.downloadQueue, 1)
@@ -265,21 +271,23 @@ function DownloadManager:processQueue()
     end
 end
 
+-- Download File
 function DownloadManager:downloadFile(file)
     local identifier = file.index or tostring(file.url)
     local linda = self.lanesHttp
 
     -- Send the download request to the lane
     linda:send('request', {
-        url = file.url,          -- String
-        filePath = file.path,    -- String
-        identifier = identifier, -- String or Number
+        url = file.url,
+        filePath = file.path,
+        identifier = identifier
     })
 
     -- Monitor the download
     self:monitorLane(identifier, file)
 end
 
+-- Monitor Lane
 function DownloadManager:monitorLane(identifier, file)
     local linda = self.lanesHttp
     local downloadManager = self
@@ -306,7 +314,6 @@ function DownloadManager:monitorLane(identifier, file)
                 print("Identifier mismatch. Expected:", identifier, "Received:", val.identifier)  -- Debug print
             end
         else
-            -- No relevant message received, yield briefly
             wait(0)
         end
     end
@@ -473,7 +480,7 @@ local autofind ={
 local factions = {
 	skins = {
 		61, 71, 73, 163, 164, 165, 166, 179, 191, 206, 285, 287, -- Ares
-		141, 253, 255, 265, 266, 267, 280, 281, 
+		141, 253, 255, 265, 266, 267, 280, 281,
 		282, 283, 284, 286, 288, 294, 300, 301, 306, 309, 310, 311, 120, 253
 	},
 	colors = {
