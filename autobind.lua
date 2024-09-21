@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.15")
+script_version("1.8.15a")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -13,6 +13,9 @@ local betaTesters = { -- WIP
 }
 
 local changelog = {
+    ["1.8.15a"] = {
+        
+    },
     ["1.8.15"] = {
         "Improved: Completely redesigned the menus interface to make it more user-friendly and visually appealing.",
         "New: Added a new menu for the Black Market and Faction Locker with kits. (Faction Locker is WIP)",
@@ -130,87 +133,188 @@ local function fetchUrls(type, isBeta)
     return paths[type] or error("Invalid URL type")
 end
 
--- DownloadManager Class
-local DownloadManager = {}
-DownloadManager.__index = DownloadManager
-
 -- Ensure Global `lanes.download_manager` Exists with `lane` and `linda`
 if not _G['lanes.download_manager'] then
     -- Create a new linda for communication
     local linda = lanes.linda()
 
-    -- Define the lane generator, passing `linda` as an argument
-    local lane_gen = lanes.gen('*', {
+    -- Define the lane generator for handling downloads
+    local download_lane_gen = lanes.gen('*', {
         package = {
             path = package.path,
-            cpath = package.cpath
+            cpath = package.cpath,
+        },
+    },
+    function(linda, fileUrl, filePath, identifier)
+        local lanes = require('lanes')
+        local ltn12 = require('ltn12')
+        local http = require('socket.http')
+        local https = require('ssl.https')  -- For HTTPS requests
+        local lfs = require('lfs')          -- LuaFileSystem
+        local url = require('socket.url')   -- URL parsing
+
+        linda:send('debug_' .. identifier, { message = "Starting download for URL: " .. fileUrl .. " Identifier: " .. identifier })
+
+        -- Ensure the output directory exists
+        local dir = filePath:match("^(.*[/\\])")
+        if dir and dir ~= "" then
+            local attrs = lfs.attributes(dir)
+            if not attrs then
+                local path = ""
+                for folder in string.gmatch(dir, "[^/\\]+[/\\]?") do
+                    path = path .. folder
+                    local attr = lfs.attributes(path)
+                    if not attr then
+                        local success, err = lfs.mkdir(path)
+                        if not success then
+                            linda:send('error_' .. identifier, { error = "Directory Creation Error: " .. tostring(err) })
+                            linda:send('debug_' .. identifier, { message = "Directory creation error: " .. tostring(err) })
+                            return
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Prepare variables for progress tracking
+        local progressData = {
+            downloaded = 0,
+            total = 0,
         }
+
+        -- Create a sink that writes to the file and updates progress
+        local outputFile, err = io.open(filePath, "wb")
+        if not outputFile then
+            linda:send('error_' .. identifier, { error = "File Open Error: " .. tostring(err) })
+            return
+        end
+
+        -- Determine whether to use HTTP or HTTPS
+        local parsed_url = url.parse(fileUrl)
+        local http_request = http.request
+        if parsed_url.scheme == "https" then
+            http_request = https.request
+        end
+
+        -- Perform a HEAD request to get the total size
+        local _, code, headers = http_request{
+            url = fileUrl,
+            method = "HEAD",
+        }
+
+        if code == 200 then
+            local contentLength = headers["content-length"] or headers["Content-Length"]
+            if contentLength then
+                progressData.total = tonumber(contentLength)
+                linda:send('debug_' .. identifier, { message = "Total size for URL: " .. fileUrl .. " is " .. progressData.total })
+            else
+                linda:send('debug_' .. identifier, { message = "Content-Length header not found for URL: " .. fileUrl })
+            end
+        else
+            linda:send('debug_' .. identifier, { message = "HEAD request failed with code: " .. code .. " for URL: " .. fileUrl })
+        end
+
+        -- Create a custom sink function
+        local stopDownload = false  -- Control variable
+        local function progressSink(chunk, sinkErr)
+            if stopDownload then
+                -- Do nothing if download should stop
+                return nil  -- Return nil to stop the sink
+            end
+
+            if chunk then
+                -- Write the chunk to the file
+                local success, writeErr = outputFile:write(chunk)
+                if not success then
+                    linda:send('error_' .. identifier, { error = "File Write Error: " .. tostring(writeErr) })
+                    linda:send('debug_' .. identifier, { message = "File write error: " .. tostring(writeErr) })
+                    stopDownload = true  -- Signal to stop further processing
+                    -- Close the file to release resources
+                    outputFile:close()
+                    return nil  -- Return nil to stop the sink
+                else
+                    -- Update progress
+                    progressData.downloaded = progressData.downloaded + #chunk
+                    linda:send('progress_' .. identifier, {
+                        downloaded = progressData.downloaded,
+                        total = progressData.total,
+                    })
+                    linda:send('debug_' .. identifier, { message = "Progress update for identifier: " .. identifier .. " Downloaded: " .. progressData.downloaded .. " Total: " .. progressData.total })
+                end
+            else
+                -- No more data; close the file
+                outputFile:close()
+                linda:send('completed_' .. identifier, {})
+                linda:send('debug_' .. identifier, { message = "Download completed for identifier: " .. identifier })
+            end
+            return 1  -- Continue processing
+        end
+
+        -- Use the custom sink in the HTTP request
+        local requestSuccess, requestCode, requestHeaders, requestStatus = http_request{
+            url = fileUrl,
+            method = "GET",
+            sink = progressSink,
+            headers = {
+                ["Accept-Encoding"] = "identity",  -- Disable compression
+            },
+            redirect = false,
+        }
+
+        -- Handle unsuccessful requests
+        if not requestSuccess or not (requestCode == 200 or requestCode == 206) then
+            os.remove(filePath)  -- Remove incomplete file
+            local errorMsg = "HTTP Error: " .. tostring(requestCode)
+            linda:send('error_' .. identifier, { error = errorMsg })
+            linda:send('debug_' .. identifier, { message = "HTTP request error for identifier: " .. identifier .. " Error: " .. errorMsg })
+        end
+    end)
+
+    -- Define the main lane generator for handling requests
+    local main_lane_gen = lanes.gen('*', {
+        package = {
+            path = package.path,
+            cpath = package.cpath,
+        },
     },
     function(linda)
         local lanes = require('lanes')
-        local requests = require('requests') -- Ensure 'requests' library is accessible
-        local lfs = require('lfs') -- Require LuaFileSystem
 
         while true do
             -- Wait for a 'request' with a timeout of 10 ms
-            local key, val = linda:receive(0.01, 'request')
+            local key, val = linda:receive(0, 'request')
             if key == 'request' and val then
-                local url = val.url
+                local fileUrl = val.url
                 local filePath = val.filePath
                 local identifier = val.identifier
 
-                -- Ensure the output directory exists
-                local dir = filePath:match("^(.*[/\\])")
-                if dir then
-                    local success, err = pcall(function() lfs.mkdir(dir) end)
-                    if not success then
-                        linda:send('error', {identifier = identifier, error = "Directory Creation Error: " .. tostring(err)})
-                        goto continue
-                    end
+                -- Start a new lane for the download
+                local success, laneOrErr = pcall(download_lane_gen, linda, fileUrl, filePath, identifier)
+                if not success then
+                    linda:send('error_' .. identifier, { error = "Failed to start download lane: " .. tostring(laneOrErr) })
                 end
-
-                -- Open file for writing
-                local outputFile, err = io.open(filePath, "wb")
-                if not outputFile then
-                    linda:send('error', {identifier = identifier, error = "File Open Error: " .. tostring(err)})
-                    goto continue
-                end
-
-                -- Perform the HTTP GET request
-                local ok, response = pcall(requests.get, url, {
-                    headers = {["Accept-Encoding"] = "identity"},
-                })
-
-                if ok and response.status_code == 200 then
-                    outputFile:write(response.text)
-                    outputFile:close()
-                    linda:send('completed', {identifier = identifier})
-                else
-                    outputFile:close()
-                    os.remove(filePath)
-                    local errorMsg = response and ("HTTP Error: " .. tostring(response.status_code)) or "Request failed"
-                    linda:send('error', {identifier = identifier, error = errorMsg})
-                end
-
-                ::continue::
             else
                 -- No request received, sleep briefly to prevent CPU hogging
-                lanes.sleep(0.01)
+                lanes.sleep(0.0001)
             end
         end
     end)
 
-    -- Start the lane, passing `linda` as an argument
-    local success, lane = pcall(lane_gen, linda)
+    -- Start the main lane, passing `linda` as an argument
+    local success, laneOrErr = pcall(main_lane_gen, linda)
     if success then
         -- Assign the lane and linda to the global table
-        _G['lanes.download_manager'] = { lane = lane, linda = linda }
+        _G['lanes.download_manager'] = { lane = laneOrErr, linda = linda }
+        print("Main lane started successfully")
     else
-        print("Failed to start lane:", lane)  -- Print the error message
+        print("Failed to start main lane:", laneOrErr)  -- Print the error message
     end
 end
 
--- Create New Download Manager
+-- DownloadManager Class
+local DownloadManager = {}
+DownloadManager.__index = DownloadManager
+
 function DownloadManager:new(maxConcurrentDownloads)
     local manager = {
         downloadQueue = {},
@@ -234,9 +338,12 @@ function DownloadManager:queueDownloads(fileTable, onComplete, onProgress)
     self.onProgressCallback = onProgress
 
     self.hasCompleted = false  -- Reset the hasCompleted flag for new batch
+    self.totalFiles = 0
+    self.completedFiles = 0
 
-    for _, file in ipairs(fileTable) do
+    for index, file in ipairs(fileTable) do
         if not doesFileExist(file.path) or file.replace then
+            file.index = index  -- Assign an index if not already set
             table.insert(self.downloadQueue, file)
             self.totalFiles = self.totalFiles + 1
         end
@@ -258,6 +365,7 @@ function DownloadManager:processQueue()
     while self.activeDownloads < self.maxConcurrentDownloads and #self.downloadQueue > 0 do
         local file = table.remove(self.downloadQueue, 1)
         self.activeDownloads = self.activeDownloads + 1
+        print(self.activeDownloads)
         self:downloadFile(file)
     end
 
@@ -276,6 +384,8 @@ function DownloadManager:downloadFile(file)
     local identifier = file.index or tostring(file.url)
     local linda = self.lanesHttp
 
+    print("Sending download request for URL:", file.url, "Identifier:", identifier)
+
     -- Send the download request to the lane
     linda:send('request', {
         url = file.url,
@@ -287,31 +397,55 @@ function DownloadManager:downloadFile(file)
     self:monitorLane(identifier, file)
 end
 
--- Monitor Lane
+-- Monitor Lane with Unique Keys
 function DownloadManager:monitorLane(identifier, file)
     local linda = self.lanesHttp
     local downloadManager = self
 
+    local progressKey = 'progress_' .. identifier
+    local completedKey = 'completed_' .. identifier
+    local errorKey = 'error_' .. identifier
+    local debugKey = 'debug_' .. identifier
+
+    local fileProgress = 0  -- Initialize individual file progress
+
     while true do
         -- Wait for a message with a timeout of 0 seconds (non-blocking)
-        local key, val = linda:receive(0, 'completed', 'error')
+        local key, val = linda:receive(0, completedKey, errorKey, progressKey, debugKey)
         if key and val then
-            if val.identifier == identifier then
-                if key == 'completed' then
-                    downloadManager.completedFiles = downloadManager.completedFiles + 1
-                    downloadManager.activeDownloads = downloadManager.activeDownloads - 1
-                    downloadManager:processQueue()
-                    break
-                elseif key == 'error' then
-                    -- Handle error
-                    print("Failed to download:", val.error)
-                    downloadManager.completedFiles = downloadManager.completedFiles + 1
-                    downloadManager.activeDownloads = downloadManager.activeDownloads - 1
-                    downloadManager:processQueue()
-                    break
+            if key == completedKey then
+                downloadManager.completedFiles = downloadManager.completedFiles + 1
+                downloadManager.activeDownloads = downloadManager.activeDownloads - 1
+                downloadManager:processQueue()
+                break
+            elseif key == errorKey then
+                -- Handle error
+                downloadManager.completedFiles = downloadManager.completedFiles + 1
+                downloadManager.activeDownloads = downloadManager.activeDownloads - 1
+                downloadManager:processQueue()
+                break
+            elseif key == progressKey then
+                -- Update progress
+                if val.total > 0 then
+                    fileProgress = (val.downloaded / val.total) * 100
+                else
+                    fileProgress = 0
                 end
-            else
-                print("Identifier mismatch. Expected:", identifier, "Received:", val.identifier)  -- Debug print
+                -- Calculate overall progress
+                local overallProgress = ((downloadManager.completedFiles + (val.downloaded / val.total)) / downloadManager.totalFiles) * 100
+
+                if downloadManager.onProgressCallback then
+                    downloadManager.onProgressCallback({
+                        identifier = identifier,
+                        downloaded = val.downloaded,
+                        total = val.total,
+                        fileProgress = fileProgress,
+                        overallProgress = overallProgress,
+                    }, file)
+                end
+            elseif key == debugKey then
+                -- Handle debug messages if needed
+                --print("Debug:", val.message)
             end
         else
             wait(0)
@@ -325,20 +459,23 @@ local downloadProgress = {
     fileProgress = 0,
     overallProgress = 0,
     downloadedSize = 0,
-    totalSize = 0
+    totalSize = 0,
+    totalFiles = 0,
+    completedFiles = 0
 }
 
 -- Global Variables
 local new, str, sizeof = imgui.new, ffi.string, ffi.sizeof
 local ped, h = playerPed, playerHandle
 
-local runningThreads = {}
-
 -- Key Press Type
 local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 
--- Spec State
-local specState = false
+-- Started Functions
+local startedFunctions = {}
+
+-- Failed Functions
+local failedFunctions = {}
 
 -- Screen Resolution
 local resX, resY = getScreenResolution()
@@ -436,7 +573,7 @@ local commands = {
 
 -- Timers
 local timers = {
-	Vest = {timer = 13.5, last = 0},
+	Vest = {timer = 13.0, last = 0, sentTime = 0},
 	Accept = {timer = 0.5, last = 0},
 	Heal = {timer = 12.0, last = 0},
 	Find = {timer = 20, last = 0},
@@ -446,15 +583,14 @@ local timers = {
 }
 
 -- Guard
-local guardTime = 13.5
+local guardTime = 13.0
 local ddguardTime = 6.5
-local isBodyguard = true
 
 -- Frequency
 local currentFamilyFreq = 0
 local currentFactionFreq = 0
 
--- Auto Accept
+-- Accept Bodyguard
 local accepter = {
 	enable = false,
 	received = false,
@@ -462,7 +598,9 @@ local accepter = {
 	playerId = -1
 }
 
+-- Offer Bodyguard
 local bodyguard = {
+    enable = true,
 	received = false,
 	playerName = "",
 	playerId = -1
@@ -479,9 +617,9 @@ local autofind ={
 -- Factions
 local factions = {
 	skins = {
-		61, 71, 73, 163, 164, 165, 166, 179, 191, 206, 285, 287, -- Ares
-		141, 253, 255, 265, 266, 267, 280, 281,
-		282, 283, 284, 286, 288, 294, 300, 301, 306, 309, 310, 311, 120, 253
+		61, 71, 73, 163, 164, 165, 166, 179, 191, 206, 285, 287, -- ARES
+        120, 141, 253, 286, 294, -- FBI
+        71, 265, 266, 267, 280, 281, 282, 283, 284, 285, 288, 300, 301, 302, 306, 307, 309, 310, 311 -- SASD/LSPD
 	},
 	colors = {
 		-14269954, -7500289, -14911565, -3368653
@@ -496,7 +634,7 @@ local menu = {
 	forcePreload = new.bool(false),
 	settings = {
 		window = new.bool(false),
-		pageId = 1,
+		pageId = 1
 	},
 	skins = {
 		window = new.bool(false),
@@ -671,10 +809,39 @@ function main()
 	-- Wait for SAMP
     while not isSampAvailable() do wait(100) end
 
+	-- Fetch Skins
+	if autobind.AutoVest.autoFetchSkins then
+		fetchDataFromURL(autobind.AutoVest.skinsUrl, getFile("skins"), function(decodedData)
+			autobind.AutoVest.skins = decodedData
+		end)
+	end
+
+	-- Fetch Names
+	if autobind.AutoVest.autoFetchNames then
+		fetchDataFromURL(autobind.AutoVest.namesUrl, getFile("names"), function(decodedData)
+			autobind.AutoVest.names = decodedData
+		end)
+	end
+
+	-- Download Skins
+	downloadSkins()
+
 	-- Register Menu Command
 	sampRegisterChatCommand(scriptName, function()
 		menu.settings.pageId = 1
 		menu.settings.window[0] = not menu.settings.window[0]
+	end)
+
+    -- Status Command
+    sampRegisterChatCommand(scriptName .. ".status", function()
+        if #startedFunctions > 0 then
+            formattedAddChatMessage(string.format("Running Functions: {00FF00}%s{ABB2B9}.", table.concat(startedFunctions, ", ")))
+            if #failedFunctions > 0 then
+                formattedAddChatMessage(string.format("Failed Functions: {FF0000}%s{ABB2B9}.", table.concat(failedFunctions, ", ")))
+            end
+        else
+            formattedAddChatMessage("None of the functions are running.")
+        end
 	end)
 
 	-- Black Market Command
@@ -688,40 +855,20 @@ function main()
 		registerChatCommands()
 	end
 
-	-- Fetch Skins
-	if autobind.AutoVest.autoFetchSkins then
-		fetchDataFromURL(autobind.AutoVest.skinsUrl, getFile("skins"), function(decodedData)
-			autobind.AutoVest.skins = decodedData
-		end, "401")
-	end
-
-	-- Fetch Names
-	if autobind.AutoVest.autoFetchNames then
-		fetchDataFromURL(autobind.AutoVest.namesUrl, getFile("names"), function(decodedData)
-			autobind.AutoVest.names = decodedData
-		end, "402")
-	end
-
-    -- Download Skins
-	downloadSkins()
-
-	-- Wait for SAMP to be connected
-	while sampGetGamestate() ~= 3 do wait(100) end
-
     -- Set Vest Timer
     timers.Vest.timer = autobind.AutoVest.Donor and ddguardTime or guardTime
 
-    -- Setup Gangzones
-    gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
-
     -- Start Functions Loop
-    functionsLoop()
-
-    -- Stop Script from terminating
-    wait(-1)
+    functionsLoop(function(started, failed)
+        -- Success/Failed Message
+        formattedAddChatMessage(string.format("{FFFFFF}v%s has loaded successfully! {ABB2B9}Running: {00FF00}%s{ABB2B9}.", scriptVersion, table.concat(started, ", ")))
+        if #failed > 0 then
+            formattedAddChatMessage(string.format("{ABB2B9}Failed Functions: {FF0000}%s{ABB2B9}.", table.concat(failed, ", ")))
+        end
+    end)
 end
 
-local myFont = renderCreateFont("Arial", 9, 13)
+--local myFont = renderCreateFont("Arial", 9, 13)
 
 -- onD3DPresent
 function onD3DPresent()
@@ -735,15 +882,17 @@ function onD3DPresent()
 	end
 
     -- Draw Download Progress
-    if downloadProgress.currentFile ~= "" then
+    --[[f downloadProgress.currentFile ~= "" then
         local x, y = 700, 500 -- Position on the screen
         local text = string.format(
-            "Downloading: %s\nFile Progress: %.2f%%\nOverall Progress: %.2f%%\nDownloaded: %d of %d bytes",
+            "Downloading: %s\nFile Progress: %.2f%%\nOverall Progress: %.2f%%\nDownloaded: %d of %d bytes (%d of %d files)",
             downloadProgress.currentFile,         -- %s
             downloadProgress.fileProgress,        -- %.2f
             downloadProgress.overallProgress,     -- %.2f
             downloadProgress.downloadedSize,      -- %d
-            downloadProgress.totalSize or 1       -- %d
+            downloadProgress.totalSize or 1,      -- %d
+            downloadProgress.completedFiles,      -- %d
+            downloadProgress.totalFiles           -- %d
         )
         renderFontDrawText(myFont, text, x, y, 0xFFFFFFFF)
 
@@ -755,9 +904,11 @@ function onD3DPresent()
                 downloadProgress.overallProgress = 0
                 downloadProgress.downloadedSize = 0
                 downloadProgress.totalSize = 0
+                downloadProgress.completedFiles = 0
+                downloadProgress.totalFiles = 0
             end)
         end
-    end
+    end]]
 end
 
 -- Get visible players
@@ -794,8 +945,7 @@ end
 -- Check if admin duty is active
 function checkAdminDuty()
     local _, aduty = getSampfuncsGlobalVar("aduty")
-    local _, HideMe = getSampfuncsGlobalVar("HideMe")
-    return aduty == 1 or (aduty == 1 and (specState or HideMe == 1))
+    return aduty == 1
 end
 
 -- Toggle Bind
@@ -806,7 +956,7 @@ end
 
 -- Auto Vest
 local function checkBodyguardCondition()
-    return isBodyguard or autobind.AutoVest.donor
+    return bodyguard.enable or autobind.AutoVest.donor
 end
 
 -- Check Animation
@@ -865,50 +1015,93 @@ function resetTimer(additionalTime, timer)
 end
 
 -- Check and send vest
-function checkAndSendVest(prevest)
-	local currentTime = localClock()
-	if not autobind.Settings.enable or checkAdminDuty() or (not autobind.AutoVest.enable and not prevest) then
-		return
-	end
+function checkAndSendVest(skipArmorCheck)
+    -- Current Time
+    local currentTime = localClock()
+    
+    -- Check if autobind and AutoVest are enabled, and not in admin duty
+    if not autobind.AutoVest.enable and not skipArmorCheck then
+        return
+    end
 
-	if not checkBodyguardCondition() then
-		return "You are not a bodyguard."
-	end
+    -- Check if autobind is enabled
+    if not autobind.Settings.enable then
+        return "Autobind is disabled, use /autobind to enable it."
+    end
 
-	if checkMuted() then
-		return "You have been muted for spamming. Please wait."
-	end
+    -- Check if admin duty is active
+    if checkAdminDuty() then
+        return "You are on admin duty, you cannot vest players."
+    end
 
-    if currentTime - timers.Vest.last < timers.Vest.timer then
+    -- Verify bodyguard condition
+    if not checkBodyguardCondition() then
+        return "You are not a bodyguard."
+    end
+
+    -- Check if the user is muted
+    if checkMuted() then
+        return "You have been muted for spamming, please wait."
+    end
+
+    -- Reset bodyguard.received if timeout has elapsed
+    if bodyguard.received then
+        if currentTime - timers.Vest.sentTime > timers.Vest.timer / 2 then
+            print("Vesting timed out. Resetting bodyguard. received.")
+            bodyguard.received = false
+        else
+            return "Vest has been sent, please wait."
+        end
+    end
+
+    -- Check if under vest cooldown
+    if (currentTime - timers.Vest.last) < timers.Vest.timer then
         local timeLeft = math.ceil(timers.Vest.timer - (currentTime - timers.Vest.last))
         return string.format("You must wait %d seconds before sending vest.", timeLeft > 1 and timeLeft or 1)
     end
 
+    -- Proceed to send vest if not received
     if not bodyguard.received then
-        for _, player in ipairs(getVisiblePlayers(7, prevest and "all" or "armor")) do
+        for _, player in ipairs(getVisiblePlayers(7, skipArmorCheck and "all" or "armor")) do
             if checkAnimationCondition(player.playerId) then
                 if vestModeConditions(player.playerId) then
                     sampSendChat(autobind.AutoVest.donor and '/guardnear' or string.format("/guard %d 200", player.playerId))
                     bodyguard.received = true
+                    timers.Vest.sentTime = currentTime
                     return
                 end
             end
         end
-        return "No suitable player found to vest."
+        return "No suitable players found to vest, please try again."
     end
 end
 
 -- Check and accept vest
 function checkAndAcceptVest(autoaccept)
+    -- Current Time
 	local currentTime = localClock()
-	if not autobind.Settings.enable or checkAdminDuty() or (currentTime - timers.Accept.last < timers.Accept.timer) then
+
+    -- Check if under vest cooldown
+	if currentTime - timers.Accept.last < timers.Accept.timer then
 		return
 	end
 
+    -- Check if autobind is enabled
+    if not autobind.Settings.enable then
+        return "Autobind is disabled, use /autobind to enable it."
+    end
+    
+    -- Check if admin duty is active
+    if checkAdminDuty() then
+        return "You are on admin duty, you cannot accept bodyguard."
+    end
+
+    -- Check if the user is muted
 	if checkMuted() then
-		return "You have been muted for spamming. Please wait."
+		return "You have been muted for spamming, please wait."
 	end
 
+    -- Check if the user can heal
 	if checkHeal() then
 		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
 		return string.format("You must wait %d seconds before healing.", timeLeft > 1 and timeLeft or 1)
@@ -1058,15 +1251,22 @@ function Keybinds()
     local function factionLocker3()
 
     end
-    
+
     local function bikeBind()
         if isCharOnAnyBike(ped) then
             local veh = storeCarCharIsInNoSave(ped)
-            if not isCarInAirProper(veh) then
-                if bikeIds[getCarModel(veh)] then
-                    setGameKeyUpDown(gkeys.vehicle.ACCELERATE, 255, 0)
-                elseif motoIds[getCarModel(veh)] then
-                    setGameKeyUpDown(gkeys.vehicle.STEERUP_STEERDOWN, -128, 0)
+            local model = getCarModel(veh)
+            if not isCarInAirProper(veh) and getCarSpeed(veh) > 0 then
+                if bikeIds[model] then
+                    local vehKey = gkeys.vehicle.ACCELERATE
+                    setGameKeyState(vehKey, 255)
+                    wait(0)
+                    setGameKeyState(vehKey, 0)
+                elseif motoIds[model] then
+                    local vehKey = gkeys.vehicle.STEERUP_STEERDOWN
+                    setGameKeyState(vehKey, -128)
+                    wait(0)
+                    setGameKeyState(vehKey, 0)
                 end
             end
         end
@@ -1095,7 +1295,7 @@ function Keybinds()
             if not checkHeal() then
                 sampSendChat("/takepills")
             else
-                formattedAddChatMessage("{FF0000}You have been damaged recently, you cannot take pills.")
+                formattedAddChatMessage("You can't heal after being attacked recently. You cannot take pills.")
             end
         end
     end
@@ -1152,7 +1352,13 @@ end
 
 -- Pointbounds
 function createPointbounds()
-    if autobind.Settings.mode == "Family" and sampGetGamestate() == 3 then
+    if autobind.Settings.mode == "Family" then
+        -- Get Gangzone Pool
+        if not gzData then
+            gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
+        end
+
+        -- Loop through all gangzones
         for i = 0, 1023 do
             if gzData.iIsListed[i] ~= 0 and gzData.pGangzone[i] ~= nil then
                 local pos = gzData.pGangzone[i].fPosition
@@ -1219,25 +1425,39 @@ local functionsToRun = {
 }
 
 -- Functions Loop
-function functionsLoop()
+function functionsLoop(onFunctionsStatus)
+    local callbackCalled = false
+
     while true do
         wait(1)  -- Adjust wait time to balance performance
         local currentTime = os.clock()
         if autobind.Settings.enable then
-            for _, item in ipairs(functionsToRun) do
-                if item.enabled and (currentTime - item.lastRun >= item.interval) then
-                    local success, err = pcall(item.func)
-                    if not success then
-                        print(string.format("Error in %s function: %s", item.name, err))
-                        item.errorCount = (item.errorCount or 0) + 1
-                        if item.errorCount >= 5 then
-                            print(string.format("%s function disabled after repeated errors.", item.name))
-                            item.enabled = false
+            if sampGetGamestate() == 3 then
+                -- Clear the tables before each iteration
+                startedFunctions = {}
+                failedFunctions = {}
+
+                for _, item in ipairs(functionsToRun) do
+                    if item.enabled and (currentTime - item.lastRun >= item.interval) then
+                        local success, err = pcall(item.func)
+                        if not success then
+                            print(string.format("Error in %s function: %s", item.name, err))
+                            item.errorCount = (item.errorCount or 0) + 1
+                            table.insert(failedFunctions, item.name)
+                            if item.errorCount >= 5 then
+                                print(string.format("%s function disabled after repeated errors.", item.name))
+                                item.enabled = false
+                            end
+                        else
+                            item.errorCount = 0  -- Reset error count on success
+                            table.insert(startedFunctions, item.name)
                         end
-                    else
-                        item.errorCount = 0  -- Reset error count on success
+                        item.lastRun = currentTime
                     end
-                    item.lastRun = currentTime
+                end
+                if onFunctionsStatus and not callbackCalled then
+                    onFunctionsStatus(startedFunctions, failedFunctions)
+                    callbackCalled = true
                 end
             end
         else
@@ -1409,6 +1629,17 @@ end]]
 
 --OnServerMessage
 function sampev.onServerMessage(color, text)
+    -- Admin Check
+    if color == -65366 then
+        if text:match('^You are now on%-duty as admin and have access to all your commands, see /ah.$') then
+            setSampfuncsGlobalVar("aduty", 1)
+        end
+
+        if text:match('^You are now off%-duty as admin, and only have access to /admins /check /jail /ban /sban /kick /skick /showflags /reports /nrn$') then
+            setSampfuncsGlobalVar("aduty", 0)
+        end
+    end
+
 	--- Mode/Frequency
 	-- Family, LSPD, SASD, FBI, ARES MOTD
 	local mode, motdMsg = text:match("([Family|LSPD|SASD|FBI|ARES].+) MOTD: (.+)")
@@ -1531,7 +1762,7 @@ function sampev.onServerMessage(color, text)
 	-- You are not a bodyguard.
 	if text:find("You are not a bodyguard.") and color ==  -1347440726 then
 		formattedAddChatMessage("You are not a bodyguard, disabling bodyguard related features.")
-		isBodyguard = false
+		bodyguard.enable = false
         bodyguard.playerName = ""
         bodyguard.playerId = -1
         bodyguard.received = false
@@ -1541,7 +1772,8 @@ function sampev.onServerMessage(color, text)
 	-- You are now a Bodyguard, type /help to see your new commands.
 	if text:match("%* You are now a Bodyguard, type /help to see your new commands%.") then
 		formattedAddChatMessage("You are now a bodyguard, enabling bodyguard related features.")
-		isBodyguard = true
+		bodyguard.enable = true
+        bodyguard.received = false
 		return not autobind.Settings.enable
 	end
 
@@ -1550,13 +1782,6 @@ function sampev.onServerMessage(color, text)
 	if text:find("You are not near the person offering you guard!") and color == -1347440726 then
 		formattedAddChatMessage(string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId))
 		return not autobind.Settings.enable
-	end
-
-	-- You can't heal if you were recently shot, except within points, events, minigames, and paintball.
-	if text:match("You can't heal if you were recently shot, except within points, events, minigames, and paintball.") then
-        formattedAddChatMessage("You can't heal after being shot recently. Timer extended by 5 seconds.")
-		resetTimer(5, timers.Heal)
-        return not autobind.Settings.enable
 	end
 
 	-- * Bodyguard (Nickname) wants to protect you for $200, type /accept bodyguard to accept.
@@ -1580,11 +1805,6 @@ function sampev.onServerMessage(color, text)
 		end)
 	end
 
-	-- You can't afford the Protection!
-	if text:match("You can't afford the Protection!") then
-		accepter.received = false
-	end
-
 	-- You accepted the protection for $200 from (Nickname).
 	if text:match("%* You accepted the protection for %$200 from (.+)%.") then
 		accepter.playerName = ""
@@ -1592,6 +1812,20 @@ function sampev.onServerMessage(color, text)
 		accepter.received = false
 	end
 
+    -- You can't afford the Protection!
+	if text:match("You can't afford the Protection!") then
+		accepter.received = false
+	end
+
+    --- Heal Timer
+    -- You can't heal if you were recently shot, except within points, events, minigames, and paintball.
+	if text:match("You can't heal if you were recently shot, except within points, events, minigames, and paintball.") then
+        formattedAddChatMessage("You can't heal after being attacked recently. Timer extended by 5 seconds.")
+		resetTimer(5, timers.Heal)
+        return not autobind.Settings.enable
+	end
+
+    --- Diamond Donator
 	-- You are not a Diamond Donator!
 	if text:match("You are not a Diamond Donator%!") then
 		timers.Vest.timer = guardTime
@@ -1612,7 +1846,9 @@ function sampev.onServerMessage(color, text)
         if autofind.counter > 0 then
             autofind.counter = 0
         end
+        formattedAddChatMessage(string.format("%s (ID: %d) is hidden in a turf. Autofind will try again in 5 seconds.", autofind.playerName:gsub("_", " "), autofind.playerId))
 		resetTimer(5, timers.Find)
+        return not autobind.Settings.enable
 	end
 
     -- You are not a detective. (Disables autofind)
@@ -1754,11 +1990,6 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
         gettingItem = false
         return false
     end
-end
-
--- Spectating
-function sampev.onTogglePlayerSpectating(state)
-    specState = state
 end
 
 -- ImGUI Initialize
@@ -2579,9 +2810,11 @@ function keyEditor(title, index, description)
 end
 
 -- Function to Fetch Data From URL
-function fetchDataFromURL(url, path, callback, index)
-    local function onComplete(downloadsStarted)
-        if downloadsStarted then
+function fetchDataFromURL(url, path, callback)
+    local manager = DownloadManager:new(1)
+
+    local function onComplete(downloadsFinished)
+        if downloadsFinished then
             local file = io.open(path, "r")
             if file then
                 local content = file:read("*all")
@@ -2603,18 +2836,15 @@ function fetchDataFromURL(url, path, callback, index)
         end
     end
 
-    local function onProgress(identifier, fileProgress, overallProgress, fileInfo)
-        if fileInfo then
-            downloadProgress.currentFile = fileInfo.url
-            downloadProgress.fileProgress = fileProgress
-            downloadProgress.overallProgress = overallProgress
-            downloadProgress.downloadedSize = math.floor((fileProgress / 100) * (downloadProgress.totalSize or 1))
-            downloadProgress.totalSize = fileInfo.size or 1
-        end
+    local function onProgress(progressData, file)
+        -- Individual file progress
+        print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
+
+        -- Overall progress
+        print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
     end
 
-    local manager = DownloadManager:new(1)
-    manager:queueDownloads({{url = url, path = path, replace = true, index = index}}, onComplete, onProgress)
+    manager:queueDownloads({{url = url, path = path, replace = true}}, onComplete, onProgress)
 end
 
 -- Function to Generate Skins URLs
@@ -2625,7 +2855,7 @@ function generateSkinsUrls()
             url = string.format("%sSkin_%d.png", fetchUrls("skins"), i),
             path = string.format("%sSkin_%d.png", getPath("skins"), i),
             replace = false,
-            index = tostring(i + 1)
+            index = i
         })
     end
 
@@ -2637,27 +2867,26 @@ end
 
 -- Function to Initiate the Skin Download Process
 function downloadSkins()
-    local function onComplete(downloadsStarted)
-        if downloadsStarted then
+    local manager = DownloadManager:new(25)
+
+    local function onComplete(downloadsFinished)
+        if downloadsFinished then
             print("All files downloaded successfully.")
-            formattedAddChatMessage("All skins downloaded successfully!", -1)
+            formattedAddChatMessage("All skins downloaded successfully!")
         else
             print("No files needed to be downloaded.")
         end
         menu.forcePreload[0] = true
     end
 
-    local function onProgress(identifier, fileProgress, overallProgress, fileInfo)
-        if fileInfo then
-            downloadProgress.currentFile = fileInfo.url
-            downloadProgress.fileProgress = fileProgress
-            downloadProgress.overallProgress = overallProgress
-            downloadProgress.downloadedSize = math.floor((fileProgress / 100) * (downloadProgress.totalSize or 1))
-            downloadProgress.totalSize = downloadProgress.totalSize or 1
-        end
+    local function onProgress(progressData, file)
+        -- Individual file progress
+        print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
+
+        -- Overall progress
+        print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
     end
 
-    local manager = DownloadManager:new(10)
     manager:queueDownloads(generateSkinsUrls(), onComplete, onProgress)
 end
 
@@ -2983,13 +3212,6 @@ function has_number(tab, val)
         end
     end
     return false
-end
-
--- Set Game Key Up Down
-function setGameKeyUpDown(key, value, delay)
-	setGameKeyState(key, value)
-	wait(delay)
-	setGameKeyState(key, 0)
 end
 
 -- Custom Button
