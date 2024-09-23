@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.15a")
+script_version("1.8.17")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -13,8 +13,14 @@ local betaTesters = { -- WIP
 }
 
 local changelog = {
+    ["1.8.17"] = {
+        "Fixed: There was an issue with accepters playerId because nil, now the nickname to ID function returns -1 if the player is not found."
+    },
+    ["1.8.16a"] = {
+        "Fixed: Black Market and Faction Locker not showing keybinds."
+    },
     ["1.8.15a"] = {
-        
+        "Release to The Commission Family"
     },
     ["1.8.15"] = {
         "Improved: Completely redesigned the menus interface to make it more user-friendly and visually appealing.",
@@ -471,11 +477,12 @@ local ped, h = playerPed, playerHandle
 -- Key Press Type
 local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 
--- Started Functions
-local startedFunctions = {}
-
--- Failed Functions
-local failedFunctions = {}
+-- Functions Loop
+local funcsLoop = {
+    callbackCalled = false,
+    startedFunctions = {},
+    failedFunctions = {},
+}
 
 -- Screen Resolution
 local resX, resY = getScreenResolution()
@@ -834,10 +841,10 @@ function main()
 
     -- Status Command
     sampRegisterChatCommand(scriptName .. ".status", function()
-        if #startedFunctions > 0 then
-            formattedAddChatMessage(string.format("Running Functions: {00FF00}%s{ABB2B9}.", table.concat(startedFunctions, ", ")))
-            if #failedFunctions > 0 then
-                formattedAddChatMessage(string.format("Failed Functions: {FF0000}%s{ABB2B9}.", table.concat(failedFunctions, ", ")))
+        if #funcsLoop.startedFunctions > 0 then
+            formattedAddChatMessage(string.format("Running Functions: {00FF00}%s{ABB2B9}.", table.concat(funcsLoop.startedFunctions, ", ")))
+            if #funcsLoop.failedFunctions > 0 then
+                formattedAddChatMessage(string.format("Failed Functions: {FF0000}%s{ABB2B9}.", table.concat(funcsLoop.failedFunctions, ", ")))
             end
         else
             formattedAddChatMessage("None of the functions are running.")
@@ -858,14 +865,17 @@ function main()
     -- Set Vest Timer
     timers.Vest.timer = autobind.AutoVest.Donor and ddguardTime or guardTime
 
-    -- Start Functions Loop
-    functionsLoop(function(started, failed)
-        -- Success/Failed Message
-        formattedAddChatMessage(string.format("{FFFFFF}v%s has loaded successfully! {ABB2B9}Running: {00FF00}%s{ABB2B9}.", scriptVersion, table.concat(started, ", ")))
-        if #failed > 0 then
-            formattedAddChatMessage(string.format("{ABB2B9}Failed Functions: {FF0000}%s{ABB2B9}.", table.concat(failed, ", ")))
-        end
-    end)
+    -- Main Loop
+    while true do wait(0)
+        -- Start Functions Loop
+        functionsLoop(function(started, failed)
+            -- Success/Failed Messages
+            formattedAddChatMessage(string.format("{FFFFFF}v%s has loaded successfully! {ABB2B9}Running: {00FF00}%s{ABB2B9}.", scriptVersion, table.concat(started, ", ")))
+            if #failed > 0 then
+                formattedAddChatMessage(string.format("{ABB2B9}Failed Functions: {FF0000}%s{ABB2B9}.", table.concat(failed, ", ")))
+            end
+        end)
+    end
 end
 
 --local myFont = renderCreateFont("Arial", 9, 13)
@@ -1117,7 +1127,13 @@ function checkAndAcceptVest(autoaccept)
 				end
 			end
 		end
-		return accepter.received and string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId) or "No one offered you bodyguard."
+
+        local message = "No one has offered you bodyguard."
+        if accepter.received and accepter.playerName and accepter.playerId then
+            message = string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId)
+        end
+
+        return message
 	else
 		return "You are already have a vest."
 	end
@@ -1426,43 +1442,37 @@ local functionsToRun = {
 
 -- Functions Loop
 function functionsLoop(onFunctionsStatus)
-    local callbackCalled = false
+    if autobind.Settings.enable and sampGetGamestate() == 3 then
+        -- Clear the tables before each iteration
+        funcsLoop.startedFunctions = {}
+        funcsLoop.failedFunctions = {}
 
-    while true do
-        wait(1)  -- Adjust wait time to balance performance
         local currentTime = os.clock()
-        if autobind.Settings.enable then
-            if sampGetGamestate() == 3 then
-                -- Clear the tables before each iteration
-                startedFunctions = {}
-                failedFunctions = {}
-
-                for _, item in ipairs(functionsToRun) do
-                    if item.enabled and (currentTime - item.lastRun >= item.interval) then
-                        local success, err = pcall(item.func)
-                        if not success then
-                            print(string.format("Error in %s function: %s", item.name, err))
-                            item.errorCount = (item.errorCount or 0) + 1
-                            table.insert(failedFunctions, item.name)
-                            if item.errorCount >= 5 then
-                                print(string.format("%s function disabled after repeated errors.", item.name))
-                                item.enabled = false
-                            end
-                        else
-                            item.errorCount = 0  -- Reset error count on success
-                            table.insert(startedFunctions, item.name)
-                        end
-                        item.lastRun = currentTime
+        for _, item in ipairs(functionsToRun) do
+            if item.enabled and (currentTime - item.lastRun >= item.interval) then
+                local success, err = xpcall(item.func, debug.traceback)
+                if not success then
+                    print(string.format("Error in %s function: %s", item.name, err))
+                    item.errorCount = (item.errorCount or 0) + 1
+                    table.insert(funcsLoop.failedFunctions, item.name)
+                    if item.errorCount >= 5 then
+                        print(string.format("%s function disabled after repeated errors.", item.name))
+                        item.enabled = false
                     end
+                else
+                    item.errorCount = 0  -- Reset error count on success
+                    table.insert(funcsLoop.startedFunctions, item.name)
                 end
-                if onFunctionsStatus and not callbackCalled then
-                    onFunctionsStatus(startedFunctions, failedFunctions)
-                    callbackCalled = true
-                end
+                item.lastRun = currentTime
             end
-        else
-            wait(1000)  -- Wait longer when the script is disabled
         end
+        if onFunctionsStatus and not funcsLoop.callbackCalled then
+            onFunctionsStatus(funcsLoop.startedFunctions, funcsLoop.failedFunctions)
+            funcsLoop.callbackCalled = true
+        end
+    else
+        funcsLoop.startedFunctions = {}
+        funcsLoop.failedFunctions = {}
     end
 end
 
@@ -1509,7 +1519,7 @@ function registerChatCommands()
 							stopFinding()
 							formattedAddChatMessage("The player you were finding has disconnected, you are no longer finding anyone.")
 						end
-						wait(10)
+						wait(0)
 					end
 				end
 	
@@ -2438,6 +2448,31 @@ function()
 	local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.BlackMarket.Pos, imgui.ImVec2(226, 290), imgui.ImVec2(0.5, 0.5))
     if status and menu.blackmarket.window[0] then autobind.BlackMarket.Pos = newPos end
 
+    if not autobind.Keybinds.BlackMarket1 then
+        autobind.Keybinds.BlackMarket1 = {Toggle = false, Keys = {VK_MENU, VK_1}, Type = {'KeyDown', 'KeyPressed'}}
+    end
+
+    if not autobind.Keybinds.BlackMarket2 then
+        autobind.Keybinds.BlackMarket2 = {Toggle = false, Keys = {VK_MENU, VK_2}, Type = {'KeyDown', 'KeyPressed'}}
+    end
+
+    if not autobind.Keybinds.BlackMarket3 then
+        autobind.Keybinds.BlackMarket3 = {Toggle = false, Keys = {VK_MENU, VK_3}, Type = {'KeyDown', 'KeyPressed'}}
+    end
+
+    -- Initialize Blackmarket Kits
+    if not autobind.BlackMarket.Kit1 then
+        autobind.BlackMarket.Kit1 = {1, 9, 13}
+    end
+
+    if not autobind.BlackMarket.Kit2 then
+        autobind.BlackMarket.Kit2 = {1, 9, 12}
+    end
+
+    if not autobind.BlackMarket.Kit3 then
+        autobind.BlackMarket.Kit3 = {1, 9, 4}
+    end
+    
 	-- Calculate total price
 	local totalPrice = 0
 	for _, index in ipairs(autobind.BlackMarket[string.format("Kit%d", menu.blackmarket.pageId)]) do
@@ -2499,6 +2534,31 @@ function()
     local newPos, status = imgui.handleWindowDragging("FactionLocker", autobind.FactionLocker.Pos, imgui.ImVec2(226, 290), imgui.ImVec2(0.5, 0.5))
     if newPos and status then 
         autobind.FactionLocker.Pos = newPos 
+    end
+
+    if not autobind.Keybinds.FactionLocker1 then
+        autobind.Keybinds.FactionLocker1 = {Toggle = false, Keys = {VK_MENU, VK_X}, Type = {'KeyDown', 'KeyPressed'}}
+    end
+
+    if not autobind.Keybinds.FactionLocker2 then
+        autobind.Keybinds.FactionLocker2 = {Toggle = false, Keys = {VK_MENU, VK_C}, Type = {'KeyDown', 'KeyPressed'}}
+    end
+
+    if not autobind.Keybinds.FactionLocker3 then
+        autobind.Keybinds.FactionLocker3 = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
+    end
+
+    -- Initialize Faction Locker Kits
+    if not autobind.FactionLocker.Kit1 then
+        autobind.FactionLocker.Kit1 = {1, 2, 10, 11}
+    end
+
+    if not autobind.FactionLocker.Kit2 then
+        autobind.FactionLocker.Kit2 = {1, 2, 10, 11}
+    end
+
+    if not autobind.FactionLocker.Kit3 then
+        autobind.FactionLocker.Kit3 = {1, 2, 10, 11}
     end
 
     -- Calculate total price
@@ -3257,6 +3317,7 @@ function sampGetPlayerIdByNickname(nick)
 			return i
 		end
 	end
+    return -1
 end
 
 -- Calculate Window Size
