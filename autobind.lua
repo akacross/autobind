@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.17")
+script_version("1.8.18")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -13,6 +13,10 @@ local betaTesters = { -- WIP
 }
 
 local changelog = {
+    ["1.8.18"] = {
+        "Improved: Rewrote autofind to make it more efficient and reliable, it is now apart of the main functions loop.",
+        "Improved: ARES radio chat colored ARES badge, player-colored names, white message text, and player ID.",
+    }
     ["1.8.17"] = {
         "Fixed: There was an issue with accepters playerId because nil, now the nickname to ID function returns -1 if the player is not found."
     },
@@ -630,7 +634,18 @@ local factions = {
 	},
 	colors = {
 		-14269954, -7500289, -14911565, -3368653
-	}
+	},
+    ranks = {
+        ARES = {
+            "Commander",
+            "Vice Commander",
+            "Major",
+            "Staff Sergeant",
+            "Specialist",
+            "Operative",
+            "Recruit"
+        }
+    }
 }
 
 -- Capture Spam
@@ -638,7 +653,7 @@ local captureSpam = false
 
 -- Menu Variables
 local menu = {
-	forcePreload = new.bool(false),
+	--forcePreload = new.bool(false),
 	settings = {
 		window = new.bool(false),
 		pageId = 1
@@ -1041,17 +1056,22 @@ function checkAndSendVest(skipArmorCheck)
 
     -- Check if admin duty is active
     if checkAdminDuty() then
-        return "You are on admin duty, you cannot vest players."
+        return "You are on admin duty, you cannot send a vest."
+    end
+
+    -- Check if the player is frozen
+    if not isPlayerControlOn(h) then
+        return "You cannot send a vest while frozen, please wait."
     end
 
     -- Verify bodyguard condition
     if not checkBodyguardCondition() then
-        return "You are not a bodyguard."
+        return "You cannot send a vest while not a bodyguard."
     end
 
     -- Check if the user is muted
     if checkMuted() then
-        return "You have been muted for spamming, please wait."
+        return "You cannot send a vest while muted, please wait."
     end
 
     -- Reset bodyguard.received if timeout has elapsed
@@ -1103,18 +1123,23 @@ function checkAndAcceptVest(autoaccept)
     
     -- Check if admin duty is active
     if checkAdminDuty() then
-        return "You are on admin duty, you cannot accept bodyguard."
+        return "You are on admin duty, you cannot accept a vest."
+    end
+
+    -- Check if the player is frozen
+    if not isPlayerControlOn(h) then
+        return "You cannot accept a vest while frozen, please wait."
     end
 
     -- Check if the user is muted
 	if checkMuted() then
-		return "You have been muted for spamming, please wait."
+		return "You cannot accept a vest while muted, please wait."
 	end
 
     -- Check if the user can heal
 	if checkHeal() then
 		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
-		return string.format("You must wait %d seconds before healing.", timeLeft > 1 and timeLeft or 1)
+		return string.format("You must wait %d seconds before accepting a vest.", timeLeft > 1 and timeLeft or 1)
 	end
 
 	if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
@@ -1401,6 +1426,24 @@ function createPointbounds()
     end
 end
 
+function createAutoFind()
+    if not autofind.enable or checkMuted() then
+        return
+    end
+
+    if not sampIsPlayerConnected(autofind.playerId) then
+        formattedAddChatMessage("The player you were finding has disconnected, you are no longer finding anyone.")
+        autofind.enable = false
+        return
+    end
+
+    local currentTime = localClock()
+    if currentTime - timers.Find.last >= timers.Find.timer then
+        sampSendChat(string.format("/find %d", autofind.playerId))
+        timers.Find.last = currentTime
+    end
+end
+
 -- Functions Table
 local functionsToRun = {
     {
@@ -1438,12 +1481,18 @@ local functionsToRun = {
         lastRun = os.clock(),
         enabled = true,
     },
+    {
+        name = "AutoFind",
+        func = createAutoFind,
+        interval = 0,
+        lastRun = os.clock(),
+        enabled = true,
+    },
 }
 
 -- Functions Loop
 function functionsLoop(onFunctionsStatus)
     if autobind.Settings.enable and sampGetGamestate() == 3 then
-        -- Clear the tables before each iteration
         funcsLoop.startedFunctions = {}
         funcsLoop.failedFunctions = {}
 
@@ -1496,63 +1545,36 @@ function registerChatCommands()
 	
 	sampRegisterChatCommand(commands.find, function(params)
 		if autobind.Settings.enable then
-			lua_thread.create(function()
-				local function stopFinding()
-					autofind.enable = false
-				end
-	
-				local function startFinding()
-					autofind.enable = true
-					formattedAddChatMessage(string.format("Finding: {00a2ff}%s{ffffff}. /%s again to toggle.", autofind.playerName, commands.find))
-					while autofind.enable do
-						local currentTime = localClock()
-						if sampIsPlayerConnected(autofind.playerId) then
-							if not checkAdminDuty() then
-								if currentTime - timers.Find.last >= timers.Find.timer and not checkMuted() then
-									timers.Find.last = currentTime
-									sampSendChat(string.format("/find %d", autofind.playerId))
-								end
-							else
-								stopFinding()
-							end
-						else
-							stopFinding()
-							formattedAddChatMessage("The player you were finding has disconnected, you are no longer finding anyone.")
-						end
-						wait(0)
-					end
-				end
-	
-				if not checkMuted() then
-					if string.len(params) > 0 then
-						if not checkAdminDuty() then
-							local result, playerid, name = findPlayer(params)
-							if result then
-								autofind.playerId = playerid
-								autofind.playerName = name
-								if not autofind.enable then
-									startFinding()
-								else
-									formattedAddChatMessage(string.format("Now finding: {00a2ff}%s{ffffff}.", name))
-								end
-							else
-								formattedAddChatMessage("Invalid player specified.")
-							end
-						else
-							sampSendChat(string.format("/find %s", params))
-						end
-					else
-						if autofind.enable then
-							stopFinding()
-							formattedAddChatMessage("You are no longer finding anyone.")
-						else
-							formattedAddChatMessage(string.format('USAGE: /%s [playerid/partofname]', commands.find))
-						end
-					end
+			if checkMuted() then
+                formattedAddChatMessage(string.format("You are muted, you cannot use the /%s command.", commands.find))
+                return
+            end
+
+			if string.len(params) < 1 then
+                if autofind.enable then
+					formattedAddChatMessage("You are no longer finding anyone.")
+                    autofind.enable = false
 				else
-					formattedAddChatMessage(string.format("You are muted, you cannot use the /%s command.", commands.find))
+					formattedAddChatMessage(string.format('USAGE: /%s [playerid/partofname]', commands.find))
 				end
-			end)
+                return
+            end
+
+			local result, playerid, name = findPlayer(params)
+			if not result then
+				formattedAddChatMessage("Invalid player specified.")
+				return
+			end
+
+			autofind.playerId = playerid
+			autofind.playerName = name
+			if autofind.enable then
+				formattedAddChatMessage(string.format("Now finding: {00a2ff}%s{ffffff}.", name))
+                return
+			end
+
+            autofind.enable = true
+			formattedAddChatMessage(string.format("Finding: {00a2ff}%s{ffffff}. Type /%s again to toggle off.", autofind.playerName, commands.find))
 		end
 	end)
 
@@ -1628,19 +1650,18 @@ function onWindowMessage(msg, wparam, lparam)
     end
 end
 
---- Todo
--- Your gang is already attempting to capture this turf.
--- needs to be renabled via /pay or /withdraw/awithdraw
-
---[[local div, rank, nickname, message = text:match("%*%*%s*(%a*%s*)%s*(%a+)%s+([%a%s]+):%s*(.*)%s*%*%*")
-if rank and nickname and message and color == -1920073729 then
-	print("Rank: " .. rank, "Nickname: " .. nickname, "Message: " .. message)
-end]]
-
 --OnServerMessage
 function sampev.onServerMessage(color, text)
+    -- Check If AutoBind Is Disabled
+    if not autobind.Settings.enable then
+        return
+    end
+
+    -- Convert Color To Hex
+    local currentColor = convertColor(color, false, true, true):sub(1, -3)
+
     -- Admin Check
-    if color == -65366 then
+    if currentColor == "FFFF00" then
         if text:match('^You are now on%-duty as admin and have access to all your commands, see /ah.$') then
             setSampfuncsGlobalVar("aduty", 1)
         end
@@ -1650,10 +1671,36 @@ function sampev.onServerMessage(color, text)
         end
     end
 
+    -- ARES Radio
+    -- ** Division Rank Player Name: Message **
+    local header, message = text:match("^%*%*%s*(.-):%s*(.-)%s*%*%*$")
+    if header and message and currentColor == "8D8DFF" then
+        local skipDiv = false
+        for _, v in ipairs(factions.ranks.ARES) do
+            if header:match("^(.-)%s+") == v then
+                skipDiv = true
+                break
+            end
+        end
+
+        local div, rank, playerName
+        if skipDiv then
+            rank, playerName = header:match("^([" .. table.concat(factions.ranks.ARES, "|") .. "].-)%s+(.-)$")
+        else
+            div, rank, playerName = header:match("^(.-)%s+([" .. table.concat(factions.ranks.ARES, "|") .. "].-)%s+(.-)$")
+        end
+
+        if rank and playerName then
+            local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
+            local playerColor = convertColor(sampGetPlayerColor(playerId), false, false, true)
+            return {color, string.format("{1C77B3}** %s {%s}%s (%d): {FFFFFF}%s", skipDiv and rank or string.format("%s %s", div, rank), playerColor, playerName, playerId, message)}
+        end
+    end
+
 	--- Mode/Frequency
 	-- Family, LSPD, SASD, FBI, ARES MOTD
 	local mode, motdMsg = text:match("([Family|LSPD|SASD|FBI|ARES].+) MOTD: (.+)")
-	if mode and motdMsg and color == -65366 then
+	if mode and motdMsg and currentColor == "FFFF00" then
 		if mode:match("Family") then
 			autobind.Settings.mode = mode
 			saveConfigWithErrorHandling(getFile("settings"), autobind)
@@ -1695,7 +1742,7 @@ function sampev.onServerMessage(color, text)
 
 	-- You have set the frequency of your portable radio to (Number) kHz.
 	local freq = text:match("You have set the frequency of your portable radio to (-?%d+) kHz.")
-	if freq then
+	if freq and currentColor == "FFFFFF" then
 		if tonumber(freq) == 0 then
 			if autobind.Settings.mode == "Family" then
 				currentFamilyFreq = 0
@@ -1711,15 +1758,15 @@ function sampev.onServerMessage(color, text)
 
 	-- ** Radio (xxxx kHz) ** (Nickname): Message
 	local freq, playerName, message = text:match("%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)")
-	if freq and playerName and message then
+	if freq and playerName and message and currentColor == "6DFB6D" then
 		local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
 		local playerColor = convertColor(sampGetPlayerColor(playerId), false, false, true)
 		return {color, string.format("** %s Radio ** {%s}%s (%d): {FFFFFF}%s", autobind.Settings.mode, playerColor, playerName, playerId, message)}
 	end
 
 	--- Auto Capture
-	-- The time is now
-	if text:find("The time is now") and color == -86 then
+	-- The time is now 00:00.
+	if text:match("^The time is now %d+:%d+%.") and currentColor == "FFFFFF" then
 		lua_thread.create(function()
 			wait(0)
 			if autobind.Settings.enable and not checkMuted() and not checkAdminDuty() then
@@ -1740,29 +1787,40 @@ function sampev.onServerMessage(color, text)
 		end)
 	end
 
+    --- Capture Spam
+    -- Your gang is already attempting to capture this turf.
+    if text:match("Your gang is already attempting to capture this turf%.") and currentColor == "B4B5B7" then
+        if captureSpam then
+            local mode = autobind.Settings.mode
+            formattedAddChatMessage(string.format("Your %s is already attempting to capture this turf, disabling capture spam.", mode:lower()))
+            captureSpam = false
+            return not autobind.Settings.enable
+        end
+    end
+
 	--- Bodyguard
 	-- That player isn't near you.
-	if text:find("That player isn't near you%.") and color == -1347440726 then
+	if text:match("That player isn't near you%.") and currentColor == "AFAFAF" then
         bodyguard.received = false
 		resetTimer(2, timers.Vest)
 	end
 	
 	-- You can't /guard while aiming.
-	if text:find("You can't /guard while aiming%.") and color == -1347440726 then
+	if text:match("You can't /guard while aiming%.") and currentColor == "AFAFAF" then
         bodyguard.received = false
 		resetTimer(0.5, timers.Vest)
 	end
 	
 	-- You must wait (x) seconds? before selling another vest.
 	local cooldown = text:match("You must wait (%d+) seconds? before selling another vest%.?")
-	if cooldown then
+	if cooldown and currentColor == "AFAFAF" then
         bodyguard.received = false
 		resetTimer(tonumber(cooldown) + 0.5, timers.Vest)
 	end
 
 	-- You offered protection to (Nickname) for $200.
 	local nickname = text:match("%* You offered protection to (.+) for %$200%.")
-	if nickname then
+	if nickname and currentColor == "33CCFF" then
 		bodyguard.playerName = nickname:gsub("%s+", "_")
         bodyguard.playerId = sampGetPlayerIdByNickname(bodyguard.playerName)
 		bodyguard.received = false
@@ -1770,7 +1828,7 @@ function sampev.onServerMessage(color, text)
 	end
 
 	-- You are not a bodyguard.
-	if text:find("You are not a bodyguard.") and color ==  -1347440726 then
+	if text:match("You are not a bodyguard%.") and currentColor == "AFAFAF" then
 		formattedAddChatMessage("You are not a bodyguard, disabling bodyguard related features.")
 		bodyguard.enable = false
         bodyguard.playerName = ""
@@ -1780,7 +1838,7 @@ function sampev.onServerMessage(color, text)
 	end
 
 	-- You are now a Bodyguard, type /help to see your new commands.
-	if text:match("%* You are now a Bodyguard, type /help to see your new commands%.") then
+	if text:match("%* You are now a Bodyguard, type /help to see your new commands%.") and currentColor == "33CCFF" then
 		formattedAddChatMessage("You are now a bodyguard, enabling bodyguard related features.")
 		bodyguard.enable = true
         bodyguard.received = false
@@ -1789,14 +1847,17 @@ function sampev.onServerMessage(color, text)
 
     --- Accept
 	-- You are not near the person offering you guard!
-	if text:find("You are not near the person offering you guard!") and color == -1347440726 then
-		formattedAddChatMessage(string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId))
-		return not autobind.Settings.enable
+	if text:match("You are not near the person offering you guard!") and currentColor == "BFC0C2" then
+        if accepter.received and accepter.playerName ~= "" and accepter.playerId ~= -1 then
+            formattedAddChatMessage(string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId))
+            accepter.received = false
+            return not autobind.Settings.enable
+        end
 	end
 
 	-- * Bodyguard (Nickname) wants to protect you for $200, type /accept bodyguard to accept.
 	local nickname = text:match("%* Bodyguard (.+) wants to protect you for %$200, type %/accept bodyguard to accept%.")
-	if nickname and color == 869072810 then
+	if nickname and currentColor == "33CCFF" then
 		lua_thread.create(function()
 			wait(0)
 			if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 and ((accepter.enable and not checkHeal()) or (accepter.enable and enteredPoint)) and not checkMuted() then
@@ -1816,63 +1877,86 @@ function sampev.onServerMessage(color, text)
 	end
 
 	-- You accepted the protection for $200 from (Nickname).
-	if text:match("%* You accepted the protection for %$200 from (.+)%.") then
+	if text:match("%* You accepted the protection for %$200 from (.+)%.") and currentColor == "33CCFF" then
 		accepter.playerName = ""
 		accepter.playerId = -1
 		accepter.received = false
 	end
 
     -- You can't afford the Protection!
-	if text:match("You can't afford the Protection!") then
-		accepter.received = false
+	if text:match("You can't afford the Protection!") and currentColor == "AFAFAF" then
+		accepter.received = false -- needs to be renabled via /pay or withdraw/awithdraw
 	end
 
     --- Heal Timer
     -- You can't heal if you were recently shot, except within points, events, minigames, and paintball.
-	if text:match("You can't heal if you were recently shot, except within points, events, minigames, and paintball.") then
-        formattedAddChatMessage("You can't heal after being attacked recently. Timer extended by 5 seconds.")
+	if text:match("^You can't heal if you were recently shot, except within points, events, minigames, and paintball%.") and currentColor == "FFFFFF" then
+		formattedAddChatMessage("You can't heal after being attacked recently. Timer extended by 5 seconds.")
 		resetTimer(5, timers.Heal)
         return not autobind.Settings.enable
 	end
 
     --- Diamond Donator
 	-- You are not a Diamond Donator!
-	if text:match("You are not a Diamond Donator%!") then
+	if text:match("^You are not a Diamond Donator%!") and currentColor == "AFAFAF" then
 		timers.Vest.timer = guardTime
 		autobind.AutoVest.donor = false
 	end
 
+    -- You are not a Sapphire or Diamond Donator!
+    if text:match("^You are not a Sapphire or Diamond Donator%!") and currentColor == "AFAFAF" then
+        if getItemFromBM > 0 then
+            getItemFromBM = 0
+            gettingItem = false
+        end
+    end
+
+    --    You are not at the black market!
+    if text:match("^%s*You are not at the black market%!") and currentColor == "BFC0C2" then
+        if getItemFromBM > 0 then
+            getItemFromBM = 0
+            gettingItem = false
+        end
+    end
+
 	--- Find
 	-- You have already searched for someone - wait a little.
-	if text:match("You have already searched for someone %- wait a little%.") then
-        if autofind.counter > 0 then
-            autofind.counter = 0
+	if text:match("^You have already searched for someone %- wait a little%.") and currentColor == "AFAFAF" then
+        if autofind.enable then
+            if autofind.counter > 0 then
+                autofind.counter = 0
+            end
+            resetTimer(5, timers.Find)
         end
-		resetTimer(5, timers.Find)
 	end
 
 	-- You can't find that person as they're hidden in one of their turfs.
-	if text:match("You can't find that person as they%'re hidden in one of their turfs%.") then
-        if autofind.counter > 0 then
-            autofind.counter = 0
+	if text:match("^You can't find that person as they're hidden in one of their turfs%.") then
+        print(currentColor, "You can't find that person as they're hidden in one of their turfs.")
+        if autofind.enable and autofind.playerName ~= "" and autofind.playerId ~= -1 then
+            if autofind.counter > 0 then
+                autofind.counter = 0
+            end
+            formattedAddChatMessage(string.format("%s (ID: %d) is hidden in a turf. Autofind will try again in 5 seconds.", autofind.playerName:gsub("_", " "), autofind.playerId))
+            resetTimer(5, timers.Find)
+            return not autobind.Settings.enable
         end
-        formattedAddChatMessage(string.format("%s (ID: %d) is hidden in a turf. Autofind will try again in 5 seconds.", autofind.playerName:gsub("_", " "), autofind.playerId))
-		resetTimer(5, timers.Find)
-        return not autobind.Settings.enable
-	end
+    end
 
     -- You are not a detective. (Disables autofind)
-    if text:match("You are not a detective%.") then
-        if autofind.counter > 0 then
-            autofind.counter = 0
+    if text:match("^You are not a detective%.") and currentColor == "AFAFAF" then
+        if autofind.enable then
+            if autofind.counter > 0 then
+                autofind.counter = 0
+            end
+            autofind.enable = false
+            formattedAddChatMessage("You are no longer finding anyone because you are not a detective.")
+            return not autobind.Settings.enable
         end
-        autofind.enable = false
-        formattedAddChatMessage("You are no longer finding anyone because you are not a detective.")
-        return not autobind.Settings.enable
     end
 
     -- * You are now a Detective, type /help to see your new commands * (Re-enables autofind once you get the job if you have someone set)
-    if text:match("* You are now a Detective, type /help to see your new commands%.") then
+    if text:match("^* You are now a Detective, type %/help to see your new commands *") and currentColor == "33CCFF" then
         if autofind.playerName ~= "" and autofind.playerId ~= -1 then
             if autofind.counter > 0 then
                 autofind.counter = 0
@@ -1884,62 +1968,54 @@ function sampev.onServerMessage(color, text)
     end
 
     -- You are unable to find this person. (Disable after 5 retries)
-    if text:match("You are unable to find this person%.") then
-        autofind.counter = autofind.counter + 1
-        if autofind.counter >= 5 then
-            autofind.enable = false
-            autofind.playerId = -1
-            autofind.playerName = ""
-            autofind.counter = 0
-            formattedAddChatMessage("You are no longer finding anyone because you are unable to find this person.")
-            return not autobind.Settings.enable
+    if text:match("^You are unable to find this person%.") and currentColor == "AFAFAF" then
+        if autofind.enable then
+            autofind.counter = autofind.counter + 1
+            if autofind.counter >= 5 then
+                autofind.enable = false
+                autofind.playerId = -1
+                autofind.playerName = ""
+                autofind.counter = 0
+                formattedAddChatMessage("You are no longer finding anyone because you are unable to find this person.")
+                return not autobind.Settings.enable
+            end
+            resetTimer(5, timers.Find)
         end
-        resetTimer(5, timers.Find)
     end
 
 	--- Accept Repair
-	-- wants to repair your car for $1
-	if text:find("wants to repair your car for %$1") then
-		lua_thread.create(function()
-			wait(0)
-			if autobind.Settings.enable and not checkMuted() and not checkAdminDuty() then
-				if autobind.AutoBind.autoRepair then
-					sampSendChat("/accept repair")
-				end
-			end
-		end)
+	-- * Car Mechanic X wants to repair your car for $1, (type /accept repair) to accept.
+	if text:match("^%* Car Mechanic (.+) wants to repair your car for %$1, %(type %/accept repair%) to accept%.") and currentColor == "33CCFF" then
+        if autobind.Settings.enable and autobind.AutoBind.autoRepair and not checkMuted() and not checkAdminDuty() then
+            lua_thread.create(function()
+                wait(0)
+                sampSendChat("/accept repair")
+            end)
+        end
 	end
 
 	--- Auto Badge
-	-- Your hospital bill
-	if text:find("Your hospital bill") and color == -8224086 then
-		lua_thread.create(function()
-			wait(0)
-			if autobind.Settings.enable and not checkMuted() and not checkAdminDuty() then
-				if autobind.AutoBind.autoBadge then
-					sampSendChat("/badge")
-				end
-			end
-		end)
+	-- Your hospital bill comes to $100. Have a nice day!
+	if text:match("^Your hospital bill comes to %$%d+%. Have a nice day!") and currentColor == "FF8282" then
+        if autobind.Settings.enable and autobind.AutoBind.autoBadge and not checkMuted() and not checkAdminDuty() then
+            if autobind.Settings.mode == "Faction" then
+                lua_thread.create(function()
+                    wait(0)
+                    sampSendChat("/badge")
+                end)
+            end
+        end
 	end
 
 	--- Muted
 	-- You have been muted automatically for spamming. Please wait 10 seconds and try again.
-	if text:match("You have been muted automatically for spamming%. Please wait %d+ seconds and try again%.") then
+	if text:match("^You have been muted automatically for spamming%. Please wait 10 seconds and try again%.") and currentColor == "FFFF00" then
 		timers.Muted.last = localClock()
 	end
 
-	--- Black Market
-    if getItemFromBM > 0 then
-		-- You are not a Sapphire or Diamond Donator!
-        if text:match("You are not a Sapphire or Diamond Donator!") and color == -1077886209 then
-            getItemFromBM = 0
-        end
-    end
-
 	--- Help Command Additions
 	-- *** OTHER *** /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp
-	if text:match("*** OTHER *** /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp") then
+	if text:match("^*** OTHER *** /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp") and currentColor == "FFFFFF" then
 		lua_thread.create(function()
 			wait(0)
 			sampAddChatMessage(string.format("*** AUTOBIND *** /%s /%s /%s /%s /%s /%s", scriptName, commands.repairnear, commands.find, commands.tcap, commands.sprintbind, commands.bikebind), -1)
@@ -2035,10 +2111,10 @@ imgui.OnInitialize(function()
 end)
 
 -- Force Preload (Fixes initial freeze when opening the menu)
-imgui.OnFrame(function() return menu.forcePreload[0] end,
+--[[imgui.OnFrame(function() return menu.forcePreload[0] end,
 function()
 	menu.forcePreload[0] = false
-end).HideCursor = true
+end).HideCursor = true]]
 
 -- Settings Window
 imgui.OnFrame(function() return menu.settings.window[0] end,
@@ -2927,7 +3003,7 @@ end
 
 -- Function to Initiate the Skin Download Process
 function downloadSkins()
-    local manager = DownloadManager:new(25)
+    local manager = DownloadManager:new(15)
 
     local function onComplete(downloadsFinished)
         if downloadsFinished then
@@ -2936,7 +3012,7 @@ function downloadSkins()
         else
             print("No files needed to be downloaded.")
         end
-        menu.forcePreload[0] = true
+        --menu.forcePreload[0] = true
     end
 
     local function onProgress(progressData, file)
