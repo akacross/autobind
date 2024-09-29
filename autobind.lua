@@ -16,7 +16,7 @@ local changelog = {
     ["1.8.18"] = {
         "Improved: Rewrote autofind to make it more efficient and reliable, it is now apart of the main functions loop.",
         "Improved: ARES radio chat colored ARES badge, player-colored names, white message text, and player ID.",
-    }
+    },
     ["1.8.17"] = {
         "Fixed: There was an issue with accepters playerId because nil, now the nickname to ID function returns -1 if the player is not found."
     },
