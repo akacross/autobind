@@ -603,6 +603,8 @@ local autobind_defaultSettings = {
 		enable = true,
 		autoSave = true,
         autoRepair = true,
+        currentBlackMarketKits = 3,
+        currentFactionLockerKits = 3,
 		mode = "Family",
         Frisk = {
             mustTarget = false,
@@ -725,9 +727,9 @@ local autobind_defaultSettings = {
         FactionLocker = {x = resX / 2, y = resY / 2}
 	},
 	BlackMarket = {
-        Kit1 = {1, 9, 13},
-        Kit2 = {1, 9, 12},
-        Kit3 = {1, 9, 4},
+        Kit1 = {1, 4, 11},
+        Kit2 = {1, 4, 13},
+        Kit3 = {1, 4, 12},
 		Locations = {}
     },
     FactionLocker = {
@@ -941,6 +943,9 @@ local invalidAnimsSet = {
     [1069] = true, [1070] = true, [746] = true
 }
 
+-- Max Kits
+local maxKits = 6
+
 -- Black Market
 local blackMarket = {
     maxSelections = 6,
@@ -950,8 +955,8 @@ local blackMarket = {
     obtainedItems = {},
     Items = {
         [1] = {label = 'Health/Armor', index = 2, weapon = nil, price = 350},
-        [2] = {label = 'Silenced', index = 6, weapon = 22, price = 150, group = 2, priority = 1},
-        [3] = {label = '9mm', index = 7, weapon = 23, price = 200, group = 2, priority = 2},
+        [2] = {label = 'Silenced', index = 6, weapon = 23, price = 150, group = 2, priority = 1},
+        [3] = {label = '9mm', index = 7, weapon = 22, price = 200, group = 2, priority = 2},
         [4] = {label = 'Deagle', index = 13, weapon = 24, price = 1000, group = 2, priority = 3},
         [5] = {label = 'Shotgun', index = 8, weapon = 25, price = 400, group = 3, priority = 1},
         [6] = {label = 'Spas-12', index = 16, weapon = 27, price = 2250, group = 3, priority = 2},
@@ -1025,8 +1030,6 @@ function loadConfigs()
 	-- Ignore Keys
 	local ignoreKeys = {
 		{"AutoVest", "skins"}, {"AutoVest", "names"}, 
-		{"Keybinds", "BlackMarket1"}, {"Keybinds", "BlackMarket2"}, {"Keybinds", "BlackMarket3"},
-		{"Keybinds", "FactionLocker1"}, {"Keybinds", "FactionLocker2"}, {"Keybinds", "FactionLocker3"},
 		{"Keybinds", "BikeBind"},
 		{"Keybinds", "SprintBind"},
 		{"Keybinds", "Frisk"},
@@ -1035,15 +1038,16 @@ function loadConfigs()
 		{"Keybinds", "Offer"},
 		{"Keybinds", "AcceptDeath"},
 		{"Keybinds", "RequestBackup"},
-		{"BlackMarket", "Kit1"},
-		{"BlackMarket", "Kit2"},
-		{"BlackMarket", "Kit3"},
 		{"BlackMarket", "Locations"},
-		{"FactionLocker", "Kit1"},
-		{"FactionLocker", "Kit2"},
-		{"FactionLocker", "Kit3"},
 		{"FactionLocker", "Locations"}
 	}
+
+    for i = 1, maxKits do
+        ignoreKeys[#ignoreKeys + 1] = {"Keybinds", "BlackMarket" .. i}
+        ignoreKeys[#ignoreKeys + 1] = {"BlackMarket", "Kit" .. i}
+        ignoreKeys[#ignoreKeys + 1] = {"Keybinds", "FactionLocker" .. i}
+        ignoreKeys[#ignoreKeys + 1] = {"FactionLocker", "Kit" .. i}
+    end
 
 	-- Handle Config File
     local success, config, err = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, ignoreKeys)
@@ -1184,6 +1188,12 @@ function main()
             timer.sentTime = localClock() - timer.timeOut
         end
     end
+
+    -- Initialize Key Functions (Black Market)
+    InitializeBlackMarketKeyFunctions()
+
+    -- Initialize Key Functions (Faction Locker)
+    InitializeFactionLockerKeyFunctions()
 
     -- Main Loop
     while true do wait(0)
@@ -1391,14 +1401,17 @@ function checkAndAcceptVest(autoaccept)
 	end
 end
 
--- Function to check if the player is within any black market location
-function isInBlackMarketLocation()
+-- Check if player is in location
+function isPlayerInLocation(locations)
     -- Adjustable Z axis limits
     local zTopLimit = 0.7  -- Top limit of the Z axis
     local zBottomLimit = -0.7  -- Bottom limit of the Z axis
 
+    -- Get player coordinates
     local playerX, playerY, playerZ = getCharCoordinates(ped)
-    for _, location in pairs(autobind.BlackMarket.Locations) do
+
+    -- Check if player is in any of the locations
+    for _, location in pairs(locations) do
         local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, location.x, location.y, location.z)
         local zDifference = playerZ - location.z
         if distance <= location.radius and zDifference <= zTopLimit and zDifference >= zBottomLimit then
@@ -1408,32 +1421,17 @@ function isInBlackMarketLocation()
     return false
 end
 
-function isInFactionLockerLocation()
-    -- Adjustable Z axis limits
-    local zTopLimit = 0.7  -- Top limit of the Z axis
-    local zBottomLimit = -0.7  -- Bottom limit of the Z axis
-
-    local playerX, playerY, playerZ = getCharCoordinates(ped)
-    for _, location in pairs(autobind.FactionLocker.Locations) do
-        local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, location.x, location.y, location.z)
-        local zDifference = playerZ - location.z
-        if distance <= location.radius and zDifference <= zTopLimit and zDifference >= zBottomLimit then
-            return true
-        end
-    end
-    return false
-end
-
-function getWeaponSlot(weaponId)
-    local slot = getWeapontypeSlot(weaponId)
-    return slot
-end
-
--- Function to check if the player already has the item
-function playerHasItemBM(item)
-    if item.weapon then
+-- Check if player has item
+function playerHasItem(item)
+    if item.weapon then -- Check if item is a weapon
         return hasCharGotWeapon(ped, item.weapon)
-    elseif item.label == 'Health/Armor' then
+    elseif item.label == 'Baton/Mace' then -- Check if item is a baton or mace
+        return hasCharGotWeapon(ped, 3) or hasCharGotWeapon(ped, 41)
+    elseif item.label == 'Health' then -- Check full health
+        return getCharHealth(ped) - 5000000 == 100
+    elseif item.label == 'Armor' then -- Check full armor
+        return getCharArmour(ped) == 100
+    elseif item.label == 'Health/Armor' then -- Check full health and armor
         local health = getCharHealth(ped) - 5000000
         local armor = getCharArmour(ped)
         return health == 100 and armor == 100
@@ -1441,71 +1439,26 @@ function playerHasItemBM(item)
     return false
 end
 
-function canObtainItemBM(item)
-    -- Use your existing playerHasItemBM function
-    if playerHasItemBM(item) then
-        return false  -- Already has the item
+-- Check if player can obtain item
+function canObtainItem(item, items)
+    -- Check if player already has item
+    if playerHasItem(item) then
+        return false
     end
-    -- Additional logic for exclusive groups and priorities
-    -- Implement priority and group checks as needed
-    if item.weapon and item.group and item.priority then
-        print(item.weapon, item.group, item.priority)
 
-        -- Check if the player has a weapon in the same group with higher or equal priority
-        local currentWeapon, ammo = getCharWeaponInSlot(ped, getWeaponSlot(item.weapon))
-        if currentWeapon > 0 then
-            local currentItem = getItemByWeapon(blackMarket.Items, currentWeapon)
-            if currentItem and currentItem.group == item.group and currentItem.priority >= item.priority then
-                return false -- Do not obtain item
+    -- Check if item is a weapon and has a group and priority
+    if item.weapon and item.group and item.priority then
+        for _, value in pairs(items) do
+            if item.group == value.group and item.priority <= value.priority then
+                if hasCharGotWeapon(ped, value.weapon) then
+                    return false
+                end
             end
         end
     end
-    return true -- Obtain item
-end
 
-function playerHasItemLocker(item)
-    if item.weapon then
-        return hasCharGotWeapon(ped, item.weapon)
-    elseif item.label == 'Baton/Mace' then
-        return hasCharGotWeapon(ped, 3) or hasCharGotWeapon(ped, 41)
-    elseif item.label == 'Health' then
-        return getCharHealth(ped) - 5000000 == 100
-    elseif item.label == 'Armor' then
-        return getCharArmour(ped) == 100
-    end
-    return false
-end
-
-function canObtainItemLocker(item)
-    -- Use your existing playerHasItemLocker function
-    if playerHasItemLocker(item) then
-        return false  -- Already has the item
-    end
-    -- Additional logic for exclusive groups and priorities
-    -- Implement priority and group checks as needed
-    if item.weapon and item.group and item.priority then
-        print(item.weapon, item.group, item.priority)
-        -- Check if the player has a weapon in the same group with higher or equal priority
-
-
-        local currentWeapon, ammo = getCharWeaponInSlot(ped, getWeaponSlot(item.weapon))
-        if currentWeapon > 0 then
-            local currentItem = getItemByWeapon(factionLocker.Items, currentWeapon)
-            if currentItem and currentItem.group == item.group and currentItem.priority >= item.priority then
-                return false -- Do not obtain item
-            end
-        end
-    end
-    return true -- Obtain item
-end
-
-function getItemByWeapon(itemsList, weaponId)
-    for _, item in ipairs(itemsList) do
-        if item.weapon == weaponId then
-            return item
-        end
-    end
-    return nil
+    -- Obtain item
+    return true
 end
 
 -- Handle Black Market
@@ -1522,7 +1475,7 @@ function handleBlackMarket(kitNumber)
         return
     end
 
-    if not isInBlackMarketLocation() then
+    if not isPlayerInLocation(autobind.BlackMarket.Locations) then
         formattedAddChatMessage(("{%06x}You are not at the black market!"):format(clr.GREY))
         resetBlackMarket()
         return
@@ -1544,7 +1497,7 @@ function handleBlackMarket(kitNumber)
         for _, itemIndex in ipairs(items) do
             local item = blackMarket.Items[itemIndex]
             if item then
-                if canObtainItemBM(item) then
+                if canObtainItem(item, blackMarket.Items) then
                     blackMarket.currentKey = item.index
                     blackMarket.gettingItem = true
                     sampSendChat("/bm")
@@ -1584,7 +1537,7 @@ function handleFactionLocker(kitNumber)
         return
     end
 
-    if not isInFactionLockerLocation() then
+    if not isPlayerInLocation(autobind.FactionLocker.Locations) then
         formattedAddChatMessage(("{%06x}You are not at the faction locker!"):format(clr.GREY))
         resetFactionLocker()
         return
@@ -1606,7 +1559,7 @@ function handleFactionLocker(kitNumber)
         for _, itemIndex in ipairs(items) do
             local item = factionLocker.Items[itemIndex]
             if item then
-                if canObtainItemLocker(item) then
+                if canObtainItem(item, factionLocker.Items) then
                     factionLocker.currentKey = item.index
                     factionLocker.gettingItem = true
                     sampSendChat("/locker")
@@ -1632,115 +1585,128 @@ function handleFactionLocker(kitNumber)
     end)
 end
 
--- Keybinds
-function createKeybinds()
-    -- Keybinds
-    local keybinds = autobind.Keybinds
-    local currentTime = localClock()
-    local keyFunctions = {
-        Accept = function()
-            local message = checkAndAcceptVest(true)
-            if message then
-                formattedAddChatMessage(message)
-            end
-        end,
-        Offer = function()
-            local message = checkAndSendVest(true)
-            if message then
-                formattedAddChatMessage(message)
-            end
-        end,
-        BlackMarket1 = function()
-            handleBlackMarket(1)
-        end,
-        BlackMarket2 = function()
-            handleBlackMarket(2)
-        end,
-        BlackMarket3 = function()
-            handleBlackMarket(3)
-        end,
-        FactionLocker1 = function()
-            handleFactionLocker(1)
-        end,
-        FactionLocker2 = function()
-            handleFactionLocker(2)
-        end,
-        FactionLocker3 = function()
-            handleFactionLocker(3)
-        end,
-        BikeBind = function()
-            if not isCharOnAnyBike(ped) or not keybinds.BikeBind.Toggle then
-                return
-            end
+-- Key Functions
+local keyFunctions = {
+    Accept = function()
+        local message = checkAndAcceptVest(true)
+        if message then
+            formattedAddChatMessage(message)
+        end
+    end,
+    Offer = function()
+        local message = checkAndSendVest(true)
+        if message then
+            formattedAddChatMessage(message)
+        end
+    end,
+    BikeBind = function()
+        if not isCharOnAnyBike(ped) or not autobind.Keybinds.BikeBind.Toggle then
+            return
+        end
 
-            local veh = storeCarCharIsInNoSave(ped)
-            if isCarInAirProper(veh) or getCarSpeed(veh) < 0.1 then
-                return
-            end
+        local veh = storeCarCharIsInNoSave(ped)
+        if isCarInAirProper(veh) or getCarSpeed(veh) < 0.1 then
+            return
+        end
 
-            local model = getCarModel(veh)
-            if bikeIds[model] then
-                local vehKey = gkeys.vehicle.ACCELERATE
-                setGameKeyState(vehKey, 255)
-                wait(0)
-                setGameKeyState(vehKey, 0)
-            elseif motoIds[model] then
-                local vehKey = gkeys.vehicle.STEERUP_STEERDOWN
-                setGameKeyState(vehKey, -128)
-                wait(0)
-                setGameKeyState(vehKey, 0)
-            end
-        end,
-        SprintBind = function()
-            keybinds.SprintBind.Toggle = toggleBind("SprintBind", keybinds.SprintBind.Toggle)
-        end,
-        Frisk = function()
-            if checkAdminDuty() or checkMuted() then
-                return
-            end
+        local model = getCarModel(veh)
+        if bikeIds[model] then
+            local vehKey = gkeys.vehicle.ACCELERATE
+            setGameKeyState(vehKey, 255)
+            wait(0)
+            setGameKeyState(vehKey, 0)
+        elseif motoIds[model] then
+            local vehKey = gkeys.vehicle.STEERUP_STEERDOWN
+            setGameKeyState(vehKey, -128)
+            wait(0)
+            setGameKeyState(vehKey, 0)
+        end
+    end,
+    SprintBind = function()
+        autobind.Keybinds.SprintBind.Toggle = toggleBind("SprintBind", autobind.Keybinds.SprintBind.Toggle)
+    end,
+    Frisk = function()
+        if checkAdminDuty() or checkMuted() then
+            return
+        end
 
-            local frisk = autobind.Settings.Frisk
-            local targeting = getCharPlayerIsTargeting(h)
-            for _, player in ipairs(getVisiblePlayers(5, "all")) do
-                if (isButtonPressed(h, gkeys.player.LOCKTARGET) and frisk.mustAim) or not frisk.mustAim then
-                    if (targeting and frisk.mustTarget) or not frisk.mustTarget then
-                        sampSendChat(string.format("/frisk %d", player.playerId))
-                        break
-                    end
+        local frisk = autobind.Settings.Frisk
+        local targeting = getCharPlayerIsTargeting(h)
+        for _, player in ipairs(getVisiblePlayers(5, "all")) do
+            if (isButtonPressed(h, gkeys.player.LOCKTARGET) and frisk.mustAim) or not frisk.mustAim then
+                if (targeting and frisk.mustTarget) or not frisk.mustTarget then
+                    sampSendChat(string.format("/frisk %d", player.playerId))
+                    break
                 end
             end
-        end,
-        TakePills = function()
-            if checkAdminDuty() or checkMuted() then
-                return
-            end
-
-            if checkHeal() then
-                formattedAddChatMessage("You can't heal after being attacked recently. You cannot take pills.")
-                return
-            end
-
-            sampSendChat("/takepills")
-        end,
-        AcceptDeath = function()
-            sampSendChat("/accept death")
-        end,
-        RequestBackup = function()
-            if backup.enable then
-                local backupSecondary = autobind.Settings.mode == "Faction" and "d" or "pr"
-                sampSendChat("/nobackup")
-                return
-            end
-
-            local backupPrimary = autobind.Settings.mode == "Family" and "fbackup" or "backup"
-            sampSendChat(string.format("/%s", backupPrimary))
-
-            --[[local zoneName = getZoneName(getCharCoordinates(ped))
-            sampSendChat(string.format("/%s I need urgent backup! Currently at %s", backupSecondary, zoneName))]]
         end
-    }
+    end,
+    TakePills = function()
+        if checkAdminDuty() or checkMuted() then
+            return
+        end
 
-    for key, value in pairs(keybinds) do
+        if checkHeal() then
+            formattedAddChatMessage("You can't heal after being attacked recently. You cannot take pills.")
+            return
+        end
+
+        sampSendChat("/takepills")
+    end,
+    AcceptDeath = function()
+        sampSendChat("/accept death")
+    end,
+    RequestBackup = function()
+        if backup.enable then
+            local backupSecondary = autobind.Settings.mode == "Faction" and "d" or "pr"
+            sampSendChat("/nobackup")
+            return
+        end
+
+        local backupPrimary = autobind.Settings.mode == "Family" and "fbackup" or "backup"
+        sampSendChat(string.format("/%s", backupPrimary))
+
+        --[[local zoneName = getZoneName(getCharCoordinates(ped))
+        sampSendChat(string.format("/%s I need urgent backup! Currently at %s", backupSecondary, zoneName))]]
+    end
+}
+
+-- Initialize Key Functions (Black Market)
+function InitializeBlackMarketKeyFunctions()
+    for i = 1, autobind.Settings.currentBlackMarketKits do
+        if keyFunctions["BlackMarket" .. i] == nil then
+            keyFunctions["BlackMarket" .. i] = function() handleBlackMarket(i) end
+            print("Black Market Key Function Initialized: " .. i)
+        end
+    end
+end
+
+-- Initialize Key Functions (Faction Locker)
+function InitializeFactionLockerKeyFunctions()
+    for i = 1, autobind.Settings.currentFactionLockerKits do
+        if keyFunctions["FactionLocker" .. i] == nil then
+            keyFunctions["FactionLocker" .. i] = function() handleFactionLocker(i) end
+            print("Faction Locker Key Function Initialized: " .. i)
+        end
+    end
+end
+
+-- Reset Key Functions
+function resetLockersKeyFunctions()
+    for i = 1, maxKits do
+        keyFunctions["BlackMarket" .. i] = nil
+        keyFunctions["FactionLocker" .. i] = nil
+    end
+
+    -- Reset Max Kits
+    autobind.Settings.currentBlackMarketKits = 3
+    autobind.Settings.currentFactionLockerKits = 3
+end
+
+-- Keybinds
+function createKeybinds()
+    local currentTime = localClock()
+    for key, value in pairs(autobind.Keybinds) do
         local bind = {
             keys = value.Keys,
             type = value.Type
@@ -2384,11 +2350,6 @@ end
 -- OnScriptTerminate
 function onScriptTerminate(scr, quitGame)
 	if scr == script.this then
-		-- Save config
-		--[[if autobind.Settings.autoSave then
-			saveConfigWithErrorHandling(getFile("settings"), autobind)
-		end]]
-
 		-- Unregister chat commands
 		for _, command in pairs(cmds) do
 			sampUnregisterChatCommand(command)
@@ -3625,8 +3586,19 @@ local buttons1 = {
                 {"WindowPos", "BlackMarket"},
                 {"WindowPos", "FactionLocker"}
             }
+
+            -- Ensure Defaults
             ensureDefaults(autobind, autobind_defaultSettings, true, ignoreKeys)
+
+            -- Create Fonts
             createFonts()
+
+            -- Reset Key Functions
+            resetLockersKeyFunctions()
+
+            -- Initialize Key Functions
+            InitializeBlackMarketKeyFunctions()
+            InitializeFactionLockerKeyFunctions()
         end,
         color = function()
             return color_default
@@ -3807,6 +3779,14 @@ function(self)
                         autobind.AutoVest.names = setToList(names)
                         saveConfigWithErrorHandling(getFile("settings"), autobind)
                     end
+                end
+
+                if key == "blackmarket" then
+                    InitializeBlackMarketKeyFunctions()
+                end
+
+                if key == "factionlocker" then
+                    InitializeFactionLockerKeyFunctions()
                 end
 
                 if key == "skins" then
@@ -4087,35 +4067,52 @@ function(self)
         -- Set the window size
         imgui.SetNextWindowSize(menu.blackmarket.size, imgui.Cond.FirstUseEver)
         
+        -- Calculate total price
         local totalPrice = calculateTotalPrice(autobind.BlackMarket[string.format("Kit%d", menu.blackmarket.pageId)], blackMarket.Items)
+
+        -- Define a table to map kitId to key and menu data
+        local kits = {}
+        for i = 1, autobind.Settings.currentBlackMarketKits do
+            kits[i] = {key = string.format('BlackMarket%d', i), menu = autobind.BlackMarket[string.format("Kit%d", i)]}
+        end
 
         -- Blackmarket Window
         local title = string.format("Black Market - Kit: %d - $%s", menu.blackmarket.pageId, formatNumber(totalPrice))
         if imgui.Begin(title, menu.blackmarket.window, imgui_flags) then
-            local availWidth = imgui.GetContentRegionAvail().x
-            local buttonWidth = availWidth / 3 - 5
-
-            -- Define a table to map kitId to key and menu data
-            local kits = {
-                [1] = {key = 'BlackMarket1', menu = autobind.BlackMarket.Kit1},
-                [2] = {key = 'BlackMarket2', menu = autobind.BlackMarket.Kit2},
-                [3] = {key = 'BlackMarket3', menu = autobind.BlackMarket.Kit3}
-            }
-
-            -- Create buttons for each kit
-            for id, kit in pairs(kits) do
-                if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " Kit " .. id, imgui.ImVec2(buttonWidth, 0)) then
-                    menu.blackmarket.pageId = id
-                end
-                if id < #kits then
-                    imgui.SameLine()
-                end
-            end
-
             -- Display the key editor and menu based on the selected kitId
             for id, kit in pairs(kits) do
                 if menu.blackmarket.pageId == id then
+                    -- Keybind
                     keyEditor("Keybind", kit.key)
+
+                    -- Preview Kit
+                    imgui.SameLine()
+                    imgui.BeginGroup()
+                    imgui.PushItemWidth(82)
+                    if imgui.BeginCombo("##blackmarket_preview", fa.ICON_FA_SHOPPING_CART .. " Kit " .. id) then
+                        for i = 1, autobind.Settings.currentBlackMarketKits do
+                            if imgui.Selectable(fa.ICON_FA_SHOPPING_CART .. " Kit " .. i .. (i == id and ' [x]' or ''), menu.blackmarket.pageId == i) then
+                                menu.blackmarket.pageId = i
+                            end
+                        end
+                        imgui.EndCombo()
+                    end
+                    imgui.PopItemWidth()
+
+                    -- Create new kit
+                    if imgui.Button("Add New Kit", imgui.ImVec2(82, 20)) then
+                        if autobind.Settings.currentBlackMarketKits < maxKits then
+                            autobind.Settings.currentBlackMarketKits = autobind.Settings.currentBlackMarketKits + 1
+                            autobind.BlackMarket[string.format("Kit%d", autobind.Settings.currentBlackMarketKits)] = {1, 2, 10, 11}
+
+                            menu.blackmarket.pageId = autobind.Settings.currentBlackMarketKits
+
+                            autobind.Keybinds[string.format("BlackMarket%d", autobind.Settings.currentBlackMarketKits)] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
+                        end
+                    end
+                    imgui.EndGroup()
+
+                    -- Create selection menu
                     createMenu('Selection', blackMarket.Items, kit.menu, blackMarket.ExclusiveGroups, blackMarket.maxSelections, {combineGroups = blackMarket.ExclusiveGroups})
                 end
             end
@@ -4139,33 +4136,49 @@ function(self)
         -- Calculate total price
         local totalPrice = calculateTotalPrice(autobind.FactionLocker[string.format("Kit%d", menu.factionlocker.pageId)], factionLocker.Items)
 
+        -- Define a table to map kitId to key and menu data
+        local kits = {}
+        for i = 1, autobind.Settings.currentFactionLockerKits do
+            kits[i] = {key = string.format('FactionLocker%d', i), menu = autobind.FactionLocker[string.format("Kit%d", i)]}
+        end
+
         -- Faction Locker Window
         local title = string.format("Faction Locker - Kit: %d - $%s", menu.factionlocker.pageId, formatNumber(totalPrice))
         if imgui.Begin(title, menu.factionlocker.window, imgui_flags) then
-            local availWidth = imgui.GetContentRegionAvail().x
-            local buttonWidth = availWidth / 3 - 5
-
-            -- Define a table to map kitId to key and menu data
-            local kits = {
-                [1] = {key = 'FactionLocker1', menu = autobind.FactionLocker.Kit1},
-                [2] = {key = 'FactionLocker2', menu = autobind.FactionLocker.Kit2},
-                [3] = {key = 'FactionLocker3', menu = autobind.FactionLocker.Kit3}
-            }
-
-            -- Create buttons for each kit
-            for id, kit in pairs(kits) do
-                if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " Kit " .. id, imgui.ImVec2(buttonWidth, 0)) then
-                    menu.factionlocker.pageId = id
-                end
-                if id < #kits then
-                    imgui.SameLine()
-                end
-            end
-
             -- Display the key editor and menu based on the selected kitId
             for id, kit in pairs(kits) do
                 if menu.factionlocker.pageId == id then
+                    -- Keybind
                     keyEditor("Keybind", kit.key)
+
+                    -- Preview Kit
+                    imgui.SameLine()
+                    imgui.BeginGroup()
+                    imgui.PushItemWidth(82)
+                    if imgui.BeginCombo("##locker_preview", fa.ICON_FA_SHOPPING_CART .. " Kit " .. id) then
+                        for i = 1, autobind.Settings.currentFactionLockerKits do
+                            if imgui.Selectable(fa.ICON_FA_SHOPPING_CART .. " Kit " .. i .. (i == id and ' [x]' or ''), menu.factionlocker.pageId == i) then
+                                menu.factionlocker.pageId = i
+                            end
+                        end
+                        imgui.EndCombo()
+                    end
+                    imgui.PopItemWidth()
+
+                    -- Create new kit
+                    if imgui.Button("Add New Kit", imgui.ImVec2(82, 20)) then
+                        if autobind.Settings.currentFactionLockerKits < maxKits then
+                            autobind.Settings.currentFactionLockerKits = autobind.Settings.currentFactionLockerKits + 1
+                            autobind.FactionLocker[string.format("Kit%d", autobind.Settings.currentFactionLockerKits)] = {1, 2, 10, 11}
+
+                            menu.factionlocker.pageId = autobind.Settings.currentFactionLockerKits
+
+                            autobind.Keybinds[string.format("FactionLocker%d", autobind.Settings.currentFactionLockerKits)] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
+                        end
+                    end
+                    imgui.EndGroup()
+                    
+                    -- Create selection menu
                     createMenu('Selection', factionLocker.Items, kit.menu, factionLocker.ExclusiveGroups, factionLocker.maxSelections, {combineGroups = factionLocker.combineGroups})
                 end
             end
@@ -4192,7 +4205,7 @@ function renderSettings()
     if imgui.BeginChild("##config", imgui.ImVec2(485, 255), false) then
         -- Autobind/Capture
         imgui.Text('Auto Bind:')
-        createRow('Capture Spam', 'Capture spam will automatically type /capturf every 1.5 seconds.', captureSpam, toggleCaptureSpam, true)
+        createRow(string.format('Capture Spam (/%s)', cmds.tcap.cmd), 'Capture spam will automatically type /capturf every 1.5 seconds.', captureSpam, toggleCaptureSpam, true)
         
         local config = autobind.Settings
         local autoVest = autobind.AutoVest
@@ -4218,7 +4231,7 @@ function renderSettings()
             end, false)
         end
         
-        createRow('Accept Repair', 'Accept Repair will automatically accept repair requests.', config.autoRepair, function()
+        createRow(string.format('Auto Repair (/%s)', cmds.repairnear.cmd), 'Auto Repair will automatically accept repair requests.', config.autoRepair, function()
             config.autoRepair = toggleBind("Accept Repair", config.autoRepair)
         end, true)
         
