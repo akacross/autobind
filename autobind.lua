@@ -213,14 +213,14 @@ if not _G['lanes.download_manager'] then
     -- Create a new linda for communication
     local linda = lanes.linda()
 
-    -- Define the lane generator for handling downloads
+    -- Define the lane generator for handling downloads and data fetching
     local download_lane_gen = lanes.gen('*', {
         package = {
             path = package.path,
             cpath = package.cpath,
         },
     },
-    function(linda, fileUrl, filePath, identifier)
+    function(linda, taskType, fileUrl, filePath, identifier)
         local lanes = require('lanes')
         local ltn12 = require('ltn12')
         local http = require('socket.http')
@@ -228,120 +228,157 @@ if not _G['lanes.download_manager'] then
         local lfs = require('lfs')          -- LuaFileSystem
         local url = require('socket.url')   -- URL parsing
 
-        linda:send('debug_' .. identifier, { message = "Starting download for URL: " .. fileUrl .. " Identifier: " .. identifier })
+        if taskType == "download" then
+            -- Existing download logic
+            linda:send('debug_' .. identifier, { message = "Starting download for URL: " .. fileUrl .. " Identifier: " .. identifier })
 
-        -- Ensure the output directory exists
-        local dir = filePath:match("^(.*[/\\])")
-        if dir and dir ~= "" then
-            local attrs = lfs.attributes(dir)
-            if not attrs then
-                local path = ""
-                for folder in string.gmatch(dir, "[^/\\]+[/\\]?") do
-                    path = path .. folder
-                    local attr = lfs.attributes(path)
-                    if not attr then
-                        local success, err = lfs.mkdir(path)
-                        if not success then
-                            linda:send('error_' .. identifier, { error = "Directory Creation Error: " .. tostring(err) })
-                            linda:send('debug_' .. identifier, { message = "Directory creation error: " .. tostring(err) })
-                            return
+            -- Ensure the output directory exists
+            local dir = filePath:match("^(.*[/\\])")
+            if dir and dir ~= "" then
+                local attrs = lfs.attributes(dir)
+                if not attrs then
+                    local path = ""
+                    for folder in string.gmatch(dir, "[^/\\]+[/\\]?") do
+                        path = path .. folder
+                        local attr = lfs.attributes(path)
+                        if not attr then
+                            local success, err = lfs.mkdir(path)
+                            if not success then
+                                linda:send('error_' .. identifier, { error = "Directory Creation Error: " .. tostring(err) })
+                                linda:send('debug_' .. identifier, { message = "Directory creation error: " .. tostring(err) })
+                                return
+                            end
                         end
                     end
                 end
             end
-        end
 
-        -- Prepare variables for progress tracking
-        local progressData = {
-            downloaded = 0,
-            total = 0,
-        }
+            -- Prepare variables for progress tracking
+            local progressData = {
+                downloaded = 0,
+                total = 0,
+            }
 
-        -- Create a sink that writes to the file and updates progress
-        local outputFile, err = io.open(filePath, "wb")
-        if not outputFile then
-            linda:send('error_' .. identifier, { error = "File Open Error: " .. tostring(err) })
-            return
-        end
-
-        -- Determine whether to use HTTP or HTTPS
-        local parsed_url = url.parse(fileUrl)
-        local http_request = http.request
-        if parsed_url.scheme == "https" then
-            http_request = https.request
-        end
-
-        -- Perform a HEAD request to get the total size
-        local _, code, headers = http_request{
-            url = fileUrl,
-            method = "HEAD",
-        }
-
-        if code == 200 then
-            local contentLength = headers["content-length"] or headers["Content-Length"]
-            if contentLength then
-                progressData.total = tonumber(contentLength)
-                linda:send('debug_' .. identifier, { message = "Total size for URL: " .. fileUrl .. " is " .. progressData.total })
-            else
-                linda:send('debug_' .. identifier, { message = "Content-Length header not found for URL: " .. fileUrl })
-            end
-        else
-            linda:send('debug_' .. identifier, { message = "HEAD request failed with code: " .. code .. " for URL: " .. fileUrl })
-        end
-
-        -- Create a custom sink function
-        local stopDownload = false  -- Control variable
-        local function progressSink(chunk, sinkErr)
-            if stopDownload then
-                -- Do nothing if download should stop
-                return nil  -- Return nil to stop the sink
+            -- Create a sink that writes to the file and updates progress
+            local outputFile, err = io.open(filePath, "wb")
+            if not outputFile then
+                linda:send('error_' .. identifier, { error = "File Open Error: " .. tostring(err) })
+                return
             end
 
-            if chunk then
-                -- Write the chunk to the file
-                local success, writeErr = outputFile:write(chunk)
-                if not success then
-                    linda:send('error_' .. identifier, { error = "File Write Error: " .. tostring(writeErr) })
-                    linda:send('debug_' .. identifier, { message = "File write error: " .. tostring(writeErr) })
-                    stopDownload = true  -- Signal to stop further processing
-                    -- Close the file to release resources
-                    outputFile:close()
-                    return nil  -- Return nil to stop the sink
+            -- Determine whether to use HTTP or HTTPS
+            local parsed_url = url.parse(fileUrl)
+            local http_request = http.request
+            if parsed_url.scheme == "https" then
+                http_request = https.request
+            end
+
+            -- Perform a HEAD request to get the total size
+            local _, code, headers = http_request{
+                url = fileUrl,
+                method = "HEAD",
+            }
+
+            if code == 200 then
+                local contentLength = headers["content-length"] or headers["Content-Length"]
+                if contentLength then
+                    progressData.total = tonumber(contentLength)
+                    linda:send('debug_' .. identifier, { message = "Total size for URL: " .. fileUrl .. " is " .. progressData.total })
                 else
-                    -- Update progress
-                    progressData.downloaded = progressData.downloaded + #chunk
-                    linda:send('progress_' .. identifier, {
+                    linda:send('debug_' .. identifier, { message = "Content-Length header not found for URL: " .. fileUrl })
+                end
+            else
+                linda:send('debug_' .. identifier, { message = "HEAD request failed with code: " .. code .. " for URL: " .. fileUrl })
+            end
+
+            -- Create a custom sink function
+            local stopDownload = false  -- Control variable
+            local function progressSink(chunk, sinkErr)
+                if stopDownload then
+                    -- Do nothing if download should stop
+                    return nil  -- Return nil to stop the sink
+                end
+
+                if chunk then
+                    -- Write the chunk to the file
+                    local success, writeErr = outputFile:write(chunk)
+                    if not success then
+                        linda:send('error_' .. identifier, { error = "File Write Error: " .. tostring(writeErr) })
+                        linda:send('debug_' .. identifier, { message = "File write error: " .. tostring(writeErr) })
+                        stopDownload = true  -- Signal to stop further processing
+                        -- Close the file to release resources
+                        outputFile:close()
+                        return nil  -- Return nil to stop the sink
+                    else
+                        -- Update progress
+                        progressData.downloaded = progressData.downloaded + #chunk
+                        linda:send('progress_' .. identifier, {
+                            downloaded = progressData.downloaded,
+                            total = progressData.total,
+                        })
+                        linda:send('debug_' .. identifier, { message = "Progress update for identifier: " .. identifier .. " Downloaded: " .. progressData.downloaded .. " Total: " .. progressData.total })
+                    end
+                else
+                    -- No more data; close the file
+                    outputFile:close()
+                    linda:send('completed_' .. identifier, {
                         downloaded = progressData.downloaded,
                         total = progressData.total,
                     })
-                    linda:send('debug_' .. identifier, { message = "Progress update for identifier: " .. identifier .. " Downloaded: " .. progressData.downloaded .. " Total: " .. progressData.total })
+                    linda:send('debug_' .. identifier, { message = "Download completed for identifier: " .. identifier })
                 end
-            else
-                -- No more data; close the file
-                outputFile:close()
-                linda:send('completed_' .. identifier, {})
-                linda:send('debug_' .. identifier, { message = "Download completed for identifier: " .. identifier })
+                return 1  -- Continue processing
             end
-            return 1  -- Continue processing
-        end
 
-        -- Use the custom sink in the HTTP request
-        local requestSuccess, requestCode, requestHeaders, requestStatus = http_request{
-            url = fileUrl,
-            method = "GET",
-            sink = progressSink,
-            headers = {
-                ["Accept-Encoding"] = "identity",  -- Disable compression
-            },
-            redirect = false,
-        }
+            -- Use the custom sink in the HTTP request
+            local requestSuccess, requestCode, requestHeaders, requestStatus = http_request{
+                url = fileUrl,
+                method = "GET",
+                sink = progressSink,
+                headers = {
+                    ["Accept-Encoding"] = "identity",  -- Disable compression
+                },
+                redirect = false,
+            }
 
-        -- Handle unsuccessful requests
-        if not requestSuccess or not (requestCode == 200 or requestCode == 206) then
-            os.remove(filePath)  -- Remove incomplete file
-            local errorMsg = "HTTP Error: " .. tostring(requestCode)
-            linda:send('error_' .. identifier, { error = errorMsg })
-            linda:send('debug_' .. identifier, { message = "HTTP request error for identifier: " .. identifier .. " Error: " .. errorMsg })
+            -- Handle unsuccessful requests
+            if not requestSuccess or not (requestCode == 200 or requestCode == 206) then
+                os.remove(filePath)  -- Remove incomplete file
+                local errorMsg = "HTTP Error: " .. tostring(requestCode)
+                linda:send('error_' .. identifier, { error = errorMsg })
+                linda:send('debug_' .. identifier, { message = "HTTP request error for identifier: " .. identifier .. " Error: " .. errorMsg })
+            end
+
+        elseif taskType == "fetch" then
+            -- New logic for fetching data directly
+            linda:send('debug_' .. identifier, { message = "Starting fetch for URL: " .. fileUrl .. " Identifier: " .. identifier })
+
+            -- Determine whether to use HTTP or HTTPS
+            local parsed_url = url.parse(fileUrl)
+            local http_request = http.request
+            if parsed_url.scheme == "https" then
+                http_request = https.request
+            end
+
+            -- Perform the request
+            local response_body = {}
+            local res, code, response_headers, status = http_request{
+                url = fileUrl,
+                sink = ltn12.sink.table(response_body),
+                headers = {
+                    ["Accept-Encoding"] = "identity",  -- Disable compression
+                }
+            }
+
+            if code == 200 then
+                local content = table.concat(response_body)
+                linda:send('completed_' .. identifier, { content = content })
+                linda:send('debug_' .. identifier, { message = "Fetch completed for identifier: " .. identifier })
+            else
+                local errorMsg = "HTTP Error: " .. tostring(code)
+                linda:send('error_' .. identifier, { error = errorMsg })
+                linda:send('debug_' .. identifier, { message = "HTTP request error for identifier: " .. identifier .. " Error: " .. errorMsg })
+            end
         end
     end)
 
@@ -359,18 +396,19 @@ if not _G['lanes.download_manager'] then
             -- Wait for a 'request' with a timeout of 10 ms
             local key, val = linda:receive(0, 'request')
             if key == 'request' and val then
+                local taskType = val.taskType
                 local fileUrl = val.url
                 local filePath = val.filePath
                 local identifier = val.identifier
 
-                -- Start a new lane for the download
-                local success, laneOrErr = pcall(download_lane_gen, linda, fileUrl, filePath, identifier)
+                -- Start a new lane for the task
+                local success, laneOrErr = pcall(download_lane_gen, linda, taskType, fileUrl, filePath, identifier)
                 if not success then
-                    linda:send('error_' .. identifier, { error = "Failed to start download lane: " .. tostring(laneOrErr) })
+                    linda:send('error_' .. identifier, { error = "Failed to start lane: " .. tostring(laneOrErr) })
                 end
             else
                 -- No request received, sleep briefly to prevent CPU hogging
-                lanes.sleep(0.0001)
+                lanes.sleep(0)
             end
         end
     end)
@@ -393,17 +431,22 @@ DownloadManager.__index = DownloadManager
 function DownloadManager:new(maxConcurrentDownloads)
     local manager = {
         downloadQueue = {},
+        fetchQueue = {},
         downloadsInProgress = {},
+        fetchesInProgress = {},
         activeDownloads = 0,
+        activeFetches = 0,
         maxConcurrentDownloads = maxConcurrentDownloads or 5,
         isDownloading = false,
+        isFetching = false,
         onCompleteCallback = nil,
         onProgressCallback = nil,
         totalFiles = 0,
         completedFiles = 0,
-        lanesHttp = _G['lanes.download_manager'].linda, -- Reference to the global linda
-        hasCompleted = false,  -- Initialize the hasCompleted flag
-        pendingBatches = {},  -- Queue for pending download batches
+        lanesHttp = _G['lanes.download_manager'].linda,
+        hasCompleted = false,
+        pendingBatches = {},
+        pendingFetchBatches = {},  -- Queue for pending fetch batches
     }
     setmetatable(manager, self)
     return manager
@@ -428,7 +471,7 @@ function DownloadManager:processNextBatch()
     self.onCompleteCallback = batch.onComplete
     self.onProgressCallback = batch.onProgress
 
-    self.hasCompleted = false
+    self.hasCompleted = false  -- Reset for the new batch
     self.totalFiles = 0
     self.completedFiles = 0
     self.downloadQueue = {}
@@ -447,12 +490,17 @@ function DownloadManager:processNextBatch()
         self.isDownloading = true
         self:processQueue()
     else
-        self:completeBatch()
+        -- Do not set self.hasCompleted here
+        self:completeBatch()  -- This will set self.hasCompleted
     end
 end
 
 -- Complete the current batch and start the next one
 function DownloadManager:completeBatch()
+    if self.hasCompleted then
+        return  -- Prevent multiple calls
+    end
+    self.hasCompleted = true  -- Set it here
     self.isDownloading = false
     if self.onCompleteCallback then
         self.onCompleteCallback(self.completedFiles > 0)
@@ -476,6 +524,7 @@ function DownloadManager:downloadFile(file)
 
     -- Send the download request to the lane
     linda:send('request', {
+        taskType = "download",
         url = file.url,
         filePath = file.path,
         identifier = identifier
@@ -485,10 +534,109 @@ function DownloadManager:downloadFile(file)
     self.downloadsInProgress[identifier] = file
 end
 
--- Update Downloads
+-- Queue Fetches
+function DownloadManager:queueFetches(fetchTable, onComplete)
+    table.insert(self.pendingFetchBatches, {fetches = fetchTable, onComplete = onComplete})
+
+    if not self.isFetching then
+        self:processNextFetchBatch()
+    end
+end
+
+-- Process the next batch of fetches
+function DownloadManager:processNextFetchBatch()
+    if #self.pendingFetchBatches == 0 then
+        self.isFetching = false
+        return
+    end
+
+    local batch = table.remove(self.pendingFetchBatches, 1)
+    self.currentFetchOnCompleteCallback = batch.onComplete  -- Store onComplete per batch
+
+    self.isFetching = true
+    self.hasCompletedFetch = false  -- Reset for the new batch
+    self.activeFetches = 0
+    self.fetchQueue = {}
+    self.fetchesInProgress = {}
+
+    for _, fetch in ipairs(batch.fetches) do
+        fetch.identifier = fetch.identifier or tostring(fetch.url)
+        table.insert(self.fetchQueue, fetch)
+    end
+
+    if #self.fetchQueue > 0 then
+        self:processFetchQueue()
+    else
+        -- Do not set self.hasCompletedFetch here
+        self:completeFetchBatch()  -- This will set self.hasCompletedFetch
+    end
+end
+
+-- Process Fetch Queue
+function DownloadManager:processFetchQueue()
+    while self.activeFetches < self.maxConcurrentDownloads and #self.fetchQueue > 0 do
+        local fetch = table.remove(self.fetchQueue, 1)
+        self.activeFetches = self.activeFetches + 1
+        self:fetchData(fetch, function(decodedData)
+            -- Handle the completion of a fetch
+            if fetch.callback then
+                fetch.callback(decodedData)
+            end
+
+            -- Decrement active fetches
+            self.activeFetches = self.activeFetches - 1
+
+            -- Check if more fetches can be processed
+            if #self.fetchQueue > 0 then
+                self:processFetchQueue()
+            else
+                -- Complete the current fetch batch if all fetches are done
+                if self.activeFetches == 0 then
+                    self:completeFetchBatch()
+                end
+            end
+        end)
+    end
+end
+
+-- Complete the current fetch batch and start the next one
+function DownloadManager:completeFetchBatch()
+    if self.hasCompletedFetch then
+        return  -- Prevent multiple calls
+    end
+    self.hasCompletedFetch = true  -- Set it here
+    if self.currentFetchOnCompleteCallback then
+        self.currentFetchOnCompleteCallback()
+    end
+    self:processNextFetchBatch()
+end
+
+-- Fetch Data
+function DownloadManager:fetchData(fetch, onComplete)
+    local identifier = fetch.identifier or tostring(fetch.url)
+    local linda = self.lanesHttp
+
+    -- Send the fetch request to the lane
+    linda:send('request', {
+        taskType = "fetch",
+        url = fetch.url,
+        identifier = identifier
+    })
+
+    -- Add to fetchesInProgress
+    self.fetchesInProgress[identifier] = fetch
+
+    -- Store the onComplete callback
+    fetch.onComplete = onComplete
+end
+
+-- Update Downloads and Fetches
 function DownloadManager:updateDownloads()
     local linda = self.lanesHttp
     local downloadsToRemove = {}
+    local fetchesToRemove = {}
+
+    -- Process downloads
     for identifier, file in pairs(self.downloadsInProgress) do
         local progressKey = 'progress_' .. identifier
         local completedKey = 'completed_' .. identifier
@@ -502,14 +650,12 @@ function DownloadManager:updateDownloads()
                 self.activeDownloads = self.activeDownloads - 1
                 downloadsToRemove[identifier] = true
                 self:processQueue()
-
             elseif key == errorKey then
                 -- Handle error
                 self.completedFiles = self.completedFiles + 1
                 self.activeDownloads = self.activeDownloads - 1
                 downloadsToRemove[identifier] = true
                 self:processQueue()
-
             elseif key == progressKey then
                 -- Update progress
                 local fileProgress = 0
@@ -518,6 +664,7 @@ function DownloadManager:updateDownloads()
                 else
                     fileProgress = 0
                 end
+
                 -- Calculate overall progress
                 local overallProgress = ((self.completedFiles + (val.downloaded / val.total)) / self.totalFiles) * 100
 
@@ -532,7 +679,30 @@ function DownloadManager:updateDownloads()
                 end
             elseif key == debugKey then
                 -- Handle debug messages if needed
-                --print("Debug:", val.message)
+                print("Debug:", val.message)
+            end
+        end
+    end
+
+    -- Process fetches
+    for identifier, fetch in pairs(self.fetchesInProgress) do
+        local completedKey = 'completed_' .. identifier
+        local errorKey = 'error_' .. identifier
+
+        local key, val = linda:receive(0, completedKey, errorKey)
+        if key and val then
+            if key == completedKey then
+                local content = val.content
+                local success, decoded = pcall(decodeJson, content)
+                if success then
+                    fetch.onComplete(decoded)  -- Use fetch.onComplete instead of fetch.callback
+                else
+                    print("Failed to decode JSON:", decoded)
+                end
+                fetchesToRemove[identifier] = true
+            elseif key == errorKey then
+                print("Error fetching data:", val.error)
+                fetchesToRemove[identifier] = true
             end
         end
     end
@@ -542,10 +712,19 @@ function DownloadManager:updateDownloads()
         self.downloadsInProgress[identifier] = nil
     end
 
-    -- Check if all downloads are complete and the callback hasn't been called yet
+    -- Remove completed fetches
+    for identifier in pairs(fetchesToRemove) do
+        self.fetchesInProgress[identifier] = nil
+    end
+
+    -- Check if all downloads are complete
     if self.activeDownloads == 0 and #self.downloadQueue == 0 and not self.hasCompleted then
-        self.hasCompleted = true
         self:completeBatch()
+    end
+
+    -- Check if all fetches are complete
+    if self.activeFetches == 0 and #self.fetchQueue == 0 and not self.isFetching then
+        self.isFetching = false
     end
 end
 
@@ -870,6 +1049,7 @@ local factions = {
 
 -- Menu Variables
 local menu = {
+    initialised = new.bool(false),
 	settings = {
         title = ("%s %s - v%s"):format(fa.ICON_FA_SHIELD_ALT, scriptName:capitalizeFirst(), scriptVersion),
 		window = new.bool(false),
@@ -926,6 +1106,9 @@ local changeKey = {}
 
 -- Skin Editor
 local skinTexture = {}
+
+-- Skins URLs
+local skinsUrls = {}
 
 -- Bike
 local bikeIds = {[481] = true, [509] = true, [510] = true}
@@ -1167,10 +1350,8 @@ function main()
 		registerChatCommands()
 	end
 
-    local autoVest = autobind.AutoVest
-
     -- Set Vest Timer
-    timers.Vest.timer = autoVest.Donor and ddguardTime or guardTime
+    timers.Vest.timer =  autobind.AutoVest.Donor and ddguardTime or guardTime
 
     -- Initial Menu Update
     updateButton1Tooltips()
@@ -1197,58 +1378,60 @@ function main()
 
     -- Main Loop
     while true do wait(0)
+        -- Check if not connected to the server
+        if sampGetGamestate() ~= 3 then
+            -- Reset accepter and bodyguard if not in game
+            if accepter.playerName ~= "" and accepter.playerId ~= -1 then
+                accepter.playerName = ""
+                accepter.playerId = -1
+            end
+            if bodyguard.playerName ~= "" and bodyguard.playerId ~= -1 then
+                bodyguard.playerName = ""
+                bodyguard.playerId = -1
+            end
+        end
+
         -- Start Functions Loop
         functionsLoop(function(started, failed)
             -- Success/Failed Messages
             formattedAddChatMessage(string.format("{%06x}%s has loaded successfully! {%06x}Type /%s.help for more information.", clr.WHITE, scriptVersion, clr.GREY, scriptName))
 
             -- Fetch Skins
-            if autoVest.autoFetchSkins then
-                fetchDataFromURL(autoVest.skinsUrl, getFile("skins"), function(decodedData)
-                    autoVest.skins = decodedData
+            if autobind.AutoVest.autoFetchSkins then
+                fetchDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
+                    autobind.AutoVest.skins = decodedData
+
+                    family.skins = listToSet(autobind.AutoVest.skins)
+
+                    print("Skins Fetched")
                 end)
-            end
-        
-            -- Fetch Names
-            if autoVest.autoFetchNames then
-                fetchDataFromURL(autoVest.namesUrl, getFile("names"), function(decodedData)
-                    autoVest.names = decodedData
-                end)
+            else
+                family.skins = listToSet(autobind.AutoVest.skins)
             end
 
-            -- Convert Skins/Names to Sparse Table
-            family.skins = listToSet(autoVest.skins)
-            names = listToSet(autoVest.names)
+            -- Fetch Names
+            if autobind.AutoVest.autoFetchNames then
+                fetchDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
+                    autobind.AutoVest.names = decodedData
+
+                    names = listToSet(autobind.AutoVest.names)
+
+                    print("Names Fetched")
+                end)
+            else
+                names = listToSet(autobind.AutoVest.names)
+            end
+
+            -- Generate Skins URLs
+            skinsUrls = generateSkinsUrls()
 
             -- Download Skins
-            downloadSkins()
+            downloadSkins(skinsUrls)
+
+            -- Set Initialised to true
+            menu.initialised[0] = true
         end)
     end
-end
-
--- List to Set
-function listToSet(list)
-    local set = {}
-    for _, value in pairs(list) do
-        set[value] = true
-    end
-    return set
-end
-
--- Set to List
-function setToList(set)
-    local list = {}
-    for key, value in pairs(set) do
-        if value then
-            table.insert(list, key)
-        end
-    end
-    return list
-end
-
--- Function to remove color codes from text
-function removeHexBrackets(text)
-    return string.gsub(text, "{%x+}", "")
 end
 
 -- Auto Vest
@@ -1461,14 +1644,15 @@ function canObtainItem(item, items)
     return true
 end
 
+-- Reset Black Market
+function resetBlackMarket()
+    blackMarket.getItemFromBM = 0
+    blackMarket.gettingItem = false
+    blackMarket.currentKey = nil
+end
+
 -- Handle Black Market
 function handleBlackMarket(kitNumber)
-    local function resetBlackMarket()
-        blackMarket.getItemFromBM = 0
-        blackMarket.gettingItem = false
-        blackMarket.currentKey = nil
-    end
-
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
         resetBlackMarket()
@@ -1486,6 +1670,12 @@ function handleBlackMarket(kitNumber)
         resetBlackMarket()
         return
     end
+
+    -- Check if the user can heal
+	if checkHeal() then
+		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
+		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
+	end
 
     blackMarket.getItemFromBM = kitNumber
     blackMarket.obtainedItems = {} -- Reset obtained items
@@ -1523,13 +1713,15 @@ function handleBlackMarket(kitNumber)
     end)
 end
 
+-- Reset Faction Locker
+function resetFactionLocker()
+    factionLocker.getItemFromLocker = 0
+    factionLocker.gettingItem = false
+    factionLocker.currentKey = nil
+end
+
 -- Handle Faction Locker
 function handleFactionLocker(kitNumber)
-    local function resetFactionLocker()
-        factionLocker.getItemFromLocker = 0
-        factionLocker.gettingItem = false
-        factionLocker.currentKey = nil
-    end
 
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
@@ -1548,6 +1740,12 @@ function handleFactionLocker(kitNumber)
         resetFactionLocker()
         return
     end
+
+    -- Check if the user can heal
+	if checkHeal() then
+		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
+		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
+	end
 
     factionLocker.getItemFromLocker = kitNumber
     factionLocker.obtainedItems = {} -- Reset obtained items
@@ -1885,7 +2083,7 @@ local functionsToRun = {
     {
         name = "DownloadManager",
         func = function()
-            if downloadManager and downloadManager.isDownloading then
+            if downloadManager --[[and (downloadManager.isDownloading or #downloadManager.fetchQueue > 0)]] then
                 downloadManager:updateDownloads()
             end
         end,
@@ -2244,6 +2442,11 @@ function registerChatCommands()
 			return
 		end
 
+        if playerid == autofind.playerId then
+            formattedAddChatMessage("You are already finding this player.")
+            return
+        end
+
 		autofind.playerId = playerid
 		autofind.playerName = name
 		if autofind.enable then
@@ -2350,6 +2553,10 @@ end
 -- OnScriptTerminate
 function onScriptTerminate(scr, quitGame)
 	if scr == script.this then
+        if autobind.Settings.autoSave then
+            saveConfigWithErrorHandling(getFile("settings"), autobind)
+        end
+
 		-- Unregister chat commands
 		for _, command in pairs(cmds) do
 			sampUnregisterChatCommand(command)
@@ -2709,6 +2916,7 @@ local messageHandlers = {
                 end
 
                 accepter.received = true
+                accepterThread = nil
             end)
 
             if accepter.playerName ~= "" and accepter.playerId ~= -1 then
@@ -2728,6 +2936,7 @@ local messageHandlers = {
             if accepterThread and accepter.enable then
                 print("Terminating accepter thread")
                 accepterThread:terminate()
+                accepterThread = nil
             end
 
             sampAddChatMessage(string.format("{%06x}* You accepted the protection for $%d from %s (%d).", clr.LIGHTBLUE, price, nickname, accepter.playerId), -1)
@@ -2768,6 +2977,8 @@ local messageHandlers = {
         action = function()
             formattedAddChatMessage("You can't use your lockers if you were recently shot. Timer extended by 5 seconds.")
             resetTimer(5, timers.Heal)
+
+            resetFactionLocker()
             return false
         end
     },
@@ -3440,7 +3651,7 @@ function onD3DPresent()
 	end
 
     -- Draw Download Progress
-    --[[f downloadProgress.currentFile ~= "" then
+    if downloadProgress.currentFile ~= "" then
         local x, y = 700, 500 -- Position on the screen
         local text = string.format(
             "Downloading: %s\nFile Progress: %.2f%%\nOverall Progress: %.2f%%\nDownloaded: %d of %d bytes (%d of %d files)",
@@ -3466,7 +3677,7 @@ function onD3DPresent()
                 downloadProgress.totalFiles = 0
             end)
         end
-    end]]
+    end
 
     -- Check if the pause/scoreboard/chat is active or if the F10 key is pressed or if the autobind is disabled
     if isPauseMenuActive() or sampIsScoreboardOpen() or sampGetChatDisplayMode() == 0 or isKeyDown(VK_F10) or not autobind.Settings.enable then
@@ -3486,7 +3697,7 @@ imgui.OnInitialize(function()
     imgui.GetIO().IniFilename = nil
 
     -- Load FontAwesome5 Icons
-    loadFontIcons(true, 14.0, fa.min_range, fa.max_range, 'moonloader/resource/fonts/fa-solid-900.ttf')
+    loadFontIcons(true, 14.0, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", getPath("resource")))
 
 	-- Load the font with the desired size
 	local fontFile = getFolderPath(0x14) .. '\\trebucbd.ttf'
@@ -3494,7 +3705,7 @@ imgui.OnInitialize(function()
 	fontData.font = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSize)
 
 	-- Load FontAwesome5 Icons (Again for the font above)
-	loadFontIcons(true, fontData.fontSize, fa.min_range, fa.max_range, 'moonloader/resource/fonts/fa-solid-900.ttf')
+	loadFontIcons(true, fontData.fontSize, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", getPath("resource")))
 
 	-- Load Skins
 	for i = 0, 311 do
@@ -3735,7 +3946,7 @@ function onWindowMessage(msg, wparam, lparam)
 end
 
 -- Settings Window
-imgui.OnFrame(function() return true end,
+imgui.OnFrame(function() return menu.initialised[0] end,
 function(self)
     -- Returns if Samp is not loaded
     if not isSampLoaded() or not isSampAvailable() then return end
@@ -3967,9 +4178,11 @@ function(self)
             -- Create a string of selected skin IDs
             local selectedSkinsText = table.concat(storedSkins, ",")
 
+            imgui.PushFont(fontData.font)
+
             -- Display read-only input field with selected skins
             imgui.PushItemWidth(500)
-            local buffer = new.char[512](selectedSkinsText)
+            local buffer = new.char[256](selectedSkinsText)
             imgui.InputText("##selected_skins", buffer, sizeof(buffer), imgui.InputTextFlags.ReadOnly)
             imgui.PopItemWidth()
             imgui.CustomTooltip("Select skins to use for your family")
@@ -3979,6 +4192,8 @@ function(self)
                 setClipboardText(selectedSkinsText)
             end
             imgui.CustomTooltip("Copy selected skin IDs to clipboard")
+
+            imgui.PopFont()
 
             -- Begin a child window for scrolling
             if imgui.BeginChild("SkinList", imgui.ImVec2(535, 355), false) then
@@ -4185,7 +4400,7 @@ function(self)
         end
         imgui.End()
     end
-end)
+end).HideCursor = true
 
 -- Function to calculate total price for a given kit
 function calculateTotalPrice(kit, items)
@@ -4319,7 +4534,7 @@ function renderSkins()
             imgui.SameLine()
             imgui.PopItemWidth()
             if imgui.Button("Fetch") then
-                fetchDataFromURL(autobind.AutoVest.skinsUrl, getFile("skins"), function(decodedData)
+                fetchDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
                     autobind.AutoVest.skins = decodedData
 
                     -- Convert list to set
@@ -4370,7 +4585,7 @@ function renderNames()
         imgui.SameLine()
         imgui.PopItemWidth()
         if imgui.Button("Fetch") then
-            fetchDataFromURL(autobind.AutoVest.namesUrl, getFile("names"), function(decodedData)
+            fetchDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
                 autobind.AutoVest.names = decodedData
 
                 -- Convert list to set
@@ -4801,41 +5016,17 @@ function getKeybindKeys(bind)
     return table.concat(keys, " + ")
 end
 
--- Function to Fetch Data From URL
-function fetchDataFromURL(url, path, callback)
-    local function onComplete(downloadsFinished)
-        if downloadsFinished then
-            local file = io.open(path, "r")
-            if file then
-                local content = file:read("*all")
-                file:close()
-
-                local success, decoded = pcall(decodeJson, content)
-                if success then
-                    if decoded and next(decoded) ~= nil then
-                        callback(decoded)
-                    else
-                        print("JSON format is empty or invalid URL:", url)
-                    end
-                else
-                    print("Failed to decode JSON:", decoded, "URL:", url)
-                end
-            else
-                print("Error opening file:", path)
-            end
+-- Function to Fetch Data Directly From URL
+function fetchDataDirectlyFromURL(url, callback)
+    local function onComplete(decodedData)
+        if decodedData and next(decodedData) ~= nil then
+            callback(decodedData)
+        else
+            print("JSON format is empty or invalid URL:", url)
         end
     end
 
-    local function onProgress(progressData, file)
-        -- Individual file progress
-        print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
-
-        -- Overall progress
-        print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
-    end
-
-    print("Downloading from URL:", url)
-    downloadManager:queueDownloads({{url = url, path = path, replace = true}}, onComplete, onProgress)
+    downloadManager:queueFetches({{url = url, callback = onComplete}})
 end
 
 -- Function to Generate Skins URLs
@@ -4857,7 +5048,7 @@ function generateSkinsUrls()
 end
 
 -- Function to Initiate the Skin Download Process
-function downloadSkins()
+function downloadSkins(urls)
     local function onComplete(downloadsFinished)
         if downloadsFinished then
             print("All files downloaded successfully.")
@@ -4869,39 +5060,69 @@ function downloadSkins()
 
     local function onProgress(progressData, file)
         -- Individual file progress
-        print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
+        if progressData.fileProgress ~= nil then
+            print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
+        end
 
         -- Overall progress
-        print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
+        if progressData.overallProgress ~= nil then
+            print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
+        end
     end
 
-    downloadManager:queueDownloads(generateSkinsUrls(), onComplete, onProgress)
+    downloadManager:queueDownloads(urls, onComplete, onProgress)
 end
 
 -- Get visible players
 function getVisiblePlayers(maxDist, type)
     local visiblePlayers = {}
+    local myX, myY, myZ = getCharCoordinates(ped)
+
     for _, peds in pairs(getAllChars()) do
-        local myX, myY, myZ = getCharCoordinates(ped)
+        -- Skip the local player
+        if peds == ped then
+            goto continue
+        end
+
+        -- Get player coordinates and distance
         local playerX, playerY, playerZ = getCharCoordinates(peds)
         local distance = getDistanceBetweenCoords3d(playerX, playerY, playerZ, myX, myY, myZ)
-        if peds ~= ped and distance < maxDist then
-            local result, playerId = sampGetPlayerIdByCharHandle(peds)
-            if result and not sampIsPlayerPaused(playerId) then
-				if sampGetPlayerNickname(playerId):find("_") then
-					if (type == "armor" and sampGetPlayerArmor(playerId) < 49) or (type == "car" and not isCharInAnyCar(ped) and isCharInAnyCar(peds)) or (type == "all") then
-                        local playerInfo = {
-                            playerId = playerId, 
-                            distance = distance,
-                            skinId = getCharModel(peds)
-                        }
 
-						table.insert(visiblePlayers, playerInfo)
-					end
-				end
-            end
+        -- Check if the player is too far away
+        if distance >= maxDist then
+            goto continue
         end
+
+        -- Convert handle to playerid and check if the player is paused
+        local result, playerId = sampGetPlayerIdByCharHandle(peds)
+        if not result or sampIsPlayerPaused(playerId) then
+            goto continue
+        end
+
+        -- Find _ to prevent admins from being detected
+        if not sampGetPlayerNickname(playerId):find("_") then
+            goto continue
+        end
+        
+        -- Type checks
+        if (type == "armor" and sampGetPlayerArmor(playerId) >= 49) or -- armor check
+           (type == "car" and (isCharInAnyCar(ped) or not isCharInAnyCar(peds))) or -- car check
+           (type ~= "all" and type ~= "armor" and type ~= "car") then -- all check
+            goto continue
+        end
+
+        -- Insert player info
+        local playerInfo = {
+            playerId = playerId,
+            distance = distance,
+            skinId = getCharModel(peds)
+        }
+        table.insert(visiblePlayers, playerInfo)
+
+        ::continue::
     end
+
+    -- Sort players by distance and return
     table.sort(visiblePlayers, function(a, b) return a.distance < b.distance end)
     return visiblePlayers
 end
@@ -5255,6 +5476,31 @@ function formatTime(seconds)
     timeString = timeString .. string.format("%.1f second%s", seconds, seconds ~= 1 and "s" or "")
 
     return timeString
+end
+
+-- List to Set
+function listToSet(list)
+    local set = {}
+    for _, value in pairs(list) do
+        set[value] = true
+    end
+    return set
+end
+
+-- Set to List
+function setToList(set)
+    local list = {}
+    for key, value in pairs(set) do
+        if value then
+            table.insert(list, key)
+        end
+    end
+    return list
+end
+
+-- Function to remove color codes from text
+function removeHexBrackets(text)
+    return string.gsub(text, "{%x+}", "")
 end
 
 -- Formatted Add Chat Message
