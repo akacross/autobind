@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.20a")
+script_version("1.8.21a")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -92,6 +92,12 @@ for _, dep in ipairs(dependencies) do
     end
 end
 
+-- Extra Modules (Used with Download Manager using lanes)
+local extraModules = {"ltn12", "socket.http", "ssl.https", "lfs", "socket.url"}
+for _, module in ipairs(extraModules) do
+    table.insert(statusMessages.success, module)
+end
+
 -- Print status messages
 print("Loaded modules: " .. table.concat(statusMessages.success, ", "))
 if #statusMessages.failed > 0 then
@@ -105,107 +111,39 @@ script_dependencies(table.unpack(statusMessages.success))
 encoding.default = 'CP1251'
 local u8 = encoding.UTF8
 
--- Get path
-local function getPath(type)
-    local config = getWorkingDirectory() .. '\\config\\'
-    local resource = getWorkingDirectory() .. '\\resource\\'
-    local settings = config .. scriptName .. '\\'
+-- Working Directory
+local workingDir = getWorkingDirectory()
 
-    local paths = {
-        config = config,
-        settings = settings,
-        resource = resource,
-        skins = resource .. 'skins\\'
-    }
-    return type and (paths[type] or error("Invalid path type")) or paths
+-- Paths Table
+local Paths = {
+    config = workingDir .. '\\config\\',
+    resource = workingDir .. '\\resource\\',
+}
+
+-- Adding dependent paths after initial definitions
+Paths.settings = Paths.config .. scriptName .. '\\'
+Paths.skins = Paths.resource .. 'skins\\'
+
+-- Files Table
+local Files = {
+    settings = Paths.settings .. 'autobind.json'
+}
+
+-- Helper Function to Construct Base URL
+local function getBaseUrl(beta)
+    local branch = beta and "beta/" or ""
+    return "https://raw.githubusercontent.com/akacross/" .. scriptName .. "/main/" .. branch
 end
 
--- Get file paths
-local function getFile(type)
-    local files = {
-        settings = getPath('settings') .. 'autobind.json',
-        update = getPath('settings') .. 'update.txt',
-        skins = getPath('settings') .. 'skins.json',
-		names = getPath('settings') .. 'names.json'
-    }
-    return files[type] or error("Invalid file type")
-end
-
--- Fetch URLs
-local function fetchUrls(type, isBeta)
-    local baseUrl = "https://raw.githubusercontent.com/akacross/" .. scriptName .. "/main/"
-    local subPath = isBeta and "beta/" or ""
-    local paths = {
-        script = baseUrl .. subPath .. scriptName .. ".lua",
-        update = baseUrl .. subPath .. scriptName .. ".txt",
-        skins = baseUrl .. "resource/" .. "skins/"
-    }
-    return paths[type] or error("Invalid URL type")
-end
-
-local clr = {
-    GRAD1 = 0xB4B5B7, -- #B4B5B7
-    GRAD2 = 0xBFC0C2, -- #BFC0C2
-    GRAD3 = 0xCBCCCE, -- #CBCCCE
-    GRAD4 = 0xD8D8D8, -- #D8D8D8
-    GRAD5 = 0xE3E3E3, -- #E3E3E3
-    GRAD6 = 0xF0F0F0, -- #F0F0F0
-    GREY = 0xAFAFAF, -- #AFAFAF
-    RED = 0xAA3333, -- #AA3333
-    ORANGE = 0xFF8000, -- #FF8000
-    YELLOW = 0xFFFF00, -- #FFFF00
-    FORSTATS = 0xFFFF91, -- #FFFF91
-    HOUSEGREEN = 0x00E605, -- #00E605
-    GREEN = 0x33AA33, -- #33AA33
-    LIGHTGREEN = 0x9ACD32, -- #9ACD32
-    CYAN = 0x40FFFF, -- #40FFFF
-    PURPLE = 0xC2A2DA, -- #C2A2DA
-    BLACK = 0x000000, -- #000000
-    WHITE = 0xFFFFFF, -- #FFFFFF
-    FADE1 = 0xE6E6E6, -- #E6E6E6
-    FADE2 = 0xC8C8C8, -- #C8C8C8
-    FADE3 = 0xAAAAAA, -- #AAAAAA
-    FADE4 = 0x8C8C8C, -- #8C8C8C
-    FADE5 = 0x6E6E6E, -- #6E6E6E
-    LIGHTRED = 0xFF6347, -- #FF6347
-    NEWS = 0xFFA500, -- #FFA500
-    TEAM_NEWS_COLOR = 0x049C71, -- #049C71
-    TWPINK = 0xE75480, -- #E75480
-    TWRED = 0xFF0000, -- #FF0000
-    TWBROWN = 0x654321, -- #654321
-    TWGRAY = 0x808080, -- #808080
-    TWOLIVE = 0x808000, -- #808000
-    TWPURPLE = 0x800080, -- #800080
-    TWTAN = 0xD2B48C, -- #D2B48C
-    TWAQUA = 0x00FFFF, -- #00FFFF
-    TWORANGE = 0xFF8C00, -- #FF8C00
-    TWAZURE = 0x007FFF, -- #007FFF
-    TWGREEN = 0x008000, -- #008000
-    TWBLUE = 0x0000FF, -- #0000FF
-    LIGHTBLUE = 0x33CCFF, -- #33CCFF
-    FIND_COLOR = 0xB90000, -- #B90000
-    TEAM_AZTECAS_COLOR = 0x01FCFF, -- #01FCFF
-    TEAM_TAXI_COLOR = 0xF2FF00, -- #F2FF00
-    DEPTRADIO = 0xFFD700, -- #FFD700
-    RADIO = 0x8D8DFF, -- #8D8DFF
-    TEAM_BLUE_COLOR = 0x2641FE, -- #2641FE
-    TEAM_FBI_COLOR = 0x8D8DFF, -- #8D8DFF
-    TEAM_MED_COLOR = 0xFF8282, -- #FF8282
-    TEAM_APRISON_COLOR = 0x9C7912, -- #9C7912
-    NEWBIE = 0x7DAEFF, -- #7DAEFF
-    PINK = 0xFF66FF, -- #FF66FF
-    OOC = 0xE0FFFF, -- #E0FFFF
-    PUBLICRADIO_COLOR = 0x6DFB6D, -- #6DFB6D
-    TEAM_GROVE_COLOR = 0x00D900, -- #00D900
-    REALRED = 0xFF0606, -- #FF0606
-    REALGREEN = 0x00FF00, -- #00FF00
-    WANTED_COLOR = 0xFF0000, -- #FF0000
-    MONEY = 0x2F5A26, -- #2F5A26
-    MONEY_NEGATIVE = 0x9C1619, -- #9C1619
-	GOV = 0xE8E79B, -- #E8E79B
-    BETA = 0x5D8AA8, -- #5D8AA8
-    DEV = 0xC27C0E, -- #C27C0E
-    ARES = 0x1C77B3 -- #1C77B3
+-- URLs Table
+local Urls = {
+    script = function(beta)
+        return getBaseUrl(beta) .. scriptName .. ".lua"
+    end,
+    update = function(beta)
+        return getBaseUrl(beta) .. scriptName .. ".txt"
+    end,
+    skins = getBaseUrl(false) .. "resource/skins/"
 }
 
 -- Ensure Global `lanes.download_manager` Exists with `lane` and `linda`
@@ -408,7 +346,7 @@ if not _G['lanes.download_manager'] then
                 end
             else
                 -- No request received, sleep briefly to prevent CPU hogging
-                lanes.sleep(0)
+                lanes.sleep(0.001)
             end
         end
     end)
@@ -418,7 +356,6 @@ if not _G['lanes.download_manager'] then
     if success then
         -- Assign the lane and linda to the global table
         _G['lanes.download_manager'] = { lane = laneOrErr, linda = linda }
-        print("Main lane started successfully")
     else
         print("Failed to start main lane:", laneOrErr)  -- Print the error message
     end
@@ -677,9 +614,9 @@ function DownloadManager:updateDownloads()
                         overallProgress = overallProgress,
                     }, file)
                 end
-            elseif key == debugKey then
+            --[[elseif key == debugKey then
                 -- Handle debug messages if needed
-                print("Debug:", val.message)
+                print("Debug:", val.message)]]
             end
         end
     end
@@ -742,6 +679,213 @@ local downloadProgress = {
     completedFiles = 0
 }
 
+-- Helper function for rounding to the nearest integer
+local function round(value)
+    return math.floor(value + 0.5)
+end
+
+-- Convert Color with optional HSVA output
+function convertColor(color, normalize, includeAlpha, outputHSVA)
+    if type(color) ~= "number" then
+        error("Invalid color value. Expected a number.")
+    end
+
+    local a = includeAlpha and bit.band(bit.rshift(color, 24), 0xFF) or 255
+    local r = bit.band(bit.rshift(color, 16), 0xFF)
+    local g = bit.band(bit.rshift(color, 8), 0xFF)
+    local b = bit.band(color, 0xFF)
+
+    if normalize then
+        a, r, g, b = a / 255, r / 255, g / 255, b / 255
+    end
+
+    if outputHSVA then
+        local h, s, v = RGBtoHSV(r, g, b)
+        if includeAlpha then
+            return {h = h, s = s, v = v, a = a}
+        else
+            return {h = h, s = s, v = v}
+        end
+    end
+
+    if includeAlpha then
+        return {r = r, g = g, b = b, a = a}
+    else
+        return {r = r, g = g, b = b}
+    end
+end
+
+-- Join ARGB with proper rounding
+function joinARGB(a, r, g, b, normalized)
+    if normalized then
+        a, r, g, b = round(a * 255), round(r * 255), round(g * 255), round(b * 255)
+    end
+
+    local function clamp(value)
+        return math.max(0, math.min(255, value))
+    end
+
+    a, r, g, b = clamp(a), clamp(r), clamp(g), clamp(b)
+
+    local color = bit.bor(
+        bit.lshift(a, 24), 
+        bit.lshift(r, 16), 
+        bit.lshift(g, 8), 
+        b
+    )
+
+    return color
+end
+
+-- Convert normalized RGB to HSV
+function RGBtoHSV(r, g, b)
+    local max = math.max(r, g, b)
+    local min = math.min(r, g, b)
+    local delta = max - min
+
+    local h, s, v = 0, 0, max
+
+    if delta > 0 then
+        if max == r then
+            h = (g - b) / delta % 6
+        elseif max == g then
+            h = (b - r) / delta + 2
+        else -- max == b
+            h = (r - g) / delta + 4
+        end
+        h = h * 60
+        if h < 0 then h = h + 360 end
+
+        s = delta / max
+    else
+        h = 0
+        s = 0
+    end
+
+    -- Handle edge cases for white and black
+    if max == 0 then
+        s = 0
+    end
+
+    return h, s, v
+end
+
+-- Convert HSV to normalized RGB
+function HSVtoRGB(h, s, v)
+    local c = v * s
+    local x = c * (1 - math.abs((h / 60) % 2 - 1))
+    local m = v - c
+
+    local r1, g1, b1 = 0, 0, 0
+
+    if h >= 0 and h < 60 then
+        r1, g1, b1 = c, x, 0
+    elseif h >= 60 and h < 120 then
+        r1, g1, b1 = x, c, 0
+    elseif h >= 120 and h < 180 then
+        r1, g1, b1 = 0, c, x
+    elseif h >= 180 and h < 240 then
+        r1, g1, b1 = 0, x, c
+    elseif h >= 240 and h < 300 then
+        r1, g1, b1 = x, 0, c
+    else -- h >= 300 and h < 360
+        r1, g1, b1 = c, 0, x
+    end
+
+    local r = r1 + m
+    local g = g1 + m
+    local b = b1 + m
+
+    return r, g, b
+end
+
+local clr = {
+    GRAD1 = 0xB4B5B7, -- #B4B5B7
+    GRAD2 = 0xBFC0C2, -- #BFC0C2
+    GRAD3 = 0xCBCCCE, -- #CBCCCE
+    GRAD4 = 0xD8D8D8, -- #D8D8D8
+    GRAD5 = 0xE3E3E3, -- #E3E3E3
+    GRAD6 = 0xF0F0F0, -- #F0F0F0
+    GREY = 0xAFAFAF, -- #AFAFAF
+    RED = 0xAA3333, -- #AA3333
+    ORANGE = 0xFF8000, -- #FF8000
+    YELLOW = 0xFFFF00, -- #FFFF00
+    FORSTATS = 0xFFFF91, -- #FFFF91
+    HOUSEGREEN = 0x00E605, -- #00E605
+    GREEN = 0x33AA33, -- #33AA33
+    LIGHTGREEN = 0x9ACD32, -- #9ACD32
+    CYAN = 0x40FFFF, -- #40FFFF
+    PURPLE = 0xC2A2DA, -- #C2A2DA
+    BLACK = 0x000000, -- #000000
+    WHITE = 0xFFFFFF, -- #FFFFFF
+    FADE1 = 0xE6E6E6, -- #E6E6E6
+    FADE2 = 0xC8C8C8, -- #C8C8C8
+    FADE3 = 0xAAAAAA, -- #AAAAAA
+    FADE4 = 0x8C8C8C, -- #8C8C8C
+    FADE5 = 0x6E6E6E, -- #6E6E6E
+    LIGHTRED = 0xFF6347, -- #FF6347
+    NEWS = 0xFFA500, -- #FFA500
+    TEAM_NEWS_COLOR = 0x049C71, -- #049C71
+    TWPINK = 0xE75480, -- #E75480
+    TWRED = 0xFF0000, -- #FF0000
+    TWBROWN = 0x654321, -- #654321
+    TWGRAY = 0x808080, -- #808080
+    TWOLIVE = 0x808000, -- #808000
+    TWPURPLE = 0x800080, -- #800080
+    TWTAN = 0xD2B48C, -- #D2B48C
+    TWAQUA = 0x00FFFF, -- #00FFFF
+    TWORANGE = 0xFF8C00, -- #FF8C00
+    TWAZURE = 0x007FFF, -- #007FFF
+    TWGREEN = 0x008000, -- #008000
+    TWBLUE = 0x0000FF, -- #0000FF
+    LIGHTBLUE = 0x33CCFF, -- #33CCFF
+    FIND_COLOR = 0xB90000, -- #B90000
+    TEAM_AZTECAS_COLOR = 0x01FCFF, -- #01FCFF
+    TEAM_TAXI_COLOR = 0xF2FF00, -- #F2FF00
+    DEPTRADIO = 0xFFD700, -- #FFD700
+    RADIO = 0x8D8DFF, -- #8D8DFF
+    TEAM_BLUE_COLOR = 0x2641FE, -- #2641FE
+    TEAM_FBI_COLOR = 0x8D8DFF, -- #8D8DFF
+    TEAM_MED_COLOR = 0xFF8282, -- #FF8282
+    TEAM_APRISON_COLOR = 0x9C7912, -- #9C7912
+    NEWBIE = 0x7DAEFF, -- #7DAEFF
+    PINK = 0xFF66FF, -- #FF66FF
+    OOC = 0xE0FFFF, -- #E0FFFF
+    PUBLICRADIO_COLOR = 0x6DFB6D, -- #6DFB6D
+    TEAM_GROVE_COLOR = 0x00D900, -- #00D900
+    REALRED = 0xFF0606, -- #FF0606
+    REALGREEN = 0x00FF00, -- #00FF00
+    WANTED_COLOR = 0xFF0000, -- #FF0000
+    MONEY = 0x2F5A26, -- #2F5A26
+    MONEY_NEGATIVE = 0x9C1619, -- #9C1619
+	GOV = 0xE8E79B, -- #E8E79B
+    BETA = 0x5D8AA8, -- #5D8AA8
+    DEV = 0xC27C0E, -- #C27C0E
+    ARES = 0x1C77B3 -- #1C77B3
+}
+
+local clrRGBA = {}
+for name, color in pairs(clr) do
+    -- Extract color components using ABGR format
+    local clrs = convertColor(color, false, true, false)
+
+    -- Adjust alpha value based on color
+    if name == "WHITE" or 
+       name == "GREY" or 
+       name == "PURPLE" or 
+       name == "YELLOW" or 
+       name == "LIGHTBLUE" or 
+       name == "TEAM_MED_COLOR" then
+        clrs.a = 170
+    else
+        if name ~= "TEAM_BLUE_COLOR" then
+            clrs.a = 255
+        end
+    end
+
+    clrRGBA[name] = joinARGB(clrs.r, clrs.g, clrs.b, clrs.a, false)
+end
+
 -- Capitalize First Letter
 function string:capitalizeFirst()
     return (self:gsub("^%l", string.upper))
@@ -771,8 +915,8 @@ local autobind = {
     AutoFind = {},
     LastBackup = {},
 	WindowPos = {Settings = {}, Skins = {}, Keybinds = {}, Fonts = {}, BlackMarket = {}, FactionLocker = {}},
-	BlackMarket = {Kit1 = {}, Kit2 = {}, Kit3 = {}, Locations = {}},
-	FactionLocker = {Kit1 = {}, Kit2 = {}, Kit3 = {}, Locations = {}},
+	BlackMarket = {Kit1 = {}, Kit2 = {}, Kit3 = {}, Kit4 = {}, Kit5 = {}, Kit6 = {}, Locations = {}},
+	FactionLocker = {Kit1 = {}, Kit2 = {}, Kit3 = {}, Kit4 = {}, Kit5 = {}, Kit6 = {}, Locations = {}},
 	Keybinds = {}
 }
 
@@ -780,6 +924,7 @@ local autobind = {
 local autobind_defaultSettings = {
 	Settings = {
 		enable = true,
+        fetchBeta = false,
 		autoSave = true,
         autoRepair = true,
         currentBlackMarketKits = 3,
@@ -812,9 +957,9 @@ local autobind_defaultSettings = {
 		autoFetchNames = false,
 		donor = false,
 		skins = {123},
-		names = {"Cross_Lynch"},
-		skinsUrl = "https://raw.githubusercontent.com/akacross/autobind/main/skins.json",
-		namesUrl = "https://raw.githubusercontent.com/akacross/autobind/main/names.json",
+		names = {"Cross_Lynch", "Allen_Lynch"},
+		skinsUrl = getBaseUrl(false) .. "skins.json",
+		namesUrl = getBaseUrl(false) .. "names.json",
         offeredTo = {
             enable = true,
             Pos = {x = resX / 6.0, y = resY / 2 + 25},
@@ -1019,7 +1164,7 @@ local names = {}
 
 -- Family
 local family = {
-    turfColor = 0x8C0000FF,
+    turfColor = 0x8C0000FF, -- Active Turf Color (Flashing)
     skins = {}
 }
 
@@ -1233,7 +1378,7 @@ function loadConfigs()
     end
 
 	-- Handle Config File
-    local success, config, err = handleConfigFile(getFile("settings"), autobind_defaultSettings, autobind, ignoreKeys)
+    local success, config, err = handleConfigFile(Files.settings, autobind_defaultSettings, autobind, ignoreKeys)
 	if not success then
 		print("Failed to handle config file: " .. err)
 		return
@@ -1247,9 +1392,8 @@ function main()
 	if not isSampLoaded() or not isSampfuncsLoaded() then return end
 
 	-- Create Directories
-	local paths = getPath(nil)
-    for _, dir in pairs({"config", "settings", "resource", "skins"}) do
-        createDirectory(paths[dir])
+    for _, path in pairs({Paths.config, Paths.resource, Paths.settings, Paths.skins}) do
+        createDirectory(path)
     end
 
 	-- Load Configs
@@ -1402,8 +1546,6 @@ function main()
                     autobind.AutoVest.skins = decodedData
 
                     family.skins = listToSet(autobind.AutoVest.skins)
-
-                    print("Skins Fetched")
                 end)
             else
                 family.skins = listToSet(autobind.AutoVest.skins)
@@ -1415,8 +1557,6 @@ function main()
                     autobind.AutoVest.names = decodedData
 
                     names = listToSet(autobind.AutoVest.names)
-
-                    print("Names Fetched")
                 end)
             else
                 names = listToSet(autobind.AutoVest.names)
@@ -1455,7 +1595,6 @@ local function vestModeConditions(playerId, skinId)
 
     -- Check if the player's name is in the priority names list
     if names[sampGetPlayerNickname(playerId)] then
-        print("Priority name found")
         return true
     end
 
@@ -1504,7 +1643,6 @@ function checkAndSendVest(skipArmorCheck)
     -- Reset bodyguard.received if timeout has elapsed
     if bodyguard.received then
         if currentTime - timers.Vest.sentTime > timers.Vest.timeOut then
-            print("Vesting timed out. Resetting bodyguard. received.")
             bodyguard.received = false
         else
             return "Vest has been sent, please wait."
@@ -1855,17 +1993,25 @@ local keyFunctions = {
         sampSendChat("/accept death")
     end,
     RequestBackup = function()
+        if checkAdminDuty() or checkMuted() then
+            return
+        end
+
         if backup.enable then
-            local backupSecondary = autobind.Settings.mode == "Faction" and "d" or "pr"
             sampSendChat("/nobackup")
             return
         end
 
-        local backupPrimary = autobind.Settings.mode == "Family" and "fbackup" or "backup"
+        local backupPrimary = autobind.Settings.mode == "Faction" and "backup" or "fbackup"
         sampSendChat(string.format("/%s", backupPrimary))
 
-        --[[local zoneName = getZoneName(getCharCoordinates(ped))
-        sampSendChat(string.format("/%s I need urgent backup! Currently at %s", backupSecondary, zoneName))]]
+        local x, y, z = getCharCoordinates(ped)
+        local zoneName = getZoneName(x, y, z)
+        local subZoneName = getSubZoneName(x, y, z)
+
+        local backupSecondary = autobind.Settings.mode == "Faction" and "d" or "pr"
+        local checkForSubZone = subZoneName == nil and zoneName or string.format("%s in %s", subZoneName, zoneName)
+        sampSendChat(string.format("/%s I need urgent backup! Currently at %s.", backupSecondary, checkForSubZone))
     end
 }
 
@@ -1874,7 +2020,6 @@ function InitializeBlackMarketKeyFunctions()
     for i = 1, autobind.Settings.currentBlackMarketKits do
         if keyFunctions["BlackMarket" .. i] == nil then
             keyFunctions["BlackMarket" .. i] = function() handleBlackMarket(i) end
-            print("Black Market Key Function Initialized: " .. i)
         end
     end
 end
@@ -1884,7 +2029,6 @@ function InitializeFactionLockerKeyFunctions()
     for i = 1, autobind.Settings.currentFactionLockerKits do
         if keyFunctions["FactionLocker" .. i] == nil then
             keyFunctions["FactionLocker" .. i] = function() handleFactionLocker(i) end
-            print("Faction Locker Key Function Initialized: " .. i)
         end
     end
 end
@@ -2049,9 +2193,10 @@ function createSprunkSpam()
     -- Return if already full health and drop the sprunk
     local health = getCharHealth(ped) - 5000000
     if health == 100 then
-        setGameKeyState(15, 255)
+        local key = gkeys.player.ENTERVEHICLE
+        setGameKeyState(key, 255)
         wait(0)
-        setGameKeyState(15, 0)
+        setGameKeyState(key, 0)
         usingSprunk = false
         return
     end
@@ -2070,9 +2215,10 @@ function createSprunkSpam()
 
     -- Use the sprunk
     if sampGetPlayerSpecialAction(playerId) == 23 then
-        setGameKeyState(17, 255)
+        local key = gkeys.player.FIREWEAPON
+        setGameKeyState(key, 255)
         wait(0)
-        setGameKeyState(17, 0)
+        setGameKeyState(key, 0)
         timers.Sprunk.last = currentTime
     end
 end
@@ -2083,13 +2229,13 @@ local functionsToRun = {
     {
         name = "DownloadManager",
         func = function()
-            if downloadManager --[[and (downloadManager.isDownloading or #downloadManager.fetchQueue > 0)]] then
+            if downloadManager and (downloadManager.isDownloading or downloadManager.isFetching) then
                 downloadManager:updateDownloads()
             end
         end,
-        interval = 0,
+        interval = 0.001,
         lastRun = localClock(),
-        enabled = true,
+        enabled = true
     },
     {
         name = "AutoVest",
@@ -2107,42 +2253,42 @@ local functionsToRun = {
         end,
         interval = 0.001,
         lastRun = localClock(),
-        enabled = true,
+        enabled = true
     },
     {
         name = "Keybinds",
         func = createKeybinds,
         interval = 0.001,
         lastRun = localClock(),
-        enabled = true,
+        enabled = true
     },
     {
         name = "CaptureSpam",
         func = createCaptureSpam,
         interval = 0.001,
         lastRun = localClock(),
-        enabled = true,
+        enabled = true
     },
     {
         name = "PointBounds",
         func = createPointBounds,
         interval = 1.5,
         lastRun = localClock(),
-        enabled = true,
+        enabled = true
     },
     {
         name = "AutoFind",
         func = createAutoFind,
         interval = 0,
         lastRun = localClock(),
-        enabled = true,
+        enabled = true
     },
     {
         name = "SprunkSpam",
         func = createSprunkSpam,
         interval = 0.01,
         lastRun = localClock(),
-        enabled = true,
+        enabled = true
     },
 }
 
@@ -2554,7 +2700,7 @@ end
 function onScriptTerminate(scr, quitGame)
 	if scr == script.this then
         if autobind.Settings.autoSave then
-            saveConfigWithErrorHandling(getFile("settings"), autobind)
+            saveConfigWithErrorHandling(Files.settings, autobind)
         end
 
 		-- Unregister chat commands
@@ -2569,7 +2715,7 @@ local messageHandlers = {
     -- Time Change (Auto Capture)
     {
         pattern = "^The time is now (%d+):(%d+)%.$", -- The time is now 22:00.
-        color = clr.WHITE,
+        color = clrRGBA["WHITE"],
         action = function(hour, minute)
             lua_thread.create(function()
                 wait(0)
@@ -2605,7 +2751,7 @@ local messageHandlers = {
     -- Muted Message
     {
         pattern = "^You have been muted automatically for spamming%. Please wait 10 seconds and try again%.",
-        color = clr.YELLOW,
+        color = clrRGBA["YELLOW"],
         action = function()
             timers.Muted.last = localClock()
         end
@@ -2613,7 +2759,7 @@ local messageHandlers = {
     -- Admin On-Duty
     {
         pattern = '^You are now on%-duty as admin and have access to all your commands, see /ah.$',
-        color = clr.YELLOW,
+        color = clrRGBA["YELLOW"],
         action = function()
             setSampfuncsGlobalVar("aduty", 1)
         end
@@ -2621,7 +2767,7 @@ local messageHandlers = {
     -- Admin Off-Duty
     {
         pattern = '^You are now off%-duty as admin, and only have access to /admins /check /jail /ban /sban /kick /skick /showflags /reports /nrn$',
-        color = clr.YELLOW,
+        color = clrRGBA["YELLOW"],
         action = function()
             setSampfuncsGlobalVar("aduty", 0)
         end
@@ -2629,7 +2775,7 @@ local messageHandlers = {
     -- ARES Radio
     {
         pattern = "^%*%*%s*(.-):%s*(.-)%s*%*%*$",
-        color = clr.RADIO,
+        color = clrRGBA["RADIO"],
         action = function(header, message)
             local config = autobind.Settings
             if not config.Faction.modifyRadioChat then
@@ -2663,15 +2809,15 @@ local messageHandlers = {
     -- Mode/Frequency
     {
         pattern = "^([Family|LSPD|SASD|FBI|ARES|GOV|LSFMD].+) MOTD: (.+)",
-        color = clr.YELLOW,
+        color = clrRGBA["YELLOW"],
         action = function(type, motdMsg)
             local config = autobind.Settings
             if type:match("Family") then
                 config.mode = type
                 updateButton2Labels()
-                saveConfigWithErrorHandling(getFile("settings"), autobind)
+                saveConfigWithErrorHandling(Files.settings, autobind)
 
-                local freq, allies = motdMsg:match("[Ff]req:?%s*(-?%d+)%s*[/%s]*[Aa]llies:?%s*([^,]+)")
+                --[[local freq, allies = motdMsg:match("[Ff]req:?%s*(-?%d+)%s*[/%s]*[Aa]llies:?%s*([^,]+)")
                 if freq and allies then
                     print("Frequency detected", freq)
                     currentFamilyFreq = freq
@@ -2692,18 +2838,21 @@ local messageHandlers = {
                 local freq2, allies2 = motdMsg:match("F: -3232 // A: TC // discord.gg/GYwedAXGzV // MASS RECRUIT!.")
                 if freq2 and allies2 then
 
-                end
+                end]]
+
+                sampAddChatMessage(string.format("{%06x}Family MOTD: %s", clr.DEPTRADIO, motdMsg), -1)
+                return false
             elseif type:match("[LSPD|SASD|FBI|ARES|GOV]") then
                 config.mode = "Faction"
                 config.Faction.type = type
                 updateButton2Labels()
-                saveConfigWithErrorHandling(getFile("settings"), autobind)
+                saveConfigWithErrorHandling(Files.settings, autobind)
                 if accepter.enable then
                     formattedAddChatMessage("Auto Accept is now disabled because you are now in Faction Mode.")
                     accepter.enable = false
                 end
 
-                local freqType, freq = motdMsg:match("[/|%s*]%s*([RL FREQ:|FREQ:].-)%s*(-?%d+)")
+                --[[local freqType, freq = motdMsg:match("[/|%s*]%s*([RL FREQ:|FREQ:].-)%s*(-?%d+)")
                 if freqType and freq then
                     print("Faction frequency detected: " .. freq)
                     currentFactionFreq = freq
@@ -2713,19 +2862,25 @@ local messageHandlers = {
 
                     sampAddChatMessage(string.format("{%06x}%s MOTD: %s", clr.DEPTRADIO, type, newMessage), -1)
                     return false
-                end
+                end]]
+
+                sampAddChatMessage(string.format("{%06x}%s MOTD: %s", clr.DEPTRADIO, type, motdMsg), -1)
+                return false
             elseif type:match("LSFMD") then
                 config.mode = "Faction"
                 config.Faction.type = type
                 updateButton2Labels()
-                saveConfigWithErrorHandling(getFile("settings"), autobind)
+                saveConfigWithErrorHandling(Files.settings, autobind)
+
+                sampAddChatMessage(string.format("{%06x}%s MOTD: %s", clr.DEPTRADIO, type, motdMsg), -1)
+                return false
             end
         end
     },
     -- Set Frequency Message
     {
         pattern = "You have set the frequency of your portable radio to (-?%d+) kHz.",
-        color = clr.WHITE,
+        color = clrRGBA["WHITE"],
         action = function(freq)
             local config = autobind.Settings
             if tonumber(freq) == 0 then
@@ -2745,7 +2900,7 @@ local messageHandlers = {
     -- Radio Message
     {
         pattern = "%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)",
-        color = clr.PUBLICRADIO_COLOR,
+        color = clrRGBA["PUBLICRADIO_COLOR"],
         action = function(freq, playerName, message)
             local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
             sampAddChatMessage(string.format("{%06x}** %s Radio ** {%06x}%s (%d){%06x}: %s", clr.PUBLICRADIO_COLOR, autobind.Settings.mode, sampGetPlayerColor(playerId), playerName, playerId, clr.PUBLICRADIO_COLOR, message), -1)
@@ -2755,7 +2910,7 @@ local messageHandlers = {
     -- Capture Spam Disabled
     {
         pattern = "^Your gang is already attempting to capture this turf%.$",
-        color = clr.GRAD1,
+        color = clrRGBA["GRAD1"],
         action = function()
             if captureSpam then
                 local mode = autobind.Settings.mode
@@ -2768,7 +2923,7 @@ local messageHandlers = {
     -- Turf Not Ready
     {
         pattern = "This turf is not ready for takeover yet.",
-        color = clr.GRAD1,
+        color = clrRGBA["GRAD1"],
         action = function()
             if captureSpam then
                 captureSpam = false
@@ -2781,12 +2936,11 @@ local messageHandlers = {
     -- Bodyguard Not Near (Same as other commands not sure what i wanna do yet)
     {
         pattern = "That player isn't near you%.$",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             if bodyguard.received then
                 bodyguard.received = false
                 resetTimer(1.0, timers.Vest)
-                print("Bodyguard received is now false and timer reset")
             end
 
             sampAddChatMessage(string.format("{%06x}That player isn't near you.", clr.GREY), -1)
@@ -2796,7 +2950,7 @@ local messageHandlers = {
     -- Can't Guard While Aiming
     {
         pattern = "You can't /guard while aiming%.$",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             if bodyguard.received then
                 bodyguard.received = false
@@ -2810,7 +2964,7 @@ local messageHandlers = {
     -- Must Wait Before Selling Vest
     {
         pattern = "You must wait (%d+) seconds? before selling another vest%.?",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function(cooldown)
             if autobind.AutoVest.enable then
                 cooldown = tonumber(cooldown)
@@ -2827,7 +2981,7 @@ local messageHandlers = {
     -- Offered Protection
     {
         pattern = "%* You offered protection to (.+) for %$([%d,]+)%.$",
-        color = clr.LIGHTBLUE,
+        color = clrRGBA["LIGHTBLUE"],
         action = function(nickname, price)
             bodyguard.playerName = nickname:gsub("%s+", "_")
             bodyguard.playerId = sampGetPlayerIdByNickname(bodyguard.playerName)
@@ -2850,7 +3004,7 @@ local messageHandlers = {
     -- Not a Bodyguard
     {
         pattern = "You are not a bodyguard%.$",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             if autobind.AutoVest.enable then
                 bodyguard.enable = false
@@ -2866,7 +3020,7 @@ local messageHandlers = {
     -- Now a Bodyguard
     {
         pattern = "%* You are now a Bodyguard, type %/help to see your new commands%.$",
-        color = clr.LIGHTBLUE,
+        color = clrRGBA["LIGHTBLUE"],
         action = function()
             if autobind.AutoVest.enable then
                 bodyguard.enable = true
@@ -2880,7 +3034,7 @@ local messageHandlers = {
     -- Accept Vest
     {
         pattern = "You are not near the person offering you guard!",
-        color = clr.GRAD2,
+        color = clrRGBA["GRAD2"],
         action = function()
             if accepter.received and accepter.playerName ~= "" and accepter.playerId ~= -1 then
                 if accepter.enable then
@@ -2895,7 +3049,7 @@ local messageHandlers = {
     -- Protection Offer
     {
         pattern = "^%* Bodyguard (.+) wants to protect you for %$([%d,]+)%, type %/accept bodyguard to accept%.$",
-        color = clr.LIGHTBLUE,
+        color = clrRGBA["LIGHTBLUE"],
         action = function(nickname, price)
             accepter.playerName = nickname:gsub("%s+", "_")
             accepter.playerId = sampGetPlayerIdByNickname(accepter.playerName)
@@ -2930,11 +3084,10 @@ local messageHandlers = {
     -- You Accepted Protection
     {
         pattern = "^%* You accepted the protection for %$(%d+) from (.+)%.$",
-        color = clr.LIGHTBLUE,
+        color = clrRGBA["LIGHTBLUE"],
         action = function(price, nickname)
 
             if accepterThread and accepter.enable then
-                print("Terminating accepter thread")
                 accepterThread:terminate()
                 accepterThread = nil
             end
@@ -2950,7 +3103,7 @@ local messageHandlers = {
     -- They Accepted Protection
     {
         pattern = "%* (.+) accepted your protection, and the %$(%d+) was added to your money.$",
-        color = clr.LIGHTBLUE,
+        color = clrRGBA["LIGHTBLUE"],
         action = function(nickname, price)
             sampAddChatMessage(string.format("{%06x}* %s (%d) accepted your protection, and the $%d was added to your money.", clr.LIGHTBLUE, nickname, bodyguard.playerId, price), -1)
             bodyguard.playerName = ""
@@ -2962,7 +3115,7 @@ local messageHandlers = {
     -- Can't Afford Protection
     {
         pattern = "You can't afford the Protection!",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             accepter.received = false
 
@@ -2973,7 +3126,7 @@ local messageHandlers = {
     -- Can't Use Locker Recently Shot
     {
         pattern = "You can't use your lockers if you were recently shot.",
-        color = clr.WHITE,
+        color = clrRGBA["WHITE"],
         action = function()
             formattedAddChatMessage("You can't use your lockers if you were recently shot. Timer extended by 5 seconds.")
             resetTimer(5, timers.Heal)
@@ -2985,7 +3138,7 @@ local messageHandlers = {
     -- Heal Timer Extended
     {
         pattern = "^You can't heal if you were recently shot, except within points, events, minigames, and paintball%.$",
-        color = clr.WHITE,
+        color = clrRGBA["WHITE"],
         action = function()
             formattedAddChatMessage("You can't heal after being attacked recently. Timer extended by 5 seconds.")
             resetTimer(5, timers.Heal)
@@ -2995,7 +3148,7 @@ local messageHandlers = {
     -- Not Diamond Donator
     {
         pattern = "^You are not a Diamond Donator%!",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             timers.Vest.timer = guardTime
             autobind.AutoVest.donor = false
@@ -3004,7 +3157,7 @@ local messageHandlers = {
     -- Not Sapphire or Diamond Donator
     {
         pattern = "^You are not a Sapphire or Diamond Donator%!",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             if blackMarket.getItemFromBM > 0 then
                 blackMarket.getItemFromBM = 0
@@ -3015,7 +3168,7 @@ local messageHandlers = {
     -- Not at Black Market
     {
         pattern = "^%s*You are not at the black market%!",
-        color = clr.GRAD2,
+        color = clrRGBA["GRAD2"],
         action = function()
             if blackMarket.getItemFromBM > 0 then
                 blackMarket.getItemFromBM = 0
@@ -3026,7 +3179,7 @@ local messageHandlers = {
     -- Already Searched for Someone
     {
         pattern = "^You have already searched for someone %- wait a little%.$",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             if autofind.enable then
                 if autofind.counter > 0 then
@@ -3039,6 +3192,7 @@ local messageHandlers = {
     -- Can't Find Person Hidden in Turf
     {
         pattern = "^You can't find that person as they're hidden in one of their turfs%.$",
+        color = clrRGBA["GREY"],
         action = function()
             if autofind.enable and autofind.playerName ~= "" and autofind.playerId ~= -1 then
                 if autofind.counter > 0 then
@@ -3053,7 +3207,7 @@ local messageHandlers = {
     -- Not a Detective
     {
         pattern = "^You are not a detective%.$",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             if autofind.enable then
                 if autofind.counter > 0 then
@@ -3068,7 +3222,7 @@ local messageHandlers = {
     -- Now a Detective
     {
         pattern = "^%* You are now a Detective, type %/help to see your new commands %*$",
-        color = clr.LIGHTBLUE,
+        color = clrRGBA["LIGHTBLUE"],
         action = function()
             if autofind.playerName ~= "" and autofind.playerId ~= -1 then
                 if autofind.counter > 0 then
@@ -3083,7 +3237,7 @@ local messageHandlers = {
     -- Unable to Find Person
     {
         pattern = "^You are unable to find this person%.$",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             if autofind.enable then
                 autofind.counter = autofind.counter + 1
@@ -3102,7 +3256,7 @@ local messageHandlers = {
     -- Your backup request has been cleared.
     {
         pattern = "^Your backup request has been cleared%.$",
-        color = clr.GRAD2,
+        color = clrRGBA["GRAD2"],
         action = function()
             backup.enable = false
             sampAddChatMessage(string.format("{%06x}Your backup request has been cleared.", clr.GRAD2), -1)
@@ -3112,7 +3266,7 @@ local messageHandlers = {
     -- You already have an active backup request!
     {
         pattern = "^You already have an active backup request!$",
-        color = clr.GRAD2,
+        color = clrRGBA["GREY"],
         action = function()
             backup.enable = true
             sampAddChatMessage(string.format("{%06x}You already have an active backup request!", clr.GRAD2), -1)
@@ -3122,7 +3276,7 @@ local messageHandlers = {
     -- You don't have an active backup request!
     {
         pattern = "^You don't have an active backup request!$",
-        color = clr.GRAD2,
+        color = clrRGBA["GRAD2"],
         action = function()
             backup.enable = false
             sampAddChatMessage(string.format("{%06x}You don't have an active backup request!", clr.GRAD2), -1)
@@ -3132,7 +3286,7 @@ local messageHandlers = {
     -- Your backup request has been cleared automatically.
     {
         pattern = "^Your backup request has been cleared automatically.$",
-        color = clr.GRAD2,
+        color = clrRGBA["GRAD2"],
         action = function()
             backup.enable = false
             sampAddChatMessage(string.format("{%06x}Your backup request has been cleared automatically.", clr.GRAD2), -1)
@@ -3142,7 +3296,7 @@ local messageHandlers = {
     -- Requesting immediate backup
     {
         pattern = "^(.+) is requesting immediate backup at (.+).$",
-        color = clr.TEAM_BLUE_COLOR,
+        color = clrRGBA["TEAM_BLUE_COLOR"],
         action = function(nickname, location)
             local playerId = sampGetPlayerIdByNickname(nickname:gsub("%s+", "_"))
             if playerId ~= -1 and location then
@@ -3163,7 +3317,7 @@ local messageHandlers = {
     -- You have cleared your beacon.
     {
         pattern = "^You have cleared your beacon.$",
-        color = clr.GRAD2,
+        color = clrRGBA["GRAD2"],
         action = function()
             backup.enable = false
             sampAddChatMessage(string.format("{%06x}You have cleared your beacon.", clr.GRAD2), -1)
@@ -3173,7 +3327,7 @@ local messageHandlers = {
     -- Your beacon has been cleared automatically.
     {
         pattern = "^Your beacon has been cleared automatically.$",
-        color = clr.GRAD2,
+        color = clrRGBA["GRAD2"],
         action = function()
             backup.enable = false
             sampAddChatMessage(string.format("{%06x}Your beacon has been cleared automatically.", clr.GRAD2), -1)
@@ -3183,7 +3337,7 @@ local messageHandlers = {
     -- Requesting help
     {
         pattern = "^(.+) is requesting help at (.+).$",
-        color = clr.YELLOW,
+        color = clrRGBA["YELLOW"],
         action = function(nickname, location)
             local playerId = sampGetPlayerIdByNickname(nickname:gsub("%s+", "_"))
             if playerId ~= -1 and location then
@@ -3204,7 +3358,7 @@ local messageHandlers = {
     -- Accept Repair
     {
         pattern = "^%* Car Mechanic (.+) wants to repair your car for %$1, %(type %/accept repair%) to accept%.$",
-        color = clr.LIGHTBLUE,
+        color = clrRGBA["LIGHTBLUE"],
         action = function()
             if autobind.Settings.autoRepair and not checkMuted() and not checkAdminDuty() then
                 lua_thread.create(function()
@@ -3217,7 +3371,7 @@ local messageHandlers = {
     -- Auto Badge
     {
         pattern = "^Your hospital bill comes to %$%d+%. Have a nice day%!",
-        color = clr.TEAM_MED_COLOR,
+        color = clrRGBA["TEAM_MED_COLOR"],
         action = function()
             if backup.enable then
                 backup.enable = false
@@ -3236,7 +3390,7 @@ local messageHandlers = {
     -- Muted Notification
     {
         pattern = "^You have been muted automatically for spamming%. Please wait 10 seconds and try again%.$",
-        color = clr.YELLOW,
+        color = clrRGBA["YELLOW"],
         action = function()
             timers.Muted.last = localClock()
         end
@@ -3244,7 +3398,7 @@ local messageHandlers = {
     -- Help Command Additions
     {
         pattern = "^%*%*%* OTHER %*%*%* /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp",
-        color = clr.WHITE,
+        color = clrRGBA["WHITE"],
         action = function()
             lua_thread.create(function()
                 wait(0)
@@ -3256,7 +3410,7 @@ local messageHandlers = {
     -- * (.+) opens a can of sprunk.
     {
         pattern = "^%* (.+) opens a can of sprunk.$",
-        color = clr.PURPLE,
+        color = clrRGBA["PURPLE"],
         action = function(nickname)
             sampAddChatMessage(string.format("{%06x}%s opens a can of sprunk.", clr.PURPLE, nickname), -1)
             usingSprunk = true
@@ -3266,7 +3420,7 @@ local messageHandlers = {
     -- Dropped Sprunk
     {
         pattern = "^(.+) drops their sprunk onto the floor.$",
-        color = clr.PURPLE,
+        color = clrRGBA["PURPLE"],
         action = function(nickname)
             sampAddChatMessage(string.format("{%06x}%s drops their sprunk onto the floor.", clr.PURPLE, nickname), -1)
             usingSprunk = false
@@ -3276,7 +3430,7 @@ local messageHandlers = {
     -- You already have full health.
     {
         pattern = "^You already have full health.$",
-        color = clr.GREY,
+        color = clrRGBA["GREY"],
         action = function()
             if usingSprunk then
                 usingSprunk = false
@@ -3291,9 +3445,8 @@ function sampev.onServerMessage(color, text)
         return
     end
 
-    local realClr = convertColor(color, false, true, false)
     for _, handler in ipairs(messageHandlers) do
-        if handler.color == joinARGB(0, realClr.a, realClr.r, realClr.g, false) then
+        if color == handler.color then
             local captures = {text:match(handler.pattern)}
             if #captures > 0 then
                 local result = handler.action(table.unpack(captures))
@@ -3697,7 +3850,7 @@ imgui.OnInitialize(function()
     imgui.GetIO().IniFilename = nil
 
     -- Load FontAwesome5 Icons
-    loadFontIcons(true, 14.0, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", getPath("resource")))
+    loadFontIcons(true, 14.0, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", Paths.resource))
 
 	-- Load the font with the desired size
 	local fontFile = getFolderPath(0x14) .. '\\trebucbd.ttf'
@@ -3705,12 +3858,12 @@ imgui.OnInitialize(function()
 	fontData.font = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSize)
 
 	-- Load FontAwesome5 Icons (Again for the font above)
-	loadFontIcons(true, fontData.fontSize, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", getPath("resource")))
+	loadFontIcons(true, fontData.fontSize, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", Paths.resource))
 
 	-- Load Skins
 	for i = 0, 311 do
 		if skinTexture[i] == nil then
-			local skinPath = string.format("%s\\Skin_%d.png", getPath("skins"), i)
+			local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, i)
 			if doesFileExist(skinPath) then
 				skinTexture[i] = imgui.CreateTextureFromFile(skinPath)
 			end
@@ -3766,7 +3919,7 @@ local buttons1 = {
         icon = fa.ICON_FA_SAVE,
         tooltip = 'Save configuration',
         action = function()
-            saveConfigWithErrorHandling(getFile("settings"), autobind)
+            saveConfigWithErrorHandling(Files.settings, autobind)
         end,
         color = function()
             return color_default
@@ -3977,7 +4130,7 @@ function(self)
         print("All menus closed")
 
         if autobind.Settings.autoSave then
-            saveConfigWithErrorHandling(getFile("settings"), autobind)
+            saveConfigWithErrorHandling(Files.settings, autobind)
             print("Settings saved")
         end
     else
@@ -3988,7 +4141,7 @@ function(self)
                 if key == "settings" then
                     if autobind.Settings.autoSave then
                         autobind.AutoVest.names = setToList(names)
-                        saveConfigWithErrorHandling(getFile("settings"), autobind)
+                        saveConfigWithErrorHandling(Files.settings, autobind)
                     end
                 end
 
@@ -4211,7 +4364,7 @@ function(self)
                     end
 
                     if skinTexture[skinId] == nil then
-                        local skinPath = string.format("%s\\Skin_%d.png", getPath("skins"), skinId)
+                        local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, skinId)
                         if doesFileExist(skinPath) then
                             skinTexture[skinId] = imgui.CreateTextureFromFile(skinPath)
                         end
@@ -4502,7 +4655,7 @@ local function drawSkinImages(skins, columns, imageSize, spacing, startPos)
             imgui.Image(skinTexture[skinId], imageSize)
         else
             imgui.Button("No\nImage", imageSize)
-            local skinPath = string.format("%s\\Skin_%d.png", getPath("skins"), skinId)
+            local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, skinId)
             if doesFileExist(skinPath) then
                 skinTexture[skinId] = imgui.CreateTextureFromFile(skinPath)
             end
@@ -4525,6 +4678,8 @@ function renderSkins()
         local spacing = 10.0
         
         if autobind.Settings.mode == "Family" then
+            imgui.PushFont(fontData.font)
+
             imgui.PushItemWidth(326)
             local url = new.char[128](autobind.AutoVest.skinsUrl)
             if imgui.InputText('##skins_url', url, sizeof(url)) then
@@ -4547,6 +4702,8 @@ function renderSkins()
                 autobind.AutoVest.autoFetchSkins = not autobind.AutoVest.autoFetchSkins
             end
             imgui.CustomTooltip("Fetch skins at startup")
+
+            imgui.PopFont()
 
             local startPos = imgui.GetCursorPos()
             local index = drawSkinImages(family.skins, columns, imageSize, spacing, startPos)
@@ -4576,6 +4733,9 @@ end
 function renderNames()
     imgui.SetCursorPos(imgui.ImVec2(10, 1))
     if imgui.BeginChild("##names", imgui.ImVec2(487, 263), false) then
+
+        imgui.PushFont(fontData.font)
+
         imgui.PushItemWidth(326)
         local url = new.char[128](autobind.AutoVest.namesUrl)
         if imgui.InputText('##names_url', url, sizeof(url)) then
@@ -4603,6 +4763,7 @@ function renderNames()
         local itemCount = 0
         
         for name, _ in pairs(names) do
+
             imgui.PushItemWidth(138)  -- Adjust the width of the input field
             local nick = new.char[128](name)
             if imgui.InputText('##Nickname'..name, nick, sizeof(nick), imgui.InputTextFlags.EnterReturnsTrue) then
@@ -4636,6 +4797,8 @@ function renderNames()
             -- Add the new name to the set
             names[newName] = true
         end
+
+        imgui.PopFont()
     end
     imgui.EndChild()
 end
@@ -5034,8 +5197,8 @@ function generateSkinsUrls()
     local files = {}
     for i = 0, 311 do
         table.insert(files, {
-            url = string.format("%sSkin_%d.png", fetchUrls("skins"), i),
-            path = string.format("%sSkin_%d.png", getPath("skins"), i),
+            url = string.format("%sSkin_%d.png", Urls.skins, i),
+            path = string.format("%sSkin_%d.png", Paths.skins, i),
             replace = false,
             index = i
         })
@@ -5344,119 +5507,6 @@ function saveConfigWithErrorHandling(path, config)
         print("Error saving config to " .. path .. ": " .. err)
     end
     return success
-end
-
--- Helper function for rounding to the nearest integer
-local function round(value)
-    return math.floor(value + 0.5)
-end
-
--- Convert Color with optional HSVA output
-function convertColor(color, normalize, includeAlpha, outputHSVA)
-    if type(color) ~= "number" then
-        error("Invalid color value. Expected a number.")
-    end
-
-    local a = includeAlpha and bit.band(bit.rshift(color, 24), 0xFF) or 255
-    local r = bit.band(bit.rshift(color, 16), 0xFF)
-    local g = bit.band(bit.rshift(color, 8), 0xFF)
-    local b = bit.band(color, 0xFF)
-
-    if normalize then
-        a, r, g, b = a / 255, r / 255, g / 255, b / 255
-    end
-
-    if outputHSVA then
-        local h, s, v = RGBtoHSV(r, g, b)
-        if includeAlpha then
-            return {h = h, s = s, v = v, a = a}
-        else
-            return {h = h, s = s, v = v}
-        end
-    end
-
-    if includeAlpha then
-        return {r = r, g = g, b = b, a = a}
-    else
-        return {r = r, g = g, b = b}
-    end
-end
-
--- Join ARGB with proper rounding
-function joinARGB(a, r, g, b, normalized)
-    if normalized then
-        a, r, g, b = round(a * 255), round(r * 255), round(g * 255), round(b * 255)
-    end
-
-    local function clamp(value)
-        return math.max(0, math.min(255, value))
-    end
-
-    a, r, g, b = clamp(a), clamp(r), clamp(g), clamp(b)
-
-    return bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b)
-end
-
--- Convert normalized RGB to HSV
-function RGBtoHSV(r, g, b)
-    local max = math.max(r, g, b)
-    local min = math.min(r, g, b)
-    local delta = max - min
-
-    local h, s, v = 0, 0, max
-
-    if delta > 0 then
-        if max == r then
-            h = (g - b) / delta % 6
-        elseif max == g then
-            h = (b - r) / delta + 2
-        else -- max == b
-            h = (r - g) / delta + 4
-        end
-        h = h * 60
-        if h < 0 then h = h + 360 end
-
-        s = delta / max
-    else
-        h = 0
-        s = 0
-    end
-
-    -- Handle edge cases for white and black
-    if max == 0 then
-        s = 0
-    end
-
-    return h, s, v
-end
-
--- Convert HSV to normalized RGB
-function HSVtoRGB(h, s, v)
-    local c = v * s
-    local x = c * (1 - math.abs((h / 60) % 2 - 1))
-    local m = v - c
-
-    local r1, g1, b1 = 0, 0, 0
-
-    if h >= 0 and h < 60 then
-        r1, g1, b1 = c, x, 0
-    elseif h >= 60 and h < 120 then
-        r1, g1, b1 = x, c, 0
-    elseif h >= 120 and h < 180 then
-        r1, g1, b1 = 0, c, x
-    elseif h >= 180 and h < 240 then
-        r1, g1, b1 = 0, x, c
-    elseif h >= 240 and h < 300 then
-        r1, g1, b1 = x, 0, c
-    else -- h >= 300 and h < 360
-        r1, g1, b1 = c, 0, x
-    end
-
-    local r = r1 + m
-    local g = g1 + m
-    local b = b1 + m
-
-    return r, g, b
 end
 
 -- Function to convert seconds into a human-readable format
