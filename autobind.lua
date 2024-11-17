@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.21a")
+script_version("1.8.21b")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -141,7 +141,7 @@ local Urls = {
         return getBaseUrl(beta) .. scriptName .. ".lua"
     end,
     update = function(beta)
-        return getBaseUrl(beta) .. scriptName .. ".txt"
+        return getBaseUrl(beta) .. "update.json"
     end,
     skins = getBaseUrl(false) .. "resource/skins/"
 }
@@ -924,11 +924,14 @@ local autobind = {
 local autobind_defaultSettings = {
 	Settings = {
 		enable = true,
+        updateInProgress = false,
+        lastVersion = "",
         fetchBeta = false,
 		autoSave = true,
         autoRepair = true,
         currentBlackMarketKits = 3,
         currentFactionLockerKits = 3,
+        callSecondaryBackup = false,
 		mode = "Family",
         Frisk = {
             mustTarget = false,
@@ -1194,7 +1197,13 @@ local factions = {
 
 -- Menu Variables
 local menu = {
-    initialised = new.bool(false),
+    initialized = new.bool(false),
+    confirm = {
+        window = new.bool(false),
+        size = {x = 300, y = 100},
+        pivot = {x = 0.5, y = 0.5},
+        update = new.bool(false)
+    },
 	settings = {
         title = ("%s %s - v%s"):format(fa.ICON_FA_SHIELD_ALT, scriptName:capitalizeFirst(), scriptVersion),
 		window = new.bool(false),
@@ -1277,7 +1286,7 @@ local maxKits = 6
 -- Black Market
 local blackMarket = {
     maxSelections = 6,
-    getItemFromBM = 0,
+    getItemFrom = 0,
     gettingItem = false,
     currentKey = nil,
     obtainedItems = {},
@@ -1307,7 +1316,7 @@ local blackMarket = {
 
 local factionLocker = {
     maxSelections = 6,
-    getItemFromLocker = 0,
+    getItemFrom = 0,
     gettingItem = false,
     currentKey = nil,
     obtainedItems = {},  -- To collect items obtained
@@ -1569,7 +1578,7 @@ function main()
             downloadSkins(skinsUrls)
 
             -- Set Initialised to true
-            menu.initialised[0] = true
+            menu.initialized[0] = true
         end)
     end
 end
@@ -1782,30 +1791,30 @@ function canObtainItem(item, items)
     return true
 end
 
--- Reset Black Market
-function resetBlackMarket()
-    blackMarket.getItemFromBM = 0
-    blackMarket.gettingItem = false
-    blackMarket.currentKey = nil
+-- Reset Locker
+function resetLocker(locker)
+    locker.getItemFrom = 0
+    locker.gettingItem = false
+    locker.currentKey = nil
 end
 
 -- Handle Black Market
 function handleBlackMarket(kitNumber)
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
-        resetBlackMarket()
+        resetLocker(blackMarket)
         return
     end
 
     if not isPlayerInLocation(autobind.BlackMarket.Locations) then
         formattedAddChatMessage(("{%06x}You are not at the black market!"):format(clr.GREY))
-        resetBlackMarket()
+        resetLocker(blackMarket)
         return
     end
 
     if not isPlayerControlOn(h) then
         formattedAddChatMessage(("{%x}You cannot get items while frozen, please wait."):format(clr.YELLOW))
-        resetBlackMarket()
+        resetLocker(blackMarket)
         return
     end
 
@@ -1815,7 +1824,7 @@ function handleBlackMarket(kitNumber)
 		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
 	end
 
-    blackMarket.getItemFromBM = kitNumber
+    blackMarket.getItemFrom = kitNumber
     blackMarket.obtainedItems = {} -- Reset obtained items
 
     lua_thread.create(function()
@@ -1847,35 +1856,27 @@ function handleBlackMarket(kitNumber)
         if #skippedItems > 0 then
             formattedAddChatMessage(string.format("{%06x}Skipped items: {%06x}%s.", clr.YELLOW, clr.WHITE, table.concat(skippedItems, ", ")))
         end
-        resetBlackMarket()
+        resetLocker(blackMarket)
     end)
-end
-
--- Reset Faction Locker
-function resetFactionLocker()
-    factionLocker.getItemFromLocker = 0
-    factionLocker.gettingItem = false
-    factionLocker.currentKey = nil
 end
 
 -- Handle Faction Locker
 function handleFactionLocker(kitNumber)
-
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
-        resetFactionLocker()
+        resetLocker(factionLocker)
         return
     end
 
     if not isPlayerInLocation(autobind.FactionLocker.Locations) then
         formattedAddChatMessage(("{%06x}You are not at the faction locker!"):format(clr.GREY))
-        resetFactionLocker()
+        resetLocker(factionLocker)
         return
     end
 
     if not isPlayerControlOn(h) then
         formattedAddChatMessage(("{%06x}You cannot get items while frozen, please wait."):format(clr.YELLOW))
-        resetFactionLocker()
+        resetLocker(factionLocker)
         return
     end
 
@@ -1885,7 +1886,7 @@ function handleFactionLocker(kitNumber)
 		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
 	end
 
-    factionLocker.getItemFromLocker = kitNumber
+    factionLocker.getItemFrom = kitNumber
     factionLocker.obtainedItems = {} -- Reset obtained items
 
     lua_thread.create(function()
@@ -1917,7 +1918,7 @@ function handleFactionLocker(kitNumber)
         if #skippedItems > 0 then
             formattedAddChatMessage(string.format("{%06x}Skipped items: {%06x}%s.", clr.YELLOW, clr.WHITE, table.concat(skippedItems, ", ")))
         end
-        resetFactionLocker()
+        resetLocker(factionLocker)
     end)
 end
 
@@ -2005,13 +2006,15 @@ local keyFunctions = {
         local backupPrimary = autobind.Settings.mode == "Faction" and "backup" or "fbackup"
         sampSendChat(string.format("/%s", backupPrimary))
 
-        local x, y, z = getCharCoordinates(ped)
-        local zoneName = getZoneName(x, y, z)
-        local subZoneName = getSubZoneName(x, y, z)
+        if autobind.Settings.callSecondaryBackup then
+            local x, y, z = getCharCoordinates(ped)
+            local zoneName = getZoneName(x, y, z)
+            local subZoneName = getSubZoneName(x, y, z)
 
-        local backupSecondary = autobind.Settings.mode == "Faction" and "d" or "pr"
-        local checkForSubZone = subZoneName == nil and zoneName or string.format("%s in %s", subZoneName, zoneName)
-        sampSendChat(string.format("/%s I need urgent backup! Currently at %s.", backupSecondary, checkForSubZone))
+            local backupSecondary = autobind.Settings.mode == "Faction" and "d" or "pr"
+            local checkForSubZone = subZoneName == nil and zoneName or string.format("%s in %s", subZoneName, zoneName)
+            sampSendChat(string.format("/%s I need urgent backup! Currently at %s.", backupSecondary, checkForSubZone))
+        end
     end
 }
 
@@ -3131,7 +3134,7 @@ local messageHandlers = {
             formattedAddChatMessage("You can't use your lockers if you were recently shot. Timer extended by 5 seconds.")
             resetTimer(5, timers.Heal)
 
-            resetFactionLocker()
+            resetLocker(locker)
             return false
         end
     },
@@ -3159,8 +3162,8 @@ local messageHandlers = {
         pattern = "^You are not a Sapphire or Diamond Donator%!",
         color = clrRGBA["GREY"],
         action = function()
-            if blackMarket.getItemFromBM > 0 then
-                blackMarket.getItemFromBM = 0
+            if blackMarket.getItemFrom > 0 then
+                blackMarket.getItemFrom = 0
                 blackMarket.gettingItem = false
             end
         end
@@ -3170,8 +3173,8 @@ local messageHandlers = {
         pattern = "^%s*You are not at the black market%!",
         color = clrRGBA["GRAD2"],
         action = function()
-            if blackMarket.getItemFromBM > 0 then
-                blackMarket.getItemFromBM = 0
+            if blackMarket.getItemFrom > 0 then
+                blackMarket.getItemFrom = 0
                 blackMarket.gettingItem = false
             end
         end
@@ -3221,7 +3224,7 @@ local messageHandlers = {
     },
     -- Now a Detective
     {
-        pattern = "^%* You are now a Detective, type %/help to see your new commands %*$",
+        pattern = "^%* You are now a Detective, type %/help to see your new commands%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
             if autofind.playerName ~= "" and autofind.playerId ~= -1 then
@@ -3229,6 +3232,7 @@ local messageHandlers = {
                     autofind.counter = 0
                 end
                 autofind.enable = true
+                resetTimer(0.1, timers.Find)
                 formattedAddChatMessage(string.format("You are now a detective and re-enabling autofind on %s (ID: %d).", autofind.playerName:gsub("_", " "), autofind.playerId))
                 return false
             end
@@ -3517,9 +3521,9 @@ end
 -- OnShowDialog
 function sampev.onShowDialog(id, style, title, button1, button2, text)
     -- Black Market
-    if blackMarket.getItemFromBM > 0 then
+    if blackMarket.getItemFrom > 0 then
         if not title:find("Black Market") then 
-            blackMarket.getItemFromBM = 0 
+            blackMarket.getItemFrom = 0 
             blackMarket.gettingItem = false
             blackMarket.currentKey = nil
             return false 
@@ -3530,14 +3534,14 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
     end
 
     -- Faction Locker
-    if factionLocker.getItemFromLocker > 0 then
+    if factionLocker.getItemFrom > 0 then
         if title:find('[LSPD|FBI|ARES] Menu') then
             sampSendDialogResponse(id, 1, 1, nil)
             return false
         end
 
         if not title:find("[LSPD|FBI|ARES] Equipment") then 
-            factionLocker.getItemFromLocker = 0 
+            factionLocker.getItemFrom = 0 
             factionLocker.gettingItem = false
             factionLocker.currentKey = nil
             return false
@@ -3971,9 +3975,9 @@ local buttons1 = {
     {
         id = 5,
         icon = fa.ICON_FA_RETWEET .. ' Update',
-        tooltip = 'Check for update [Disabled]',
+        tooltip = 'Check for update',
         action = function()
-            -- do something? (soon)
+            checkForUpdate()
         end,
         color = function()
             return color_default
@@ -4099,7 +4103,7 @@ function onWindowMessage(msg, wparam, lparam)
 end
 
 -- Settings Window
-imgui.OnFrame(function() return menu.initialised[0] end,
+imgui.OnFrame(function() return menu.initialized[0] end,
 function(self)
     -- Returns if Samp is not loaded
     if not isSampLoaded() or not isSampAvailable() then return end
@@ -4553,6 +4557,34 @@ function(self)
         end
         imgui.End()
     end
+
+    if menu.confirm.window[0] then
+        imgui.SetNextWindowPos(imgui.ImVec2(resX / 2, resY / 2), imgui.Cond.FirstUseEver, menu.confirm.pivot)
+
+        if imgui.Begin(menu.settings.title .. ' - Update', menu.confirm.window, imgui_flags) then
+            if not imgui.IsWindowFocused() then 
+                imgui.SetNextWindowFocus() 
+            end
+
+            if menu.confirm.update[0] then
+                imgui.Text('Do you want to update this script?')
+                local buttonSize = imgui.ImVec2(85, 45)
+                if imgui.CustomButton(fa.ICON_FA_CHECK .. ' Update', color_default, color_hover, color_active, buttonSize) then
+                    --updateScript()
+                    menu.confirm.update[0] = false
+                    menu.confirm.window[0] = false
+                    print('Update')
+                end
+                imgui.SameLine()
+                if imgui.CustomButton(fa.ICON_FA_TIMES .. ' Cancel', color_default, color_hover, color_active, buttonSize) then
+                    menu.confirm.update[0] = false
+                    menu.confirm.window[0] = false
+                    print('Cancel')
+                end
+            end
+        end
+        imgui.End()
+    end
 end).HideCursor = true
 
 -- Function to calculate total price for a given kit
@@ -4911,6 +4943,107 @@ function createFontMenuElement(title, element)
     imgui.PopItemWidth()
 end
 
+-- Function to Fetch Data Directly From URL
+function fetchDataDirectlyFromURL(url, callback)
+    local function onComplete(decodedData)
+        if decodedData and next(decodedData) ~= nil then
+            callback(decodedData)
+        else
+            print("JSON format is empty or invalid URL:", url)
+        end
+    end
+
+    downloadManager:queueFetches({{url = url, callback = onComplete}})
+end
+
+-- Function to Generate Skins URLs
+function generateSkinsUrls()
+    local files = {}
+    for i = 0, 311 do
+        table.insert(files, {
+            url = string.format("%sSkin_%d.png", Urls.skins, i),
+            path = string.format("%sSkin_%d.png", Paths.skins, i),
+            replace = false,
+            index = i
+        })
+    end
+
+    -- Sort the files by index
+    table.sort(files, function(a, b) return tonumber(a.index) < tonumber(b.index) end)
+
+    return files
+end
+
+-- Function to Initiate the Skin Download Process
+function downloadSkins(urls)
+    local function onComplete(downloadsFinished)
+        if downloadsFinished then
+            print("All files downloaded successfully.")
+            formattedAddChatMessage("All skins downloaded successfully!")
+        else
+            print("No files needed to be downloaded.")
+        end
+    end
+
+    local function onProgress(progressData, file)
+        -- Individual file progress
+        if progressData.fileProgress ~= nil then
+            print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
+        end
+
+        -- Overall progress
+        if progressData.overallProgress ~= nil then
+            print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
+        end
+    end
+
+    downloadManager:queueDownloads(urls, onComplete, onProgress)
+end
+
+-- Check for Update
+function checkForUpdate()
+    fetchDataDirectlyFromURL(Urls.update(autobind.Settings.fetchBeta), function(content)
+        if not content then
+            return
+        end
+
+        print(content.version, scriptVersion, compareVersions(scriptVersion, content.version))
+        if content.version and compareVersions(scriptVersion, content.version) == -1 then
+            menu.confirm.update[0] = true
+            menu.confirm.window[0] = true
+        end
+    end)
+end
+
+-- Update Script
+function updateScript()
+    autobind.Settings.updateInProgress = true
+    autobind.Settings.lastVersion = scriptVersion
+
+    local function onComplete(downloadsFinished)
+        if downloadsFinished then
+            formattedAddChatMessage("Update downloaded successfully! Reloading the script now.", -1)
+            thisScript():reload()
+        else
+            formattedAddChatMessage("Update download failed! Please try again later.", -1)
+        end
+    end
+    
+    local function onProgress(progressData, file)
+        -- Individual file progress
+        if progressData.fileProgress ~= nil then
+            print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
+        end
+
+        -- Overall progress
+        if progressData.overallProgress ~= nil then
+            print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
+        end
+    end
+
+    downloadManager:queueDownloads(Urls.script(autobind.Settings.fetchBeta), onComplete, onProgress)
+end
+
 -- Create Row (Settings)
 function createRow(label, tooltip, setting, toggleFunction, sameLine)
     if imgui.Checkbox(label, new.bool(setting)) then
@@ -5177,63 +5310,6 @@ function getKeybindKeys(bind)
         end
     end
     return table.concat(keys, " + ")
-end
-
--- Function to Fetch Data Directly From URL
-function fetchDataDirectlyFromURL(url, callback)
-    local function onComplete(decodedData)
-        if decodedData and next(decodedData) ~= nil then
-            callback(decodedData)
-        else
-            print("JSON format is empty or invalid URL:", url)
-        end
-    end
-
-    downloadManager:queueFetches({{url = url, callback = onComplete}})
-end
-
--- Function to Generate Skins URLs
-function generateSkinsUrls()
-    local files = {}
-    for i = 0, 311 do
-        table.insert(files, {
-            url = string.format("%sSkin_%d.png", Urls.skins, i),
-            path = string.format("%sSkin_%d.png", Paths.skins, i),
-            replace = false,
-            index = i
-        })
-    end
-
-    -- Sort the files by index
-    table.sort(files, function(a, b) return tonumber(a.index) < tonumber(b.index) end)
-
-    return files
-end
-
--- Function to Initiate the Skin Download Process
-function downloadSkins(urls)
-    local function onComplete(downloadsFinished)
-        if downloadsFinished then
-            print("All files downloaded successfully.")
-            formattedAddChatMessage("All skins downloaded successfully!")
-        else
-            print("No files needed to be downloaded.")
-        end
-    end
-
-    local function onProgress(progressData, file)
-        -- Individual file progress
-        if progressData.fileProgress ~= nil then
-            print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
-        end
-
-        -- Overall progress
-        if progressData.overallProgress ~= nil then
-            print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
-        end
-    end
-
-    downloadManager:queueDownloads(urls, onComplete, onProgress)
 end
 
 -- Get visible players
@@ -5568,6 +5644,7 @@ end
 function compareVersions(version1, version2)
     local letterWeights = {
         A = 1, B = 2, C = 3, D = 4, E = 5, -- Add more as needed
+        a = 1, b = 2, c = 3, d = 4, e = 5, -- Add more as needed
         alpha = 1, beta = 2, rc = 3, p = 4, h = 5 -- Common suffixes
     }
 
