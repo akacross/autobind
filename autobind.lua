@@ -4570,7 +4570,7 @@ function(self)
                 imgui.Text('Do you want to update this script?')
                 local buttonSize = imgui.ImVec2(85, 45)
                 if imgui.CustomButton(fa.ICON_FA_CHECK .. ' Update', color_default, color_hover, color_active, buttonSize) then
-                    --updateScript()
+                    updateScript()
                     menu.confirm.update[0] = false
                     menu.confirm.window[0] = false
                     print('Update')
@@ -5041,7 +5041,7 @@ function updateScript()
         end
     end
 
-    downloadManager:queueDownloads(Urls.script(autobind.Settings.fetchBeta), onComplete, onProgress)
+    downloadManager:queueDownloads({{url = Urls.script(autobind.Settings.fetchBeta), path = scriptPath, replace = true}}, onComplete, onProgress)
 end
 
 -- Create Row (Settings)
