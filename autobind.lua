@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.21b")
+script_version("1.8.21c")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -3818,35 +3818,6 @@ function onD3DPresent()
 		setGameKeyState(gkeys.player.SPRINT, 0)
 	end
 
-    -- Draw Download Progress
-    if downloadProgress.currentFile ~= "" then
-        local x, y = 700, 500 -- Position on the screen
-        local text = string.format(
-            "Downloading: %s\nFile Progress: %.2f%%\nOverall Progress: %.2f%%\nDownloaded: %d of %d bytes (%d of %d files)",
-            downloadProgress.currentFile,         -- %s
-            downloadProgress.fileProgress,        -- %.2f
-            downloadProgress.overallProgress,     -- %.2f
-            downloadProgress.downloadedSize,      -- %d
-            downloadProgress.totalSize or 1,      -- %d
-            downloadProgress.completedFiles,      -- %d
-            downloadProgress.totalFiles           -- %d
-        )
-        renderFontDrawText(myFont, text, x, y, 0xFFFFFFFF)
-
-        if downloadProgress.overallProgress >= 100 then
-            lua_thread.create(function()
-                wait(5000)
-                downloadProgress.currentFile = ""
-                downloadProgress.fileProgress = 0
-                downloadProgress.overallProgress = 0
-                downloadProgress.downloadedSize = 0
-                downloadProgress.totalSize = 0
-                downloadProgress.completedFiles = 0
-                downloadProgress.totalFiles = 0
-            end)
-        end
-    end
-
     -- Check if the pause/scoreboard/chat is active or if the F10 key is pressed or if the autobind is disabled
     if isPauseMenuActive() or sampIsScoreboardOpen() or sampGetChatDisplayMode() == 0 or isKeyDown(VK_F10) or not autobind.Settings.enable then
         return
@@ -4172,10 +4143,35 @@ function(self)
                     autobind.AutoVest.skins = setToList(family.skins)
                 end
             end
+
+            -- Detect if the menu has just been opened
+            if not previousMenuStates[key] and state[0] then
+                print(key .. " menu opened")
+                if key == "settings" then
+                    fetchDataDirectlyFromURL(Urls.update(autobind.Settings.fetchBeta), function(content)
+                        if content and content.version and content.lastversion then
+                            local compareNew = compareVersions(content.version, scriptVersion)
+                            local compareOld = compareVersions(content.lastversion, scriptVersion)
+                            if compareNew == 0 then
+                                -- Current version is the same as the new version
+                                buttons1[5].icon = fa.ICON_FA_CHECK .. ' Up to date'
+                            elseif compareNew == 1 and compareOld ~= 1 then
+                                -- Current version is older than the new version
+                                buttons1[5].icon = fa.ICON_FA_RETWEET .. ' Update\nNew Version'
+                            elseif compareOld == 1 then
+                                -- Current version is older than the last version but not the new version
+                                buttons1[5].icon = fa.ICON_FA_RETWEET .. ' Update\n Outdated'
+                            end
+                        end
+                    end)
+                end
+            end
+
             -- Update previous state
             previousMenuStates[key] = state[0]
         end
     end
+
 
     if menu.settings.window[0] then
         local settings = menu.settings
@@ -4196,6 +4192,7 @@ function(self)
         -- Settings Window
         if imgui.Begin(settings.title, settings.window, imgui_flags) then
             -- First child (Side Buttons)
+            imgui.PushFont(fontData.font)
             imgui.BeginChild("##1", child_size1, false)
             for i, button in ipairs(buttons1) do
                 imgui.SetCursorPosY(cursor_positions_y_buttons1[i])
@@ -4206,7 +4203,7 @@ function(self)
                 imgui.CustomTooltip(button.tooltip)
             end
             imgui.EndChild()
-
+            imgui.PopFont()
             imgui.SetCursorPos(imgui.ImVec2(85, 28))
 
             -- Second child (Page Buttons)
@@ -4985,15 +4982,9 @@ function generateSkinsUrls()
     return files
 end
 
--- Function to Initiate the Skin Download Process
-function downloadSkins(urls)
+function downloadFilesFromURL(urls, progress, callback)
     local function onComplete(downloadsFinished)
-        if downloadsFinished then
-            print("All files downloaded successfully.")
-            formattedAddChatMessage("All skins downloaded successfully!")
-        else
-            print("No files needed to be downloaded.")
-        end
+        callback(downloadsFinished)
     end
 
     local function onProgress(progressData, file)
@@ -5008,7 +4999,19 @@ function downloadSkins(urls)
         end
     end
 
-    downloadManager:queueDownloads(urls, onComplete, onProgress)
+    downloadManager:queueDownloads(urls, onComplete, progress and onProgress or nil)
+end
+
+-- Function to Initiate the Skin Download Process
+function downloadSkins(urls)
+    downloadFilesFromURL(urls, true, function(downloadsFinished)
+        if downloadsFinished then
+            print("All files downloaded successfully.")
+            formattedAddChatMessage("All skins downloaded successfully!")
+        else
+            print("No files needed to be downloaded.")
+        end
+    end)
 end
 
 -- Check for Update
@@ -5018,7 +5021,6 @@ function checkForUpdate()
             return
         end
 
-        print(content.version, scriptVersion, compareVersions(scriptVersion, content.version))
         if content.version and compareVersions(scriptVersion, content.version) == -1 then
             menu.confirm.update[0] = true
             menu.confirm.window[0] = true
@@ -5031,7 +5033,7 @@ function updateScript()
     autobind.Settings.updateInProgress = true
     autobind.Settings.lastVersion = scriptVersion
 
-    local function onComplete(downloadsFinished)
+    downloadFilesFromURL({{url = Urls.script(autobind.Settings.fetchBeta), path = scriptPath, replace = true}}, false, function(downloadsFinished)
         if downloadsFinished then
             lua_thread.create(function()
                 wait(1000)
@@ -5041,9 +5043,7 @@ function updateScript()
         else
             formattedAddChatMessage("Update download failed! Please try again later.")
         end
-    end
-
-    downloadManager:queueDownloads({{url = Urls.script(autobind.Settings.fetchBeta), path = scriptPath, replace = true}}, onComplete, nil)
+    end)
 end
 
 -- Create Row (Settings)
