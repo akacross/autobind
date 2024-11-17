@@ -924,6 +924,7 @@ local autobind = {
 local autobind_defaultSettings = {
 	Settings = {
 		enable = true,
+        CheckForUpdates = false,
         updateInProgress = false,
         lastVersion = "",
         fetchBeta = false,
@@ -1548,6 +1549,16 @@ function main()
         functionsLoop(function(started, failed)
             -- Success/Failed Messages
             formattedAddChatMessage(string.format("{%06x}%s has loaded successfully! {%06x}Type /%s.help for more information.", clr.WHITE, scriptVersion, clr.GREY, scriptName))
+
+            if autobind.Settings.updateInProgress then
+                formattedAddChatMessage(string.format("You have successfully upgraded from Version: %s to %s", autobind.Settings.lastVersion, scriptVersion))
+                autobind.Settings.updateInProgress = false
+                saveConfigWithErrorHandling(Files.settings, autobind)
+            end
+
+            if autobind.Settings.CheckForUpdates then 
+                checkForUpdate() 
+            end
 
             -- Fetch Skins
             if autobind.AutoVest.autoFetchSkins then
@@ -5022,26 +5033,17 @@ function updateScript()
 
     local function onComplete(downloadsFinished)
         if downloadsFinished then
-            formattedAddChatMessage("Update downloaded successfully! Reloading the script now.", -1)
-            thisScript():reload()
+            lua_thread.create(function()
+                wait(1000)
+                formattedAddChatMessage("Update downloaded successfully! Reloading the script now.")
+                thisScript():reload()
+            end)
         else
-            formattedAddChatMessage("Update download failed! Please try again later.", -1)
-        end
-    end
-    
-    local function onProgress(progressData, file)
-        -- Individual file progress
-        if progressData.fileProgress ~= nil then
-            print(string.format("Downloading '%s': %.2f%% complete", file.url, progressData.fileProgress))
-        end
-
-        -- Overall progress
-        if progressData.overallProgress ~= nil then
-            print(string.format("Overall Progress: %.2f%% complete", progressData.overallProgress))
+            formattedAddChatMessage("Update download failed! Please try again later.")
         end
     end
 
-    downloadManager:queueDownloads({{url = Urls.script(autobind.Settings.fetchBeta), path = scriptPath, replace = true}}, onComplete, onProgress)
+    downloadManager:queueDownloads({{url = Urls.script(autobind.Settings.fetchBeta), path = scriptPath, replace = true}}, onComplete, nil)
 end
 
 -- Create Row (Settings)
