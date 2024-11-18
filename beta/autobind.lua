@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.21c")
+script_version("1.8.21d")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -4086,6 +4086,8 @@ function onWindowMessage(msg, wparam, lparam)
     end
 end
 
+local isUpdateHovered = false
+
 -- Settings Window
 imgui.OnFrame(function() return menu.initialized[0] end,
 function(self)
@@ -4174,7 +4176,6 @@ function(self)
         end
     end
 
-
     if menu.settings.window[0] then
         local settings = menu.settings
         local config = autobind.Settings
@@ -4202,7 +4203,20 @@ function(self)
                 if imgui.CustomButton(button.icon, color, color_hover, color_active, button_size_small) then
                     button.action()
                 end
-                imgui.CustomTooltip(button.tooltip)
+                if not isUpdateHovered then
+                    imgui.CustomTooltip(button.tooltip)
+                end
+
+                if button.id == 5 then
+                    imgui.SetCursorPosY(cursor_positions_y_buttons1[i] + 57)
+                    imgui.BeginChild("##checkbox", imgui.ImVec2(0, 20), false)  -- Create a new child for the checkbox
+                    if imgui.Checkbox('Beta', new.bool(autobind.Settings.fetchBeta)) then
+                        autobind.Settings.fetchBeta = toggleBind("Beta", autobind.Settings.fetchBeta)
+                    end
+                    imgui.CustomTooltip('Fetch the latest version from the beta branch')
+                    isUpdateHovered = imgui.IsItemHovered()
+                    imgui.EndChild()
+                end
             end
             imgui.EndChild()
             imgui.PopFont()
