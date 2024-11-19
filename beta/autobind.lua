@@ -3147,7 +3147,7 @@ local messageHandlers = {
             formattedAddChatMessage("You can't use your lockers if you were recently shot. Timer extended by 5 seconds.")
             resetTimer(5, timers.Heal)
 
-            resetLocker(locker)
+            --resetLocker(locker)
             return false
         end
     },
