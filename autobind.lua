@@ -1,11 +1,11 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.21c")
+script_version("1.8.21d")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
 local betaTesters = { -- WIP
-    {nickName = "Kenny", bugFinds = 14, hoursWasted = 3.0, discord = "ubergnomeage"},
+    {nickName = "Kenny", bugFinds = 14, hoursWasted = 3.0, discord = "peinv"},
     {nickName = "Wolly", bugFinds = 9, hoursWasted = 1.0, discord = "xwollyx"},
     {nickName = "Allen", bugFinds = 5, hoursWasted = 0.7, discord = "allen_7"},
     {nickName = "Moorice", bugFinds = 2, hoursWasted = 0.3, discord = "moorice"},
@@ -117,7 +117,7 @@ local workingDir = getWorkingDirectory()
 -- Paths Table
 local Paths = {
     config = workingDir .. '\\config\\',
-    resource = workingDir .. '\\resource\\',
+    resource = workingDir .. '\\resource\\'
 }
 
 -- Adding dependent paths after initial definitions
@@ -167,9 +167,6 @@ if not _G['lanes.download_manager'] then
         local url = require('socket.url')   -- URL parsing
 
         if taskType == "download" then
-            -- Existing download logic
-            linda:send('debug_' .. identifier, { message = "Starting download for URL: " .. fileUrl .. " Identifier: " .. identifier })
-
             -- Ensure the output directory exists
             local dir = filePath:match("^(.*[/\\])")
             if dir and dir ~= "" then
@@ -183,7 +180,6 @@ if not _G['lanes.download_manager'] then
                             local success, err = lfs.mkdir(path)
                             if not success then
                                 linda:send('error_' .. identifier, { error = "Directory Creation Error: " .. tostring(err) })
-                                linda:send('debug_' .. identifier, { message = "Directory creation error: " .. tostring(err) })
                                 return
                             end
                         end
@@ -221,12 +217,11 @@ if not _G['lanes.download_manager'] then
                 local contentLength = headers["content-length"] or headers["Content-Length"]
                 if contentLength then
                     progressData.total = tonumber(contentLength)
-                    linda:send('debug_' .. identifier, { message = "Total size for URL: " .. fileUrl .. " is " .. progressData.total })
                 else
-                    linda:send('debug_' .. identifier, { message = "Content-Length header not found for URL: " .. fileUrl })
+                    linda:send('error_' .. identifier, { error = "Content-Length header not found for URL: " .. fileUrl })
                 end
             else
-                linda:send('debug_' .. identifier, { message = "HEAD request failed with code: " .. code .. " for URL: " .. fileUrl })
+                linda:send('error_' .. identifier, { error = "HEAD request failed with code: " .. code .. " for URL: " .. fileUrl })
             end
 
             -- Create a custom sink function
@@ -242,7 +237,6 @@ if not _G['lanes.download_manager'] then
                     local success, writeErr = outputFile:write(chunk)
                     if not success then
                         linda:send('error_' .. identifier, { error = "File Write Error: " .. tostring(writeErr) })
-                        linda:send('debug_' .. identifier, { message = "File write error: " .. tostring(writeErr) })
                         stopDownload = true  -- Signal to stop further processing
                         -- Close the file to release resources
                         outputFile:close()
@@ -254,7 +248,6 @@ if not _G['lanes.download_manager'] then
                             downloaded = progressData.downloaded,
                             total = progressData.total,
                         })
-                        linda:send('debug_' .. identifier, { message = "Progress update for identifier: " .. identifier .. " Downloaded: " .. progressData.downloaded .. " Total: " .. progressData.total })
                     end
                 else
                     -- No more data; close the file
@@ -263,7 +256,6 @@ if not _G['lanes.download_manager'] then
                         downloaded = progressData.downloaded,
                         total = progressData.total,
                     })
-                    linda:send('debug_' .. identifier, { message = "Download completed for identifier: " .. identifier })
                 end
                 return 1  -- Continue processing
             end
@@ -284,13 +276,9 @@ if not _G['lanes.download_manager'] then
                 os.remove(filePath)  -- Remove incomplete file
                 local errorMsg = "HTTP Error: " .. tostring(requestCode)
                 linda:send('error_' .. identifier, { error = errorMsg })
-                linda:send('debug_' .. identifier, { message = "HTTP request error for identifier: " .. identifier .. " Error: " .. errorMsg })
             end
 
         elseif taskType == "fetch" then
-            -- New logic for fetching data directly
-            linda:send('debug_' .. identifier, { message = "Starting fetch for URL: " .. fileUrl .. " Identifier: " .. identifier })
-
             -- Determine whether to use HTTP or HTTPS
             local parsed_url = url.parse(fileUrl)
             local http_request = http.request
@@ -311,11 +299,9 @@ if not _G['lanes.download_manager'] then
             if code == 200 then
                 local content = table.concat(response_body)
                 linda:send('completed_' .. identifier, { content = content })
-                linda:send('debug_' .. identifier, { message = "Fetch completed for identifier: " .. identifier })
             else
                 local errorMsg = "HTTP Error: " .. tostring(code)
                 linda:send('error_' .. identifier, { error = errorMsg })
-                linda:send('debug_' .. identifier, { message = "HTTP request error for identifier: " .. identifier .. " Error: " .. errorMsg })
             end
         end
     end)
@@ -578,7 +564,6 @@ function DownloadManager:updateDownloads()
         local progressKey = 'progress_' .. identifier
         local completedKey = 'completed_' .. identifier
         local errorKey = 'error_' .. identifier
-        local debugKey = 'debug_' .. identifier
 
         local key, val = linda:receive(0, completedKey, errorKey, progressKey, debugKey)
         if key and val then
@@ -614,9 +599,6 @@ function DownloadManager:updateDownloads()
                         overallProgress = overallProgress,
                     }, file)
                 end
-            --[[elseif key == debugKey then
-                -- Handle debug messages if needed
-                print("Debug:", val.message)]]
             end
         end
     end
@@ -924,7 +906,7 @@ local autobind = {
 local autobind_defaultSettings = {
 	Settings = {
 		enable = true,
-        CheckForUpdates = false,
+        checkForUpdates = false,
         updateInProgress = false,
         lastVersion = "",
         fetchBeta = false,
@@ -1012,7 +994,7 @@ local autobind_defaultSettings = {
             STRIKEOUT = false
         },
         align = "left",
-        colors = {text = clr.RED, value = clr.GREY}
+        colors = {text = clr.REALRED, value = clr.WHITE}
     },
     AutoFind = {
         enable = true,
@@ -1028,7 +1010,7 @@ local autobind_defaultSettings = {
             STRIKEOUT = false
         },
         align = "left",
-        colors = {text = clr.RED, value = clr.GREY}
+        colors = {text = clr.REALRED, value = clr.WHITE}
     },
     LastBackup = {
         enable = true,
@@ -1044,7 +1026,7 @@ local autobind_defaultSettings = {
             STRIKEOUT = false
         },
         align = "left",
-        colors = {text = clr.RED, value = clr.GREY}
+        colors = {text = clr.REALRED, value = clr.WHITE}
     },
 	WindowPos = {
 		Settings = {x = resX / 2, y = resY / 2},
@@ -1554,18 +1536,19 @@ function main()
                 formattedAddChatMessage(string.format("You have successfully upgraded from Version: %s to %s", autobind.Settings.lastVersion, scriptVersion))
                 autobind.Settings.updateInProgress = false
                 saveConfigWithErrorHandling(Files.settings, autobind)
-            end
-
-            if autobind.Settings.CheckForUpdates then 
-                checkForUpdate() 
+            else
+                if autobind.Settings.checkForUpdates then 
+                    checkForUpdates() 
+                end
             end
 
             -- Fetch Skins
             if autobind.AutoVest.autoFetchSkins then
                 fetchDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
-                    autobind.AutoVest.skins = decodedData
-
-                    family.skins = listToSet(autobind.AutoVest.skins)
+                    if decodedData then
+                        autobind.AutoVest.skins = decodedData
+                        family.skins = listToSet(autobind.AutoVest.skins)
+                    end
                 end)
             else
                 family.skins = listToSet(autobind.AutoVest.skins)
@@ -1574,9 +1557,10 @@ function main()
             -- Fetch Names
             if autobind.AutoVest.autoFetchNames then
                 fetchDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
-                    autobind.AutoVest.names = decodedData
-
-                    names = listToSet(autobind.AutoVest.names)
+                    if decodedData then
+                        autobind.AutoVest.names = decodedData
+                        names = listToSet(autobind.AutoVest.names)
+                    end
                 end)
             else
                 names = listToSet(autobind.AutoVest.names)
@@ -1811,6 +1795,7 @@ end
 
 -- Handle Black Market
 function handleBlackMarket(kitNumber)
+    local currentTime = localClock()
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
         resetLocker(blackMarket)
@@ -1835,6 +1820,7 @@ function handleBlackMarket(kitNumber)
 		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
 	end
 
+    resetLocker(blackMarket)
     blackMarket.getItemFrom = kitNumber
     blackMarket.obtainedItems = {} -- Reset obtained items
 
@@ -1873,6 +1859,7 @@ end
 
 -- Handle Faction Locker
 function handleFactionLocker(kitNumber)
+    local currentTime = localClock()
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
         resetLocker(factionLocker)
@@ -1897,6 +1884,7 @@ function handleFactionLocker(kitNumber)
 		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
 	end
 
+    resetLocker(factionLocker)
     factionLocker.getItemFrom = kitNumber
     factionLocker.obtainedItems = {} -- Reset obtained items
 
@@ -2293,7 +2281,7 @@ local functionsToRun = {
     {
         name = "AutoFind",
         func = createAutoFind,
-        interval = 0,
+        interval = 0.0,
         lastRun = localClock(),
         enabled = true
     },
@@ -2312,11 +2300,6 @@ local function initializeFunctionStatus()
     for _, func in ipairs(functionsToRun) do
         funcsLoop.functionStatus[func.name] = "idle"
     end
-end
-
--- Reset Function Status
-local function resetFunctionStatus()
-    initializeFunctionStatus()
 end
 
 -- Initialize Function Status at Start
@@ -3145,7 +3128,7 @@ local messageHandlers = {
             formattedAddChatMessage("You can't use your lockers if you were recently shot. Timer extended by 5 seconds.")
             resetTimer(5, timers.Heal)
 
-            --resetLocker(locker)
+            --resetLocker(factionLocker)
             return false
         end
     },
@@ -3959,7 +3942,7 @@ local buttons1 = {
         icon = fa.ICON_FA_RETWEET .. ' Update',
         tooltip = 'Check for update',
         action = function()
-            checkForUpdate()
+            checkForUpdates()
         end,
         color = function()
             return color_default
@@ -4084,6 +4067,8 @@ function onWindowMessage(msg, wparam, lparam)
     end
 end
 
+local isUpdateHovered = false
+
 -- Settings Window
 imgui.OnFrame(function() return menu.initialized[0] end,
 function(self)
@@ -4172,7 +4157,6 @@ function(self)
         end
     end
 
-
     if menu.settings.window[0] then
         local settings = menu.settings
         local config = autobind.Settings
@@ -4200,7 +4184,20 @@ function(self)
                 if imgui.CustomButton(button.icon, color, color_hover, color_active, button_size_small) then
                     button.action()
                 end
-                imgui.CustomTooltip(button.tooltip)
+                if not isUpdateHovered then
+                    imgui.CustomTooltip(button.tooltip)
+                end
+
+                if button.id == 5 then
+                    imgui.SetCursorPosY(cursor_positions_y_buttons1[i] + 57)
+                    imgui.BeginChild("##checkbox", imgui.ImVec2(0, 20), false)  -- Create a new child for the checkbox
+                    if imgui.Checkbox('Beta', new.bool(autobind.Settings.fetchBeta)) then
+                        autobind.Settings.fetchBeta = toggleBind("Beta", autobind.Settings.fetchBeta)
+                    end
+                    imgui.CustomTooltip('Fetch the latest version from the beta branch')
+                    isUpdateHovered = imgui.IsItemHovered()
+                    imgui.EndChild()
+                end
             end
             imgui.EndChild()
             imgui.PopFont()
@@ -4581,13 +4578,11 @@ function(self)
                     updateScript()
                     menu.confirm.update[0] = false
                     menu.confirm.window[0] = false
-                    print('Update')
                 end
                 imgui.SameLine()
                 if imgui.CustomButton(fa.ICON_FA_TIMES .. ' Cancel', color_default, color_hover, color_active, buttonSize) then
                     menu.confirm.update[0] = false
                     menu.confirm.window[0] = false
-                    print('Cancel')
                 end
             end
         end
@@ -4786,10 +4781,12 @@ function renderNames()
         imgui.PopItemWidth()
         if imgui.Button("Fetch") then
             fetchDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
-                autobind.AutoVest.names = decodedData
+                if decodedData then
+                    autobind.AutoVest.names = decodedData
 
-                -- Convert list to set
-                names = listToSet(autobind.AutoVest.names)
+                    -- Convert list to set
+                    names = listToSet(autobind.AutoVest.names)
+                end
             end)
         end
         imgui.CustomTooltip("Fetches names from provided URL")
@@ -4951,37 +4948,7 @@ function createFontMenuElement(title, element)
     imgui.PopItemWidth()
 end
 
--- Function to Fetch Data Directly From URL
-function fetchDataDirectlyFromURL(url, callback)
-    local function onComplete(decodedData)
-        if decodedData and next(decodedData) ~= nil then
-            callback(decodedData)
-        else
-            print("JSON format is empty or invalid URL:", url)
-        end
-    end
-
-    downloadManager:queueFetches({{url = url, callback = onComplete}})
-end
-
--- Function to Generate Skins URLs
-function generateSkinsUrls()
-    local files = {}
-    for i = 0, 311 do
-        table.insert(files, {
-            url = string.format("%sSkin_%d.png", Urls.skins, i),
-            path = string.format("%sSkin_%d.png", Paths.skins, i),
-            replace = false,
-            index = i
-        })
-    end
-
-    -- Sort the files by index
-    table.sort(files, function(a, b) return tonumber(a.index) < tonumber(b.index) end)
-
-    return files
-end
-
+-- Function to Download Files From URL
 function downloadFilesFromURL(urls, progress, callback)
     local function onComplete(downloadsFinished)
         callback(downloadsFinished)
@@ -5002,20 +4969,21 @@ function downloadFilesFromURL(urls, progress, callback)
     downloadManager:queueDownloads(urls, onComplete, progress and onProgress or nil)
 end
 
--- Function to Initiate the Skin Download Process
-function downloadSkins(urls)
-    downloadFilesFromURL(urls, true, function(downloadsFinished)
-        if downloadsFinished then
-            print("All files downloaded successfully.")
-            formattedAddChatMessage("All skins downloaded successfully!")
+-- Function to Fetch Data Directly From URL
+function fetchDataDirectlyFromURL(url, callback)
+    local function onComplete(decodedData)
+        if decodedData and next(decodedData) ~= nil then
+            callback(decodedData)
         else
-            print("No files needed to be downloaded.")
+            print("JSON format is empty or invalid URL:", url)
         end
-    end)
+    end
+
+    downloadManager:queueFetches({{url = url, callback = onComplete}})
 end
 
 -- Check for Update
-function checkForUpdate()
+function checkForUpdates()
     fetchDataDirectlyFromURL(Urls.update(autobind.Settings.fetchBeta), function(content)
         if not content then
             return
@@ -5042,6 +5010,36 @@ function updateScript()
             end)
         else
             formattedAddChatMessage("Update download failed! Please try again later.")
+        end
+    end)
+end
+
+-- Function to Generate Skins URLs
+function generateSkinsUrls()
+    local files = {}
+    for i = 0, 311 do
+        table.insert(files, {
+            url = string.format("%sSkin_%d.png", Urls.skins, i),
+            path = string.format("%sSkin_%d.png", Paths.skins, i),
+            replace = false,
+            index = i
+        })
+    end
+
+    -- Sort the files by index
+    table.sort(files, function(a, b) return tonumber(a.index) < tonumber(b.index) end)
+
+    return files
+end
+
+-- Function to Initiate the Skin Download Process
+function downloadSkins(urls)
+    downloadFilesFromURL(urls, true, function(downloadsFinished)
+        if downloadsFinished then
+            print("All files downloaded successfully.")
+            formattedAddChatMessage("All skins downloaded successfully!")
+        else
+            print("No files needed to be downloaded.")
         end
     end)
 end
@@ -5645,9 +5643,9 @@ end
 -- Compare Versions
 function compareVersions(version1, version2)
     local letterWeights = {
-        A = 1, B = 2, C = 3, D = 4, E = 5, -- Add more as needed
-        a = 1, b = 2, c = 3, d = 4, e = 5, -- Add more as needed
-        alpha = 1, beta = 2, rc = 3, p = 4, h = 5 -- Common suffixes
+        A = 1, B = 2, C = 3, D = 4, E = 5,
+        a = 1, b = 2, c = 3, d = 4, e = 5,
+        alpha = 1, beta = 2, rc = 3, p = 4, h = 5
     }
 
     local function parseVersion(version)
