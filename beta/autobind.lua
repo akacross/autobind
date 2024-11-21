@@ -5,7 +5,7 @@ script_authors("akacross")
 script_url("https://akacross.net/")
 
 local betaTesters = { -- WIP
-    {nickName = "Kenny", bugFinds = 14, hoursWasted = 3.0, discord = "ubergnomeage"},
+    {nickName = "Kenny", bugFinds = 14, hoursWasted = 3.0, discord = "peinv"},
     {nickName = "Wolly", bugFinds = 9, hoursWasted = 1.0, discord = "xwollyx"},
     {nickName = "Allen", bugFinds = 5, hoursWasted = 0.7, discord = "allen_7"},
     {nickName = "Moorice", bugFinds = 2, hoursWasted = 0.3, discord = "moorice"},
@@ -117,7 +117,7 @@ local workingDir = getWorkingDirectory()
 -- Paths Table
 local Paths = {
     config = workingDir .. '\\config\\',
-    resource = workingDir .. '\\resource\\',
+    resource = workingDir .. '\\resource\\'
 }
 
 -- Adding dependent paths after initial definitions
@@ -167,9 +167,6 @@ if not _G['lanes.download_manager'] then
         local url = require('socket.url')   -- URL parsing
 
         if taskType == "download" then
-            -- Existing download logic
-            linda:send('debug_' .. identifier, { message = "Starting download for URL: " .. fileUrl .. " Identifier: " .. identifier })
-
             -- Ensure the output directory exists
             local dir = filePath:match("^(.*[/\\])")
             if dir and dir ~= "" then
@@ -183,7 +180,6 @@ if not _G['lanes.download_manager'] then
                             local success, err = lfs.mkdir(path)
                             if not success then
                                 linda:send('error_' .. identifier, { error = "Directory Creation Error: " .. tostring(err) })
-                                linda:send('debug_' .. identifier, { message = "Directory creation error: " .. tostring(err) })
                                 return
                             end
                         end
@@ -221,12 +217,11 @@ if not _G['lanes.download_manager'] then
                 local contentLength = headers["content-length"] or headers["Content-Length"]
                 if contentLength then
                     progressData.total = tonumber(contentLength)
-                    linda:send('debug_' .. identifier, { message = "Total size for URL: " .. fileUrl .. " is " .. progressData.total })
                 else
-                    linda:send('debug_' .. identifier, { message = "Content-Length header not found for URL: " .. fileUrl })
+                    linda:send('error_' .. identifier, { error = "Content-Length header not found for URL: " .. fileUrl })
                 end
             else
-                linda:send('debug_' .. identifier, { message = "HEAD request failed with code: " .. code .. " for URL: " .. fileUrl })
+                linda:send('error_' .. identifier, { error = "HEAD request failed with code: " .. code .. " for URL: " .. fileUrl })
             end
 
             -- Create a custom sink function
@@ -242,7 +237,6 @@ if not _G['lanes.download_manager'] then
                     local success, writeErr = outputFile:write(chunk)
                     if not success then
                         linda:send('error_' .. identifier, { error = "File Write Error: " .. tostring(writeErr) })
-                        linda:send('debug_' .. identifier, { message = "File write error: " .. tostring(writeErr) })
                         stopDownload = true  -- Signal to stop further processing
                         -- Close the file to release resources
                         outputFile:close()
@@ -254,7 +248,6 @@ if not _G['lanes.download_manager'] then
                             downloaded = progressData.downloaded,
                             total = progressData.total,
                         })
-                        linda:send('debug_' .. identifier, { message = "Progress update for identifier: " .. identifier .. " Downloaded: " .. progressData.downloaded .. " Total: " .. progressData.total })
                     end
                 else
                     -- No more data; close the file
@@ -263,7 +256,6 @@ if not _G['lanes.download_manager'] then
                         downloaded = progressData.downloaded,
                         total = progressData.total,
                     })
-                    linda:send('debug_' .. identifier, { message = "Download completed for identifier: " .. identifier })
                 end
                 return 1  -- Continue processing
             end
@@ -284,13 +276,9 @@ if not _G['lanes.download_manager'] then
                 os.remove(filePath)  -- Remove incomplete file
                 local errorMsg = "HTTP Error: " .. tostring(requestCode)
                 linda:send('error_' .. identifier, { error = errorMsg })
-                linda:send('debug_' .. identifier, { message = "HTTP request error for identifier: " .. identifier .. " Error: " .. errorMsg })
             end
 
         elseif taskType == "fetch" then
-            -- New logic for fetching data directly
-            linda:send('debug_' .. identifier, { message = "Starting fetch for URL: " .. fileUrl .. " Identifier: " .. identifier })
-
             -- Determine whether to use HTTP or HTTPS
             local parsed_url = url.parse(fileUrl)
             local http_request = http.request
@@ -311,11 +299,9 @@ if not _G['lanes.download_manager'] then
             if code == 200 then
                 local content = table.concat(response_body)
                 linda:send('completed_' .. identifier, { content = content })
-                linda:send('debug_' .. identifier, { message = "Fetch completed for identifier: " .. identifier })
             else
                 local errorMsg = "HTTP Error: " .. tostring(code)
                 linda:send('error_' .. identifier, { error = errorMsg })
-                linda:send('debug_' .. identifier, { message = "HTTP request error for identifier: " .. identifier .. " Error: " .. errorMsg })
             end
         end
     end)
@@ -578,7 +564,6 @@ function DownloadManager:updateDownloads()
         local progressKey = 'progress_' .. identifier
         local completedKey = 'completed_' .. identifier
         local errorKey = 'error_' .. identifier
-        local debugKey = 'debug_' .. identifier
 
         local key, val = linda:receive(0, completedKey, errorKey, progressKey, debugKey)
         if key and val then
@@ -614,9 +599,6 @@ function DownloadManager:updateDownloads()
                         overallProgress = overallProgress,
                     }, file)
                 end
-            --[[elseif key == debugKey then
-                -- Handle debug messages if needed
-                print("Debug:", val.message)]]
             end
         end
     end
@@ -924,7 +906,7 @@ local autobind = {
 local autobind_defaultSettings = {
 	Settings = {
 		enable = true,
-        CheckForUpdates = false,
+        checkForUpdates = false,
         updateInProgress = false,
         lastVersion = "",
         fetchBeta = false,
@@ -1012,7 +994,7 @@ local autobind_defaultSettings = {
             STRIKEOUT = false
         },
         align = "left",
-        colors = {text = clr.RED, value = clr.GREY}
+        colors = {text = clr.REALRED, value = clr.WHITE}
     },
     AutoFind = {
         enable = true,
@@ -1028,7 +1010,7 @@ local autobind_defaultSettings = {
             STRIKEOUT = false
         },
         align = "left",
-        colors = {text = clr.RED, value = clr.GREY}
+        colors = {text = clr.REALRED, value = clr.WHITE}
     },
     LastBackup = {
         enable = true,
@@ -1044,7 +1026,7 @@ local autobind_defaultSettings = {
             STRIKEOUT = false
         },
         align = "left",
-        colors = {text = clr.RED, value = clr.GREY}
+        colors = {text = clr.REALRED, value = clr.WHITE}
     },
 	WindowPos = {
 		Settings = {x = resX / 2, y = resY / 2},
@@ -1554,10 +1536,10 @@ function main()
                 formattedAddChatMessage(string.format("You have successfully upgraded from Version: %s to %s", autobind.Settings.lastVersion, scriptVersion))
                 autobind.Settings.updateInProgress = false
                 saveConfigWithErrorHandling(Files.settings, autobind)
-            end
-
-            if autobind.Settings.CheckForUpdates then 
-                checkForUpdate() 
+            else
+                if autobind.Settings.checkForUpdates then 
+                    checkForUpdates() 
+                end
             end
 
             -- Fetch Skins
@@ -1813,6 +1795,7 @@ end
 
 -- Handle Black Market
 function handleBlackMarket(kitNumber)
+    local currentTime = localClock()
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
         resetLocker(blackMarket)
@@ -1837,6 +1820,7 @@ function handleBlackMarket(kitNumber)
 		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
 	end
 
+    resetLocker(blackMarket)
     blackMarket.getItemFrom = kitNumber
     blackMarket.obtainedItems = {} -- Reset obtained items
 
@@ -1875,6 +1859,7 @@ end
 
 -- Handle Faction Locker
 function handleFactionLocker(kitNumber)
+    local currentTime = localClock()
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
         resetLocker(factionLocker)
@@ -1899,6 +1884,7 @@ function handleFactionLocker(kitNumber)
 		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
 	end
 
+    resetLocker(factionLocker)
     factionLocker.getItemFrom = kitNumber
     factionLocker.obtainedItems = {} -- Reset obtained items
 
@@ -2295,7 +2281,7 @@ local functionsToRun = {
     {
         name = "AutoFind",
         func = createAutoFind,
-        interval = 0,
+        interval = 0.0,
         lastRun = localClock(),
         enabled = true
     },
@@ -2314,11 +2300,6 @@ local function initializeFunctionStatus()
     for _, func in ipairs(functionsToRun) do
         funcsLoop.functionStatus[func.name] = "idle"
     end
-end
-
--- Reset Function Status
-local function resetFunctionStatus()
-    initializeFunctionStatus()
 end
 
 -- Initialize Function Status at Start
@@ -3147,7 +3128,7 @@ local messageHandlers = {
             formattedAddChatMessage("You can't use your lockers if you were recently shot. Timer extended by 5 seconds.")
             resetTimer(5, timers.Heal)
 
-            --resetLocker(locker)
+            --resetLocker(factionLocker)
             return false
         end
     },
@@ -3961,7 +3942,7 @@ local buttons1 = {
         icon = fa.ICON_FA_RETWEET .. ' Update',
         tooltip = 'Check for update',
         action = function()
-            checkForUpdate()
+            checkForUpdates()
         end,
         color = function()
             return color_default
@@ -5002,7 +4983,7 @@ function fetchDataDirectlyFromURL(url, callback)
 end
 
 -- Check for Update
-function checkForUpdate()
+function checkForUpdates()
     fetchDataDirectlyFromURL(Urls.update(autobind.Settings.fetchBeta), function(content)
         if not content then
             return
