@@ -550,7 +550,7 @@ function DownloadManager:updateDownloads()
         local completedKey = 'completed_' .. identifier
         local errorKey = 'error_' .. identifier
 
-        local key, val = linda:receive(0, completedKey, errorKey, progressKey, debugKey)
+        local key, val = linda:receive(0, completedKey, errorKey, progressKey)
         if key and val then
             if key == completedKey then
                 self.completedFiles = self.completedFiles + 1
