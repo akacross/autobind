@@ -1,43 +1,26 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.21d")
+script_version("1.8.22")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
 local betaTesters = { -- WIP
     {nickName = "Kenny", bugFinds = 14, hoursWasted = 3.0, discord = "peinv"},
     {nickName = "Wolly", bugFinds = 9, hoursWasted = 1.0, discord = "xwollyx"},
-    {nickName = "Allen", bugFinds = 5, hoursWasted = 0.7, discord = "allen_7"},
-    {nickName = "Moorice", bugFinds = 2, hoursWasted = 0.3, discord = "moorice"},
-    {nickName = "Dwayne", bugFinds = -1, hoursWasted = 0.8, discord = "dickshaft"}
+    {nickName = "Allen", bugFinds = 6, hoursWasted = 0.9, discord = "allen_7"},
+    {nickName = "Moorice", bugFinds = 3, hoursWasted = 0.4, discord = "moorice"},
+    {nickName = "Dwayne", bugFinds = 1, hoursWasted = 0.9, discord = "dickshaft"}
 }
 
 local changelog = {
-    ["1.8.18"] = {
-        "Improved: Rewrote autofind to make it more efficient and reliable, it is now apart of the main functions loop.",
-        "Improved: ARES radio chat colored ARES badge, player-colored names, white message text, and player ID."
+    ["1.8.22"] = {
+        "New: Added a new parameter to the /vst command you can use to spawn vehicles via there index in from the dialog box (e.g. /vst 1).",
+        "New: When typing /vst in chat without entering the command, an imgui menu will automatically open."
     },
-    ["1.8.17"] = {
-        "Fixed: There was an issue with accepters playerId because nil, now the nickname to ID function returns -1 if the player is not found."
-    },
-    ["1.8.16a"] = {
-        "Fixed: Black Market and Faction Locker not showing keybinds."
-    },
-    ["1.8.15a"] = {
-        "Release to The Commission Family"
-    },
-    ["1.8.15"] = {
-        "Improved: Completely redesigned the menus interface to make it more user-friendly and visually appealing.",
-        "New: Added a new menu for the Black Market and Faction Locker with kits. (Faction Locker is WIP)",
-        "New: Built a custom download manager using Lua Lanes and requests for downloading files and updating the script.",
-        "Added: The project now requires the following dependencies: lanes, requests (with sockets and SSL), and LFS.",
-        "Lanes: Utilized for parallel processing, allowing the download manager to run concurrently with the main game thread.",
-        "Requests (with Sockets and SSL): Essential for the custom-built download manager to handle secure HTTP/S operations.",
-        "LuaFileSystem (LFS): Used for managing file system operations, it is only used for the download manager.",
-        "Fixed: Resolved the issue causing the main looping functions to crash the mod, ensuring stability.",
-        "Improved: The script now has a more efficient and streamlined structure, making it easier to maintain and update.",
-        "Changed: Completely overhauled the script to improve performance, stability, and readability.",
-        "Changed: There is no longer a need to check your VestMode, it is automatically fetched via MOTD, There is an option to allow everyone."
+    ["1.8.21"] = {
+        "Improved: I have made some improvements to the Download Manager, I can now fetch json urls and directly convert them to lua tables.",
+        "Fixed: Download Manager properly queues downloads and starts the next download only after the previous one is complete.",
+        "Added: Update Manager had been added, it will now check for updates and notify you if there is a new version available in the menu."
     }
 }
 
@@ -143,7 +126,9 @@ local Urls = {
     update = function(beta)
         return getBaseUrl(beta) .. "update.json"
     end,
-    skins = getBaseUrl(false) .. "resource/skins/"
+    skinsPath = getBaseUrl(false) .. "resource/skins/",
+    skins = getBaseUrl(false) .. "skins.json",
+    names = getBaseUrl(false) .. "names.json"
 }
 
 -- Ensure Global `lanes.download_manager` Exists with `lane` and `linda`
@@ -661,6 +646,72 @@ local downloadProgress = {
     completedFiles = 0
 }
 
+-- Color Table
+local clr = {
+    GRAD1 = 0xB4B5B7, -- #B4B5B7
+    GRAD2 = 0xBFC0C2, -- #BFC0C2
+    GRAD3 = 0xCBCCCE, -- #CBCCCE
+    GRAD4 = 0xD8D8D8, -- #D8D8D8
+    GRAD5 = 0xE3E3E3, -- #E3E3E3
+    GRAD6 = 0xF0F0F0, -- #F0F0F0
+    GREY = 0xAFAFAF, -- #AFAFAF
+    RED = 0xAA3333, -- #AA3333
+    ORANGE = 0xFF8000, -- #FF8000
+    YELLOW = 0xFFFF00, -- #FFFF00
+    FORSTATS = 0xFFFF91, -- #FFFF91
+    HOUSEGREEN = 0x00E605, -- #00E605
+    GREEN = 0x33AA33, -- #33AA33
+    LIGHTGREEN = 0x9ACD32, -- #9ACD32
+    CYAN = 0x40FFFF, -- #40FFFF
+    PURPLE = 0xC2A2DA, -- #C2A2DA
+    BLACK = 0x000000, -- #000000
+    WHITE = 0xFFFFFF, -- #FFFFFF
+    FADE1 = 0xE6E6E6, -- #E6E6E6
+    FADE2 = 0xC8C8C8, -- #C8C8C8
+    FADE3 = 0xAAAAAA, -- #AAAAAA
+    FADE4 = 0x8C8C8C, -- #8C8C8C
+    FADE5 = 0x6E6E6E, -- #6E6E6E
+    LIGHTRED = 0xFF6347, -- #FF6347
+    NEWS = 0xFFA500, -- #FFA500
+    TEAM_NEWS_COLOR = 0x049C71, -- #049C71
+    TWPINK = 0xE75480, -- #E75480
+    TWRED = 0xFF0000, -- #FF0000
+    TWBROWN = 0x654321, -- #654321
+    TWGRAY = 0x808080, -- #808080
+    TWOLIVE = 0x808000, -- #808000
+    TWPURPLE = 0x800080, -- #800080
+    TWTAN = 0xD2B48C, -- #D2B48C
+    TWAQUA = 0x00FFFF, -- #00FFFF
+    TWORANGE = 0xFF8C00, -- #FF8C00
+    TWAZURE = 0x007FFF, -- #007FFF
+    TWGREEN = 0x008000, -- #008000
+    TWBLUE = 0x0000FF, -- #0000FF
+    LIGHTBLUE = 0x33CCFF, -- #33CCFF
+    FIND_COLOR = 0xB90000, -- #B90000
+    TEAM_AZTECAS_COLOR = 0x01FCFF, -- #01FCFF
+    TEAM_TAXI_COLOR = 0xF2FF00, -- #F2FF00
+    DEPTRADIO = 0xFFD700, -- #FFD700
+    RADIO = 0x8D8DFF, -- #8D8DFF
+    TEAM_BLUE_COLOR = 0x2641FE, -- #2641FE
+    TEAM_FBI_COLOR = 0x8D8DFF, -- #8D8DFF
+    TEAM_MED_COLOR = 0xFF8282, -- #FF8282
+    TEAM_APRISON_COLOR = 0x9C7912, -- #9C7912
+    NEWBIE = 0x7DAEFF, -- #7DAEFF
+    PINK = 0xFF66FF, -- #FF66FF
+    OOC = 0xE0FFFF, -- #E0FFFF
+    PUBLICRADIO_COLOR = 0x6DFB6D, -- #6DFB6D
+    TEAM_GROVE_COLOR = 0x00D900, -- #00D900
+    REALRED = 0xFF0606, -- #FF0606
+    REALGREEN = 0x00FF00, -- #00FF00
+    WANTED_COLOR = 0xFF0000, -- #FF0000
+    MONEY = 0x2F5A26, -- #2F5A26
+    MONEY_NEGATIVE = 0x9C1619, -- #9C1619
+	GOV = 0xE8E79B, -- #E8E79B
+    BETA = 0x5D8AA8, -- #5D8AA8
+    DEV = 0xC27C0E, -- #C27C0E
+    ARES = 0x1C77B3 -- #1C77B3
+}
+
 -- Helper function for rounding to the nearest integer
 local function round(value)
     return math.floor(value + 0.5)
@@ -781,71 +832,6 @@ function HSVtoRGB(h, s, v)
     return r, g, b
 end
 
-local clr = {
-    GRAD1 = 0xB4B5B7, -- #B4B5B7
-    GRAD2 = 0xBFC0C2, -- #BFC0C2
-    GRAD3 = 0xCBCCCE, -- #CBCCCE
-    GRAD4 = 0xD8D8D8, -- #D8D8D8
-    GRAD5 = 0xE3E3E3, -- #E3E3E3
-    GRAD6 = 0xF0F0F0, -- #F0F0F0
-    GREY = 0xAFAFAF, -- #AFAFAF
-    RED = 0xAA3333, -- #AA3333
-    ORANGE = 0xFF8000, -- #FF8000
-    YELLOW = 0xFFFF00, -- #FFFF00
-    FORSTATS = 0xFFFF91, -- #FFFF91
-    HOUSEGREEN = 0x00E605, -- #00E605
-    GREEN = 0x33AA33, -- #33AA33
-    LIGHTGREEN = 0x9ACD32, -- #9ACD32
-    CYAN = 0x40FFFF, -- #40FFFF
-    PURPLE = 0xC2A2DA, -- #C2A2DA
-    BLACK = 0x000000, -- #000000
-    WHITE = 0xFFFFFF, -- #FFFFFF
-    FADE1 = 0xE6E6E6, -- #E6E6E6
-    FADE2 = 0xC8C8C8, -- #C8C8C8
-    FADE3 = 0xAAAAAA, -- #AAAAAA
-    FADE4 = 0x8C8C8C, -- #8C8C8C
-    FADE5 = 0x6E6E6E, -- #6E6E6E
-    LIGHTRED = 0xFF6347, -- #FF6347
-    NEWS = 0xFFA500, -- #FFA500
-    TEAM_NEWS_COLOR = 0x049C71, -- #049C71
-    TWPINK = 0xE75480, -- #E75480
-    TWRED = 0xFF0000, -- #FF0000
-    TWBROWN = 0x654321, -- #654321
-    TWGRAY = 0x808080, -- #808080
-    TWOLIVE = 0x808000, -- #808000
-    TWPURPLE = 0x800080, -- #800080
-    TWTAN = 0xD2B48C, -- #D2B48C
-    TWAQUA = 0x00FFFF, -- #00FFFF
-    TWORANGE = 0xFF8C00, -- #FF8C00
-    TWAZURE = 0x007FFF, -- #007FFF
-    TWGREEN = 0x008000, -- #008000
-    TWBLUE = 0x0000FF, -- #0000FF
-    LIGHTBLUE = 0x33CCFF, -- #33CCFF
-    FIND_COLOR = 0xB90000, -- #B90000
-    TEAM_AZTECAS_COLOR = 0x01FCFF, -- #01FCFF
-    TEAM_TAXI_COLOR = 0xF2FF00, -- #F2FF00
-    DEPTRADIO = 0xFFD700, -- #FFD700
-    RADIO = 0x8D8DFF, -- #8D8DFF
-    TEAM_BLUE_COLOR = 0x2641FE, -- #2641FE
-    TEAM_FBI_COLOR = 0x8D8DFF, -- #8D8DFF
-    TEAM_MED_COLOR = 0xFF8282, -- #FF8282
-    TEAM_APRISON_COLOR = 0x9C7912, -- #9C7912
-    NEWBIE = 0x7DAEFF, -- #7DAEFF
-    PINK = 0xFF66FF, -- #FF66FF
-    OOC = 0xE0FFFF, -- #E0FFFF
-    PUBLICRADIO_COLOR = 0x6DFB6D, -- #6DFB6D
-    TEAM_GROVE_COLOR = 0x00D900, -- #00D900
-    REALRED = 0xFF0606, -- #FF0606
-    REALGREEN = 0x00FF00, -- #00FF00
-    WANTED_COLOR = 0xFF0000, -- #FF0000
-    MONEY = 0x2F5A26, -- #2F5A26
-    MONEY_NEGATIVE = 0x9C1619, -- #9C1619
-	GOV = 0xE8E79B, -- #E8E79B
-    BETA = 0x5D8AA8, -- #5D8AA8
-    DEV = 0xC27C0E, -- #C27C0E
-    ARES = 0x1C77B3 -- #1C77B3
-}
-
 local clrRGBA = {}
 for name, color in pairs(clr) do
     -- Extract color components using ABGR format
@@ -857,7 +843,8 @@ for name, color in pairs(clr) do
        name == "PURPLE" or 
        name == "YELLOW" or 
        name == "LIGHTBLUE" or 
-       name == "TEAM_MED_COLOR" then
+       name == "TEAM_MED_COLOR" or
+       name == "NEWS" then
         clrs.a = 170
     else
         if name ~= "TEAM_BLUE_COLOR" then
@@ -889,6 +876,9 @@ local funcsLoop = {
 -- Screen Resolution
 local resX, resY = getScreenResolution()
 
+-- Cursor Active
+local cursorActive = false
+
 -- Autobind Config
 local autobind = {
 	Settings = {Frisk = {}, Family = {}, Faction = {}},
@@ -899,6 +889,7 @@ local autobind = {
 	WindowPos = {Settings = {}, Skins = {}, Keybinds = {}, Fonts = {}, BlackMarket = {}, FactionLocker = {}},
 	BlackMarket = {Kit1 = {}, Kit2 = {}, Kit3 = {}, Kit4 = {}, Kit5 = {}, Kit6 = {}, Locations = {}},
 	FactionLocker = {Kit1 = {}, Kit2 = {}, Kit3 = {}, Kit4 = {}, Kit5 = {}, Kit6 = {}, Locations = {}},
+    VehicleStorage = {Vehicles = {}},
 	Keybinds = {}
 }
 
@@ -944,8 +935,8 @@ local autobind_defaultSettings = {
 		donor = false,
 		skins = {123},
 		names = {"Cross_Lynch", "Allen_Lynch"},
-		skinsUrl = getBaseUrl(false) .. "skins.json",
-		namesUrl = getBaseUrl(false) .. "names.json",
+		skinsUrl = Urls.skins,
+		namesUrl = Urls.names,
         offeredTo = {
             enable = true,
             Pos = {x = resX / 6.0, y = resY / 2 + 25},
@@ -1028,8 +1019,13 @@ local autobind_defaultSettings = {
         align = "left",
         colors = {text = clr.REALRED, value = clr.WHITE}
     },
+    CurrentPlayer = {
+        name = "",
+        id = -1
+    },
 	WindowPos = {
 		Settings = {x = resX / 2, y = resY / 2},
+        VehicleStorage = {x = resX / 2, y = resY / 2},
         Skins = {x = resX / 2, y = resY / 2},
         Keybinds = {x = resX / 2, y = resY / 2},
         Fonts = {x = resX / 2, y = resY / 2},
@@ -1048,6 +1044,9 @@ local autobind_defaultSettings = {
         Kit3 = {1, 2, 10, 11},
 		Locations = {}
 	},
+    VehicleStorage = {
+        Vehicles = {}
+    },
 	Keybinds = {
         Accept = {Toggle = true, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}},
         Offer = {Toggle = true, Keys = {VK_MENU, VK_O}, Type = {'KeyDown', 'KeyPressed'}},
@@ -1165,6 +1164,7 @@ local factions = {
 		[0x2641FE] = true, [0x8D8DFF] = true, [0xBEBEBE] = true, [0xCC9933] = true, [0x1C77B3] = true, -- No Alpha (LSPD, FBI, GOV, SASD, ARES) [Badge]
         [0x8C2641FE] = true, [0x8C8D8DFF] = true, [0x8CBEBEBE] = true, [0x8CCC9933] = true, [0x8C1C77B3] = true -- With Alpha (LSPD, FBI, GOV, SASD, ARES) [Turf]
 	},
+    names = {"LSPD", "SASD", "FBI", "ARES", "GOV"},
     ranks = {
         ARES = {
             "Commander",
@@ -1194,6 +1194,13 @@ local menu = {
         pivot = {x = 0.5, y = 0.5},
 		pageId = 1
 	},
+    vehiclestorage = {
+        title = "Vehicle Storage",
+		window = new.bool(false),
+        size = {x = 338, y = 165},
+        pivot = {x = 0.5, y = 0.5},
+        allowDrag = new.bool(false)
+    },
     keybinds = {
         title = "Keybind Settings",
 		window = new.bool(false),
@@ -1232,7 +1239,9 @@ local imgui_flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + 
 -- Font Data
 local fontData = {
 	fontSize = 12,
-	font = nil
+	font = nil,
+	fontSmallSize = 8.0,
+	fontSmall = nil
 }
 
 -- Currently Dragging
@@ -1330,6 +1339,12 @@ local factionLocker = {
     }
 }
 
+local vehicles = {
+    spawning = false,
+    currentIndex = -1,
+    initialFetch = false
+}
+
 -- C Definitions
 ffi.cdef[[
 	// Gangzone
@@ -1359,7 +1374,8 @@ function loadConfigs()
 		{"Keybinds", "AcceptDeath"},
 		{"Keybinds", "RequestBackup"},
 		{"BlackMarket", "Locations"},
-		{"FactionLocker", "Locations"}
+		{"FactionLocker", "Locations"},
+        {"VehicleStorage", "Vehicles"}
 	}
 
     for i = 1, maxKits do
@@ -1481,6 +1497,57 @@ function main()
         end
     end)
 
+    sampRegisterChatCommand("vst", function(params)
+        -- Check if params is a valid number
+        local vehicleIndex = tonumber(params)
+        if not vehicleIndex or not autobind.Settings.enable then
+            sampSendChat("/vst")
+            formattedAddChatMessage("USAGE: /vst [slot ID]")
+            return
+        end
+    
+        -- Check if player ID and name can be retrieved
+        local _, playerId = sampGetPlayerIdByCharHandle(ped)
+        if not playerId then
+            formattedAddChatMessage("Unable to retrieve player ID!")
+            return
+        end
+    
+        local playerName = sampGetPlayerNickname(playerId)
+        local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
+    
+        -- Validate the vehicle index range
+        if vehicleIndex < 1 or vehicleIndex > 20 then
+            formattedAddChatMessage("Please pick a number between 1 and 20!")
+            return
+        end
+    
+        -- Handle unpopulated vehicles
+        if Vehicles == nil then
+            formattedAddChatMessage("Please wait, vehicles have not been populated!")
+            vehicles.spawning = true
+            vehicles.currentIndex = vehicleIndex - 1
+            sampSendChat("/vst")
+            return
+        end
+    
+        -- Check if the vehicle exists in the player's storage
+        local vehicleFound = false
+        for _, vehicle in ipairs(Vehicles) do
+            if vehicle.id == (vehicleIndex - 1) then
+                vehicleFound = true
+                vehicles.spawning = true
+                vehicles.currentIndex = vehicleIndex - 1
+                sampSendChat("/vst")
+                break
+            end
+        end
+    
+        if not vehicleFound then
+            formattedAddChatMessage("No vehicle found or invalid slot used!")
+        end
+    end)
+
 	-- Register Chat Commands
 	if autobind.Settings.enable then
 		registerChatCommands()
@@ -1526,6 +1593,8 @@ function main()
                 bodyguard.playerId = -1
             end
         end
+
+        cursorActive = sampIsCursorActive()
 
         -- Start Functions Loop
         functionsLoop(function(started, failed)
@@ -2745,6 +2814,20 @@ local messageHandlers = {
             end
         end
     },
+    {
+        pattern = "^Welcome to Horizon Roleplay, (.+)%.$",
+        color = clrRGBA["NEWS"],
+        action = function(name)
+            if name then
+                autobind.CurrentPlayer.name = name:gsub("%s+", "_")
+                autobind.CurrentPlayer.id = sampGetPlayerIdByNickname(autobind.CurrentPlayer.name)
+                saveConfigWithErrorHandling(Files.settings, autobind)
+
+                sampAddChatMessage(string.format("{%06x}Welcome to Horizon Roleplay, %s.", clr.NEWS, name), -1)
+                return false
+            end
+        end
+    },
     -- Muted Message
     {
         pattern = "^You have been muted automatically for spamming%. Please wait 10 seconds and try again%.",
@@ -2805,7 +2888,7 @@ local messageHandlers = {
     },
     -- Mode/Frequency
     {
-        pattern = "^([Family|LSPD|SASD|FBI|ARES|GOV|LSFMD].+) MOTD: (.+)",
+        pattern = "^([Family|" .. table.concat(factions.names, "|") .. "|LSFMD].+) MOTD: (.+)",
         color = clrRGBA["YELLOW"],
         action = function(type, motdMsg)
             local config = autobind.Settings
@@ -3434,8 +3517,91 @@ local messageHandlers = {
                 usingSprunk = false
             end
         end
+    },
+    -- "You have stored your (.-)%. The vehicle has been (.-)%."
+    {
+        pattern = "You have stored your (.-)%. The vehicle has been despawned%.",
+        color = clrRGBA["WHITE"],
+        action = function(vehName)
+            updateVehicleStorage("Stored")
+            sampAddChatMessage(string.format("{%06x}You have stored your %s. The vehicle has been despawned.", clr.WHITE, vehName), -1)
+            return false
+        end
+    },
+    -- "You have taken your (.-) out of storage%. The vehicle has been (.-) at the last parking location%."
+    {
+        pattern = "You have taken your (.-) out of storage%. The vehicle has been spawned at the last parking location%.",
+        color = clrRGBA["WHITE"],
+        action = function(vehName)
+            updateVehicleStorage("Spawned")
+            sampAddChatMessage(string.format("{%06x}You have taken your %s out of storage. The vehicle has been spawned at the last parking location.", clr.WHITE, vehName), -1)
+            return false
+        end
+    },
+    -- Your (.-) has been sent to the location at which you last parked it.
+    {
+        pattern = "Your (.-) has been sent to the location at which you last parked it%.$",
+        color = clrRGBA["GRAD1"],
+        action = function(vehName)
+            updateVehicleStorage("Respawned")
+            sampAddChatMessage(string.format("{%06x}Your %s has been sent to the location at which you last parked it.", clr.GRAD1, vehName), -1)
+            return false
+        end
+    },
+    -- You cannot store this vehicle as someone is currently occupying it.
+    {
+        pattern = "You can not store this vehicle as someone is currently occupying it%.$",
+        color = clrRGBA["GREY"],
+        action = function()
+            updateVehicleStorage("Occupied")
+            sampAddChatMessage(string.format("{%06x}You cannot store this vehicle as someone is currently occupying it.", clr.GREY), -1)
+            return false
+        end
+    },
+    -- This vehicle is too damaged to be stored.
+    {
+        pattern = "This vehicle is too damaged to be stored%.$",
+        color = clrRGBA["GREY"],
+        action = function()
+            updateVehicleStorage("Damaged")
+            sampAddChatMessage(string.format("{%06x}This vehicle is too damaged to be stored.", clr.GREY), -1)
+            return false
+        end
+    },
+    -- You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions).
+    {
+        pattern = "^You can't spawn a disabled vehicle. It is disabled due to your Donator level %(vehicle restrictions%)%.$",
+        color = clrRGBA["WHITE"],
+        action = function()
+            updateVehicleStorage("Disabled")
+            sampAddChatMessage(string.format("{%06x}You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions).", clr.WHITE), -1)
+            return false
+        end
+    },
+    -- You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore.
+    {
+        pattern = "^You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore%.$",
+        color = clrRGBA["WHITE"],
+        action = function()
+            updateVehicleStorage("Impounded")
+            sampAddChatMessage(string.format("{%06x}You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore.", clr.WHITE), -1)
+            return false
+        end
     }
 }
+
+function updateVehicleStorage(status)
+    local CurrentPlayer = autobind.CurrentPlayer.name
+    if vehicles.currentIndex ~= -1 and CurrentPlayer ~= "" then
+        local currentIndex = vehicles.currentIndex + 1
+        local Vehicles = autobind.VehicleStorage.Vehicles
+        if Vehicles[CurrentPlayer][currentIndex] ~= nil then
+            Vehicles[CurrentPlayer][currentIndex].status = status
+        else
+            print("Vehicle not found", CurrentPlayer, currentIndex, status)
+        end
+    end
+end
 
 -- OnServerMessage
 function sampev.onServerMessage(color, text)
@@ -3514,6 +3680,80 @@ end
 
 -- OnShowDialog
 function sampev.onShowDialog(id, style, title, button1, button2, text)
+    if title:find("Vehicle storage") and style == 2 then
+        if not vehicles.initialFetch then
+            local Vehicles = autobind.VehicleStorage.Vehicles
+        
+            local _, playerId = sampGetPlayerIdByCharHandle(ped)
+            local playerName = sampGetPlayerNickname(playerId)
+            
+            -- Ensure the playerName key exists as a table in vehicles
+            if not Vehicles[playerName] then
+                Vehicles[playerName] = {}
+            end
+            
+            -- Function to trim spaces from a string
+            local function trimSpaces(s)
+                return (s:gsub("^%s*(.-)%s*$", "%1"))
+            end
+        
+            -- Function to check if the vehicle already exists and update it
+            local function updateOrAddVehicle(playerVehicles, indexId, newVehicle, newStatus, newLocation)
+                for _, entry in ipairs(playerVehicles) do
+                    if entry.vehicle == newVehicle and entry.id == indexId then
+                        -- Update existing entry
+                        entry.status = newStatus
+                        entry.location = newLocation
+                        return
+                    end
+                end
+                -- Add new entry if no match is found
+                table.insert(playerVehicles, {
+                    id = indexId, -- Add index ID
+                    vehicle = newVehicle,
+                    status = newStatus,
+                    location = newLocation
+                })
+            end
+        
+            -- Parse the data
+            local currentId = 0 -- Start with an initial ID (or fetch from server if needed)
+            for line in text:gmatch("[^\n]+") do
+                local adjustedMessage = removeHexBrackets(line)
+                local vehicle = adjustedMessage:match("Vehicle: ([^|]+)")
+                local status = adjustedMessage:match("Status: ([^|]+)")
+                local location = adjustedMessage:match("Location: (.+)")
+                if vehicle and status and location then
+                    -- Trim spaces from each extracted value
+                    vehicle = trimSpaces(vehicle)
+                    status = trimSpaces(status)
+                    location = trimSpaces(location)
+        
+                    -- Update or add the vehicle, including the index ID
+                    updateOrAddVehicle(Vehicles[playerName], currentId, vehicle, status, location)
+                    currentId = currentId + 1 -- Increment the ID for the next vehicle
+                end
+            end
+
+            vehicles.initialFetch = true
+        end
+
+        if vehicles.spawning and vehicles.currentIndex ~= -1 then
+            sampSendDialogResponse(id, 1, vehicles.currentIndex, nil)
+            vehicles.spawning = false
+            return false
+        end
+
+        local indexId = 1
+        local newText = ""
+        for line in text:gmatch("[^\n]+") do
+            newText = newText .. string.format("%d: %s\n", indexId, line)
+            indexId = indexId + 1
+        end
+
+        return {id, style, title, button1, button2, newText}
+    end
+    
     -- Black Market
     if blackMarket.getItemFrom > 0 then
         if not title:find("Black Market") then 
@@ -3543,6 +3783,13 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
         sampSendDialogResponse(id, 1, factionLocker.currentKey, nil)
         factionLocker.gettingItem = false
         return false
+    end
+end
+
+function sampev.onSendDialogResponse(dialogId, button, listboxId, input)
+    local vehicle, status, location = input:match("Vehicle: ([^|]+) | Status: ([^|]+) | Location: (.+)")
+    if vehicle and status and location and button == 1 then
+        vehicles.currentIndex = listboxId
     end
 end
 
@@ -3716,7 +3963,7 @@ local function drawElements()
         if element.enable() and element.isVisible() then
             local font = myFonts[name]
             if font then
-                local text = element.textFunc(element)  -- Pass 'element' as 'self'
+                local text = element.textFunc(element)
                 local processedText = removeHexBrackets(text)
                 local width = renderGetFontDrawTextLength(font, processedText)
 
@@ -3738,14 +3985,14 @@ end
 
 -- Function to handle moving elements
 local function moveElements()
-    if not isCursorActive() then return end  -- Ensure the cursor is active
+    if not isCursorActive() then return end
     local cursorX, cursorY = getCursorPos()
 
     for name, element in pairs(elements) do
-        if element.enable() and menu.fonts.window[0] then  -- Only allow moving when menu is open
+        if element.enable() and menu.fonts.window[0] then
             local font = myFonts[name]
             if font then
-                local text = element.textFunc(element)  -- Pass 'element' as 'self'
+                local text = element.textFunc(element)
                 local processedText = removeHexBrackets(text)
                 local width = renderGetFontDrawTextLength(font, processedText)
                 local height = renderGetFontDrawHeight(font)
@@ -3828,6 +4075,13 @@ imgui.OnInitialize(function()
 
 	-- Load FontAwesome5 Icons (Again for the font above)
 	loadFontIcons(true, fontData.fontSize, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", Paths.resource))
+
+
+    -- Load the small font
+    fontData.fontSmall = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSmallSize)
+
+    -- Load FontAwesome5 Icons (Small)
+    loadFontIcons(true, fontData.fontSmallSize, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", Paths.resource))
 
 	-- Load Skins
 	for i = 0, 311 do
@@ -4085,7 +4339,10 @@ function(self)
     end
 
     -- Show/hide cursor based on menu state
-    self.HideCursor = not anyMenuOpen
+    self.HideCursor = not anyMenuOpen or cursorActive
+
+    local isVstCommandActive = sampGetChatInputText():find("/vst") and sampIsChatInputActive()
+    menu.vehiclestorage.window[0] = isVstCommandActive and true or false
 
     -- Handle Escape key press to close all menus
     if escapePressed then
@@ -4162,7 +4419,7 @@ function(self)
         local config = autobind.Settings
 
         -- Handle Window Dragging And Position
-        local newPos, status = imgui.handleWindowDragging("Settings", autobind.WindowPos.Settings, settings.size, settings.pivot)
+        local newPos, status = imgui.handleWindowDragging("Settings", autobind.WindowPos.Settings, settings.size, settings.pivot, true)
         if status then
             autobind.WindowPos.Settings = newPos
             imgui.SetNextWindowPos(autobind.WindowPos.Settings, imgui.Cond.Always, settings.pivot)
@@ -4256,11 +4513,81 @@ function(self)
         imgui.End()
     end
 
+    if menu.vehiclestorage.window[0] then
+        -- Handle Window Dragging
+        local newPos, status = imgui.handleWindowDragging("VehicleStorage", autobind.WindowPos.VehicleStorage, menu.vehiclestorage.size, menu.vehiclestorage.pivot, menu.vehiclestorage.allowDrag[0])
+        if status then 
+            autobind.WindowPos.VehicleStorage = newPos
+            imgui.SetNextWindowPos(autobind.WindowPos.VehicleStorage, imgui.Cond.Always, menu.vehiclestorage.pivot)
+        else
+            imgui.SetNextWindowPos(autobind.WindowPos.VehicleStorage, imgui.Cond.FirstUseEver, menu.vehiclestorage.pivot)
+        end
+
+        -- Set the window size
+        imgui.SetNextWindowSize(menu.vehiclestorage.size, imgui.Cond.FirstUseEver)
+
+        -- Set window rounding
+        imgui.PushStyleVarFloat(imgui.StyleVar.WindowRounding, 5)
+        imgui.PushStyleVarFloat(imgui.StyleVar.WindowBorderSize, 0)
+        imgui.PushStyleVarFloat(imgui.StyleVar.ScrollbarSize, 10)
+
+        local vehText = {vehicle = "Vehicle:\n", location = "Location:\n", status = "Status:\n", id = "ID:\n"}
+        local Vehicles = autobind.VehicleStorage.Vehicles[autobind.CurrentPlayer.name]
+        if Vehicles and #Vehicles > 0 and autobind.CurrentPlayer.name ~= "" then
+            for _, value in pairs(Vehicles) do
+                vehText.id = vehText.id .. string.format("%s\n", value.id + 1)
+                vehText.status = vehText.status .. string.format("%s\n", value.status)
+                vehText.vehicle = vehText.vehicle .. string.format("%s\n", value.vehicle)
+                vehText.location = vehText.location .. string.format("%s\n", value.location)
+            end
+        end
+
+        if imgui.Begin(menu.vehiclestorage.title, menu.vehiclestorage.window, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.NoMove) then
+            imgui.PushFont(fontData.font)
+
+            -- Add pin icon button
+            imgui.SetCursorPosX(imgui.GetWindowWidth() - 15 - 5)
+            imgui.SetCursorPosY(5)
+            imgui.PushFont(fontData.fontSmall)
+            if imgui.CustomButton(menu.vehiclestorage.allowDrag[0] and "" or fa.ICON_FA_MAP_PIN, color_default, color_hover, color_active, imgui.ImVec2(15, 15)) then
+                menu.vehiclestorage.allowDrag[0] = not menu.vehiclestorage.allowDrag[0]
+            end
+            imgui.PopFont()
+            if imgui.IsItemHovered() then
+                imgui.CustomTooltip(menu.vehiclestorage.allowDrag[0] and "Enable Pinning" or "Disable Pinning")
+            end
+
+            local titleBar = "Vehicle Storage:"
+            local textSize = imgui.CalcTextSize(titleBar)
+            imgui.SetCursorPosX(imgui.GetWindowWidth() / 2 - textSize.x / 2)
+            imgui.SetCursorPosY(5)
+
+            imgui.TextColoredRGB(titleBar)
+
+            imgui.SetCursorPosX(10)
+            imgui.SetCursorPosY(25)
+            if imgui.BeginChild("##vehicles", imgui.ImVec2(325, 132), false) then
+                imgui.PushFont(fontData.font)
+                imgui.TextColoredRGB(vehText.id)
+                imgui.SameLine(30)
+                imgui.TextColoredRGB(vehText.status)
+                imgui.SameLine(95)
+                imgui.TextColoredRGB(vehText.vehicle)
+                imgui.SameLine(180)
+                imgui.TextColoredRGB(vehText.location)
+                imgui.PopFont()
+            end
+            imgui.EndChild()
+        end
+        imgui.PopStyleVar(3)
+        imgui.End()
+    end
+
     if menu.keybinds.window[0] then
         local frisk = autobind.Settings.Frisk
 
         -- Handle Window Dragging
-        local newPos, status = imgui.handleWindowDragging("Keybinds", autobind.WindowPos.Keybinds, menu.keybinds.size, menu.keybinds.pivot)
+        local newPos, status = imgui.handleWindowDragging("Keybinds", autobind.WindowPos.Keybinds, menu.keybinds.size, menu.keybinds.pivot, true)
         if status then 
             autobind.WindowPos.Keybinds = newPos
             imgui.SetNextWindowPos(autobind.WindowPos.Keybinds, imgui.Cond.Always, menu.keybinds.pivot)
@@ -4317,7 +4644,7 @@ function(self)
 
     if menu.skins.window[0] then
         -- Handle Window Dragging And Position
-        local newPos, status = imgui.handleWindowDragging("Skins", autobind.WindowPos.Skins, menu.skins.size, menu.skins.pivot)
+        local newPos, status = imgui.handleWindowDragging("Skins", autobind.WindowPos.Skins, menu.skins.size, menu.skins.pivot, true)
         if status then
             autobind.WindowPos.Skins = newPos
             imgui.SetNextWindowPos(autobind.WindowPos.Skins, imgui.Cond.Always, menu.skins.pivot)
@@ -4401,7 +4728,7 @@ function(self)
 
     if menu.fonts.window[0] then
         -- Handle Window Dragging
-        local newPos, status = imgui.handleWindowDragging("FontSettings", autobind.WindowPos.Fonts, menu.fonts.size, menu.fonts.pivot)
+        local newPos, status = imgui.handleWindowDragging("FontSettings", autobind.WindowPos.Fonts, menu.fonts.size, menu.fonts.pivot, true)
         if status then 
             autobind.WindowPos.Fonts = newPos
             imgui.SetNextWindowPos(autobind.WindowPos.Fonts, imgui.Cond.Always, menu.fonts.pivot)
@@ -4433,7 +4760,7 @@ function(self)
 
     if menu.blackmarket.window[0] then
         -- Handle Window Dragging
-        local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.WindowPos.BlackMarket, menu.blackmarket.size, menu.blackmarket.pivot)
+        local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.WindowPos.BlackMarket, menu.blackmarket.size, menu.blackmarket.pivot, true)
         if status then 
             autobind.WindowPos.BlackMarket = newPos
             imgui.SetNextWindowPos(autobind.WindowPos.BlackMarket, imgui.Cond.Always, menu.blackmarket.pivot)
@@ -4499,7 +4826,7 @@ function(self)
 
     if menu.factionlocker.window[0] then
         -- Handle Window Dragging
-        local newPos, status = imgui.handleWindowDragging("FactionLocker", autobind.WindowPos.FactionLocker, menu.factionlocker.size, menu.factionlocker.pivot)
+        local newPos, status = imgui.handleWindowDragging("FactionLocker", autobind.WindowPos.FactionLocker, menu.factionlocker.size, menu.factionlocker.pivot, true)
         if status then 
             autobind.WindowPos.FactionLocker = newPos
             imgui.SetNextWindowPos(autobind.WindowPos.FactionLocker, imgui.Cond.Always, menu.factionlocker.pivot)
@@ -5019,7 +5346,7 @@ function generateSkinsUrls()
     local files = {}
     for i = 0, 311 do
         table.insert(files, {
-            url = string.format("%sSkin_%d.png", Urls.skins, i),
+            url = string.format("%sSkin_%d.png", Urls.skinsPath, i),
             path = string.format("%sSkin_%d.png", Paths.skins, i),
             replace = false,
             index = i
@@ -5757,7 +6084,11 @@ function tableContains(tbl, value)
 end
 
 -- Handle Window Dragging
-function imgui.handleWindowDragging(menuId, pos, size, pivot)
+function imgui.handleWindowDragging(menuId, pos, size, pivot, allowDrag)
+    if not allowDrag then
+        return {x = pos.x, y = pos.y}, false
+    end
+
     local mpos = imgui.GetMousePos()
     local offset = {x = size.x * pivot.x, y = size.y * pivot.y}
     local boxPos = {x = pos.x - offset.x, y = pos.y - offset.y}
