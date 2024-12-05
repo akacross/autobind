@@ -52,7 +52,12 @@ local dependencies = {
     {name = 'windows.message', var = 'wm'},
     {name = 'fAwesome5', var = 'fa'},
     {name = 'encoding', var = 'encoding'},
-    {name = 'lanes', var = 'lanes', callback = function(module) return module.configure() end}
+    {name = 'lanes', var = 'lanes', callback = function(module) return module.configure() end},
+    {name = 'ltn12', var = 'ltn12'},
+    {name = 'socket.http', var = 'http'},
+    {name = 'ssl.https', var = 'https'},
+    {name = 'lfs', var = 'lfs'},
+    {name = 'socket.url', var = 'url'}
 }
 
 -- Load modules
@@ -78,12 +83,6 @@ for _, dep in ipairs(dependencies) do
             _G[extraVar] = loadedModules[dep.var][extraField]
         end
     end
-end
-
--- Extra Modules (Used with Download Manager using lanes)
-local extraModules = {"ltn12", "socket.http", "ssl.https", "lfs", "socket.url"}
-for _, module in ipairs(extraModules) do
-    table.insert(statusMessages.success, module)
 end
 
 -- Print status messages
@@ -2593,25 +2592,29 @@ function createChatCommands()
             return
         end
 
-        -- Check if player ID and name can be retrieved
-        local _, playerId = sampGetPlayerIdByCharHandle(ped)
-        if not playerId then
-            formattedAddChatMessage("Unable to retrieve player ID!")
-            return
-        end
-
-        local playerName = sampGetPlayerNickname(playerId)
-        local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
-
         -- Validate the vehicle index range
         if vehicleIndex < 1 or vehicleIndex > 20 then
             formattedAddChatMessage("Please pick a number between 1 and 20!")
             return
         end
 
+        local playerName = autobind.CurrentPlayer.name
+        if not playerName or playerName == "" then
+            local _, playerId = sampGetPlayerIdByCharHandle(ped)
+            if not playerId then
+                formattedAddChatMessage("Current player not found!")
+                return
+            end
+
+            playerName = sampGetPlayerNickname(playerId)
+        end
+
         -- Handle unpopulated vehicles
-        if Vehicles == nil then
-            formattedAddChatMessage("Please wait, vehicles have not been populated!")
+        local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
+        Vehicles = Vehicles or {}
+
+        if #Vehicles == 0 then
+            formattedAddChatMessage("Please wait, vehicles have not been populated! spawning selected vehicle...")
             vehicles.spawning = true
             vehicles.currentIndex = vehicleIndex - 1
             sampSendChat("/vst")
@@ -2874,13 +2877,14 @@ local messageHandlers = {
                 autobind.CurrentPlayer.id = sampGetPlayerIdByNickname(autobind.CurrentPlayer.name)
 
                 -- Reset vehicle storage status
-                if autobind.CurrentPlayer.name ~= "" then
-                    local Vehicles = autobind.VehicleStorage.Vehicles[autobind.CurrentPlayer.name]
-                    if Vehicles then
-                        for _, vehicle in pairs(Vehicles) do
-                            if vehicle.status ~= "Stored" and vehicle.status ~= "Disabled" and vehicle.status ~= "Impounded" then
-                                vehicle.status = "Stored"
-                            end
+                local playerName = autobind.CurrentPlayer.name
+                if playerName and playerName ~= "" then
+                    local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
+                    Vehicles = Vehicles or {}
+
+                    for _, vehicle in pairs(Vehicles) do
+                        if vehicle.status ~= "Stored" and vehicle.status ~= "Disabled" and vehicle.status ~= "Impounded" then
+                            vehicle.status = "Stored"
                         end
                     end
                 end
@@ -3659,15 +3663,19 @@ local messageHandlers = {
 }
 
 function updateVehicleStorage(status)
-    local CurrentPlayer = autobind.CurrentPlayer.name
-    if vehicles.currentIndex ~= -1 and CurrentPlayer ~= "" then
+    local playerName = autobind.CurrentPlayer.name
+    if vehicles.currentIndex ~= -1 and playerName and playerName ~= "" then
         local currentIndex = vehicles.currentIndex + 1
-        local Vehicles = autobind.VehicleStorage.Vehicles
-        if Vehicles[CurrentPlayer][currentIndex] ~= nil then
-            Vehicles[CurrentPlayer][currentIndex].status = status
+        local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
+        Vehicles = Vehicles or {}
+
+        if Vehicles[currentIndex] ~= nil then
+            Vehicles[currentIndex].status = status
         else
-            print("Vehicle not found", CurrentPlayer, currentIndex, status)
+            print("Vehicle not found", playerName, currentIndex, status)
         end
+    else
+        print("Current player not found")
     end
 end
 
@@ -3754,13 +3762,20 @@ end
 function sampev.onShowDialog(id, style, title, button1, button2, text)
     if title:find("Vehicle storage") and style == 2 then
         if not vehicles.initialFetch then
-            local Vehicles = autobind.VehicleStorage.Vehicles
-
-            local _, playerId = sampGetPlayerIdByCharHandle(ped)
-            local playerName = sampGetPlayerNickname(playerId)
+            -- Get the player name
+            local playerName = autobind.CurrentPlayer.name
+            if not playerName or playerName == "" then
+                local _, playerId = sampGetPlayerIdByCharHandle(ped)
+                if not playerId then
+                    formattedAddChatMessage("Current player not found!")
+                    return
+                end
+    
+                playerName = sampGetPlayerNickname(playerId)
+            end
 
             -- Ensure the playerName key exists as a table in vehicles
-            Vehicles[playerName] = Vehicles[playerName] or {}
+            autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
 
             -- Function to check if the vehicle already exists and update it
             local function updateOrAddVehicle(playerVehicles, indexId, newVehicle, newStatus, newLocation)
@@ -3793,7 +3808,7 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
                     location = location:trim()
 
                     -- Update or add the vehicle, including the index ID
-                    updateOrAddVehicle(Vehicles[playerName], currentId, vehicle, status, location)
+                    updateOrAddVehicle(autobind.VehicleStorage.Vehicles[playerName], currentId, vehicle, status, location)
                     currentId = currentId + 1 -- Increment the ID for the next vehicle
                 end
             end
@@ -4597,19 +4612,28 @@ function(self)
         imgui.PushStyleVarFloat(imgui.StyleVar.ScrollbarSize, 10)
 
         local vehText = {vehicle = {[0] = "Vehicle:"}, location = {[0] = "Location:"}, status = {[0] = "Status:"}, id = {[0] = "ID:"}}
-        local currentPlayerName = autobind.CurrentPlayer.name
-        if currentPlayerName and currentPlayerName ~= "" then
-            local Vehicles = autobind.VehicleStorage.Vehicles[currentPlayerName]
-            if Vehicles then
-                for _, value in pairs(Vehicles) do
-                    if value then
-                        local statusColor = statusColors[value.status] or clr.WHITE
-                        table.insert(vehText.id, string.format("%s", value.id and value.id + 1 or "N/A"))
-                        table.insert(vehText.status, string.format("{%06X}%s", statusColor, value.status or "Unknown"))
-                        table.insert(vehText.vehicle, string.format("%s", value.vehicle or "Unknown"))
-                        table.insert(vehText.location, string.format("%s", value.location or "Unknown"))
-                    end
-                end
+
+        local playerName = autobind.CurrentPlayer.name
+        if not playerName or playerName == "" then
+            local _, playerId = sampGetPlayerIdByCharHandle(ped)
+            if not playerId then
+                formattedAddChatMessage("Current player not found!")
+                menu.vehiclestorage.window[0] = false
+                return
+            end
+
+            playerName = sampGetPlayerNickname(playerId)
+        end
+
+        autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
+
+        for _, value in pairs(autobind.VehicleStorage.Vehicles[playerName]) do
+            if value.id and value.status and value.vehicle and value.location then
+                local statusColor = statusColors[value.status] or clr.WHITE
+                table.insert(vehText.id, string.format("%s", value.id and value.id + 1 or "N/A"))
+                table.insert(vehText.status, string.format("{%06X}%s", statusColor, value.status or "Unknown"))
+                table.insert(vehText.vehicle, string.format("%s", value.vehicle or "Unknown"))
+                table.insert(vehText.location, string.format("%s", value.location or "Unknown"))
             end
         end
 
