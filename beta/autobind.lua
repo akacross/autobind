@@ -149,12 +149,12 @@ if not _G['lanes.download_manager'] then
         },
     },
     function(linda, taskType, fileUrl, filePath, identifier)
-        local lanes = require('lanes')
-        local ltn12 = require('ltn12')
-        local http = require('socket.http')
-        local https = require('ssl.https')  -- For HTTPS requests
-        local lfs = require('lfs')          -- LuaFileSystem
-        local url = require('socket.url')   -- URL parsing
+        local lanes = require('lanes')       -- For lanes parallelization
+        local ltn12 = require('ltn12')       -- For HTTP progress sink
+        local http = require('socket.http')  -- For HTTP requests
+        local https = require('ssl.https')   -- For HTTPS requests
+        local lfs = require('lfs')           -- LuaFileSystem
+        local url = require('socket.url')    -- URL parsing
 
         if taskType == "download" then
             -- Ensure the output directory exists
@@ -1276,11 +1276,60 @@ local fontData = {
 	fontSmall = nil
 }
 
+-- Define a table to hold all menu states
+local menuStates = {
+    settings = menu.settings.window,
+    keybinds = menu.keybinds.window,
+    fonts = menu.fonts.window,
+    skins = menu.skins.window,
+    blackmarket = menu.blackmarket.window,
+    factionlocker = menu.factionlocker.window,
+}
+
+-- Table to track the previous state of each menu
+local previousMenuStates = {
+    settings = false,
+    keybinds = false,
+    fonts = false,
+    skins = false,
+    blackmarket = false,
+    factionlocker = false,
+}
+
+-- Flag to indicate that the Escape key was pressed
+local escapePressed = false
+
+-- Update Tooltip Hovered
+local isUpdateHovered = false
+
+-- Vehicle Storage Status Colors
+local statusColors = {
+    Stored = clr.REALRED,
+    Spawned = clr.REALGREEN,
+    Respawned = clr.REALGREEN,
+    Occupied = clr.YELLOW,
+    Damaged = clr.ORANGE,
+    Disabled = clr.REALRED,
+    Impounded = clr.REALRED
+}
+
 -- Currently Dragging
 local currentlyDragging = nil
 
 -- Change Key
 local changeKey = {}
+
+-- Define the key editor table
+local keyEditors = {
+    {label = "Accept", key = "Accept", description = "Accepts a vest from someone. (Options are to the left)"},
+    {label = "Offer", key = "Offer", description = "Offers a vest to someone. (Options are to the left)"},
+    {label = "Take-Pills", key = "TakePills", description = "Types /takepills."},
+    {label = "Accept-Death", key = "AcceptDeath", description = "Types /acceptdeath."},
+    {label = "Frisk", key = "Frisk", description = "Frisks a player. (Options are to the left)"},
+    {label = "Bike-Bind", key = "BikeBind", description = "Makes bikes/motorcycles/quads faster by holding the bind key while riding."},
+    {label = "Sprint-Bind", key = "SprintBind", description = "Makes you sprint faster by holding the bind key while sprinting. (This is only the toggle)"},
+    {label = "Request Backup", key = "RequestBackup", description = "Types the backup command depending on what mode is detected"}
+}
 
 -- Skin Editor
 local skinTexture = {}
@@ -1335,6 +1384,13 @@ local blackMarket = {
         [3] = {7, 8, 9},  -- SMGs: MP5, UZI, Tec-9
         [4] = {10, 11},    -- Rifles: Country Rifle, Sniper Rifle
         [5] = {12, 13}    -- Assault Rifles: AK-47, M4
+    },
+    combineGroups = {
+        {2, 3, 4},
+        {5, 6},
+        {7, 8, 9},
+        {10, 11},
+        {12, 13}
     }
 }
 
@@ -1649,11 +1705,6 @@ function checkAndAcceptVest(autoaccept)
         return "You are on admin duty, you cannot accept a vest."
     end
 
-    -- Check if the player is frozen
-    if not isPlayerControlOn(h) then
-        return "You cannot accept a vest while frozen, please wait."
-    end
-
     -- Check if the user is muted
 	if checkMuted() then
 		return "You cannot accept a vest while muted, please wait."
@@ -1754,52 +1805,59 @@ function resetLocker(locker)
     locker.currentKey = nil
 end
 
--- Handle Black Market
-function handleBlackMarket(kitNumber)
-    local currentTime = localClock()
+function handleLocker(kitNumber, locker, name, command)
+    local fullName = name:gsub(" ", "")
+
     if checkMuted() then
         formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
-        resetLocker(blackMarket)
+        resetLocker(locker)
         return
     end
 
-    if not isPlayerInLocation(autobind.BlackMarket.Locations) then
-        formattedAddChatMessage(("{%06x}You are not at the black market!"):format(clr.GREY))
-        resetLocker(blackMarket)
+    if not isPlayerInLocation(autobind[fullName].Locations) then
+        formattedAddChatMessage(("{%06x}You are not at the %s!"):format(clr.GREY, name))
+        resetLocker(locker)
         return
     end
 
     if not isPlayerControlOn(h) then
         formattedAddChatMessage(("{%x}You cannot get items while frozen, please wait."):format(clr.YELLOW))
-        resetLocker(blackMarket)
+        resetLocker(locker)
         return
     end
 
-    -- Check if the user can heal
 	if checkHeal() then
-		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
+		local timeLeft = math.ceil(timers.Heal.timer - (localClock() - timers.Heal.last))
 		formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
-        resetLocker(blackMarket)
+        resetLocker(locker)
 		return
 	end
 
-    resetLocker(blackMarket)
-    blackMarket.getItemFrom = kitNumber
-    blackMarket.obtainedItems = {} -- Reset obtained items
+    local money = getPlayerMoney()
+    local totalPrice = calculateTotalPrice(autobind[fullName]["Kit" .. kitNumber], locker.Items)
+    if totalPrice and money < totalPrice then
+        formattedAddChatMessage(("{%06x}You do not have enough money to buy this kit, you need $%s more. Total price: $%s."):format(clr.YELLOW, formatNumber(totalPrice - money), formatNumber(totalPrice)))
+        resetLocker(locker)
+        return
+    end
+
+    resetLocker(locker)
+    locker.getItemFrom = kitNumber
+    locker.obtainedItems = {} -- Reset obtained items
 
     lua_thread.create(function()
-        local items = autobind.BlackMarket["Kit" .. kitNumber]
+        local items = autobind[fullName]["Kit" .. kitNumber]
         local itemCount = 0
         local skippedItems = {}
         for _, itemIndex in ipairs(items) do
-            local item = blackMarket.Items[itemIndex]
+            local item = locker.Items[itemIndex]
             if item then
-                if canObtainItem(item, blackMarket.Items) then
-                    blackMarket.currentKey = item.index
-                    blackMarket.gettingItem = true
-                    sampSendChat("/bm")
-                    repeat wait(0) until not blackMarket.gettingItem
-                    table.insert(blackMarket.obtainedItems, item.label)
+                if canObtainItem(item, locker.Items) then
+                    locker.currentKey = item.index
+                    locker.gettingItem = true
+                    sampSendChat(command)
+                    repeat wait(0) until not locker.gettingItem
+                    table.insert(locker.obtainedItems, item.label)
                     itemCount = itemCount + 1
                     if itemCount % 3 == 0 then
                         wait(math.random(1500, 1750))
@@ -1810,79 +1868,13 @@ function handleBlackMarket(kitNumber)
             end
         end
         -- Send consolidated message at the end
-        if #blackMarket.obtainedItems > 0 then
-            formattedAddChatMessage(string.format("{%06x}Obtained items: {%06x}%s.", clr.YELLOW, clr.WHITE, table.concat(blackMarket.obtainedItems, ", ")))
+        if #locker.obtainedItems > 0 then
+            formattedAddChatMessage(string.format("{%06x}Obtained items: {%06x}%s.", clr.YELLOW, clr.WHITE, table.concat(locker.obtainedItems, ", ")))
         end
         if #skippedItems > 0 then
             formattedAddChatMessage(string.format("{%06x}Skipped items: {%06x}%s.", clr.YELLOW, clr.WHITE, table.concat(skippedItems, ", ")))
         end
-        resetLocker(blackMarket)
-    end)
-end
-
--- Handle Faction Locker
-function handleFactionLocker(kitNumber)
-    local currentTime = localClock()
-    if checkMuted() then
-        formattedAddChatMessage(("{%06x}You have been muted for spamming, please wait."):format(clr.YELLOW))
-        resetLocker(factionLocker)
-        return
-    end
-
-    if not isPlayerInLocation(autobind.FactionLocker.Locations) then
-        formattedAddChatMessage(("{%06x}You are not at the faction locker!"):format(clr.GREY))
-        resetLocker(factionLocker)
-        return
-    end
-
-    if not isPlayerControlOn(h) then
-        formattedAddChatMessage(("{%06x}You cannot get items while frozen, please wait."):format(clr.YELLOW))
-        resetLocker(factionLocker)
-        return
-    end
-
-    -- Check if the user can heal
-	if checkHeal() then
-		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
-		formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
-        resetLocker(factionLocker)
-		return
-	end
-
-    resetLocker(factionLocker)
-    factionLocker.getItemFrom = kitNumber
-    factionLocker.obtainedItems = {} -- Reset obtained items
-
-    lua_thread.create(function()
-        local items = autobind.FactionLocker["Kit" .. kitNumber]
-        local itemCount = 0
-        local skippedItems = {}
-        for _, itemIndex in ipairs(items) do
-            local item = factionLocker.Items[itemIndex]
-            if item then
-                if canObtainItem(item, factionLocker.Items) then
-                    factionLocker.currentKey = item.index
-                    factionLocker.gettingItem = true
-                    sampSendChat("/locker")
-                    repeat wait(0) until not factionLocker.gettingItem
-                    table.insert(factionLocker.obtainedItems, item.label)
-                    itemCount = itemCount + 1
-                    if itemCount % 3 == 0 then
-                        wait(math.random(1500, 1750))
-                    end
-                else
-                    table.insert(skippedItems, item.label)
-                end
-            end
-        end
-        -- Send consolidated message at the end
-        if #factionLocker.obtainedItems > 0 then
-            formattedAddChatMessage(string.format("{%06x}Obtained items: {%06x}%s.", clr.YELLOW, clr.WHITE, table.concat(factionLocker.obtainedItems, ", ")))
-        end
-        if #skippedItems > 0 then
-            formattedAddChatMessage(string.format("{%06x}Skipped items: {%06x}%s.", clr.YELLOW, clr.WHITE, table.concat(skippedItems, ", ")))
-        end
-        resetLocker(factionLocker)
+        resetLocker(locker)
     end)
 end
 
@@ -1986,7 +1978,7 @@ local keyFunctions = {
 function InitializeBlackMarketKeyFunctions()
     for i = 1, autobind.Settings.currentBlackMarketKits do
         if keyFunctions["BlackMarket" .. i] == nil then
-            keyFunctions["BlackMarket" .. i] = function() handleBlackMarket(i) end
+            keyFunctions["BlackMarket" .. i] = function() handleLocker(i, blackMarket, "Black Market", "/bm") end
         end
     end
 end
@@ -1995,7 +1987,7 @@ end
 function InitializeFactionLockerKeyFunctions()
     for i = 1, autobind.Settings.currentFactionLockerKits do
         if keyFunctions["FactionLocker" .. i] == nil then
-            keyFunctions["FactionLocker" .. i] = function() handleFactionLocker(i) end
+            keyFunctions["FactionLocker" .. i] = function() handleLocker(i, factionLocker, "Faction Locker", "/locker") end
         end
     end
 end
@@ -2189,7 +2181,6 @@ function createSprunkSpam()
     end
 end
 
---- Functions (DownloadManager, AutoVest, AutoAccept, Keybinds, CaptureSpam, PointBounds, AutoFind, SprunkSpam)
 -- Functions Table
 local functionsToRun = {
     {
@@ -2610,11 +2601,10 @@ function createChatCommands()
         end
 
         -- Handle unpopulated vehicles
-        local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
-        Vehicles = Vehicles or {}
+        autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
 
-        if #Vehicles == 0 then
-            formattedAddChatMessage("Please wait, vehicles have not been populated! spawning selected vehicle...")
+        if #autobind.VehicleStorage.Vehicles[playerName] == 0 then
+            formattedAddChatMessage("Please wait, vehicles have not been populated! Spawning selected vehicle...")
             vehicles.spawning = true
             vehicles.currentIndex = vehicleIndex - 1
             sampSendChat("/vst")
@@ -2623,8 +2613,8 @@ function createChatCommands()
 
         -- Check if the vehicle exists in the player's storage
         local vehicleFound = false
-        for _, vehicle in ipairs(Vehicles) do
-            if vehicle.id == (vehicleIndex - 1) then
+        for _, vehicle in ipairs(autobind.VehicleStorage.Vehicles[playerName]) do
+            if vehicle.id and vehicle.id == (vehicleIndex - 1) then
                 vehicleFound = true
                 vehicles.spawning = true
                 vehicles.currentIndex = vehicleIndex - 1
@@ -2879,11 +2869,10 @@ local messageHandlers = {
                 -- Reset vehicle storage status
                 local playerName = autobind.CurrentPlayer.name
                 if playerName and playerName ~= "" then
-                    local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
-                    Vehicles = Vehicles or {}
+                    autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
 
-                    for _, vehicle in pairs(Vehicles) do
-                        if vehicle.status ~= "Stored" and vehicle.status ~= "Disabled" and vehicle.status ~= "Impounded" then
+                    for _, vehicle in pairs(autobind.VehicleStorage.Vehicles[playerName]) do
+                        if vehicle.status and vehicle.status ~= "Stored" and vehicle.status ~= "Disabled" and vehicle.status ~= "Impounded" then
                             vehicle.status = "Stored"
                         end
                     end
@@ -3666,11 +3655,10 @@ function updateVehicleStorage(status)
     local playerName = autobind.CurrentPlayer.name
     if vehicles.currentIndex ~= -1 and playerName and playerName ~= "" then
         local currentIndex = vehicles.currentIndex + 1
-        local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
-        Vehicles = Vehicles or {}
+        autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
 
-        if Vehicles[currentIndex] ~= nil then
-            Vehicles[currentIndex].status = status
+        if autobind.VehicleStorage.Vehicles[playerName][currentIndex] ~= nil then
+            autobind.VehicleStorage.Vehicles[playerName][currentIndex].status = status
         else
             print("Vehicle not found", playerName, currentIndex, status)
         end
@@ -3780,7 +3768,7 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
             -- Function to check if the vehicle already exists and update it
             local function updateOrAddVehicle(playerVehicles, indexId, newVehicle, newStatus, newLocation)
                 for _, entry in ipairs(playerVehicles) do
-                    if entry.vehicle == newVehicle and entry.id == indexId then
+                    if entry.vehicle and entry.vehicle == newVehicle and entry.id and entry.id == indexId then
                         -- Update existing entry
                         entry.status = newStatus
                         entry.location = newLocation
@@ -4298,18 +4286,6 @@ local buttons2 = {
     }
 }
 
--- Define the key editor table
-local keyEditors = {
-    {label = "Accept", key = "Accept", description = "Accepts a vest from someone. (Options are to the left)"},
-    {label = "Offer", key = "Offer", description = "Offers a vest to someone. (Options are to the left)"},
-    {label = "Take-Pills", key = "TakePills", description = "Types /takepills."},
-    {label = "Accept-Death", key = "AcceptDeath", description = "Types /acceptdeath."},
-    {label = "Frisk", key = "Frisk", description = "Frisks a player. (Options are to the left)"},
-    {label = "Bike-Bind", key = "BikeBind", description = "Makes bikes/motorcycles/quads faster by holding the bind key while riding."},
-    {label = "Sprint-Bind", key = "SprintBind", description = "Makes you sprint faster by holding the bind key while sprinting. (This is only the toggle)"},
-    {label = "Request Backup", key = "RequestBackup", description = "Types the backup command depending on what mode is detected"}
-}
-
 -- Function to update tooltips and labels for buttons1
 function updateButton1Tooltips()
     local btn = buttons1[1] -- Assuming first button is the toggle
@@ -4343,29 +4319,6 @@ local function handleAutosaveCheckbox()
     imgui.CustomTooltip('Automatically saves your settings when you exit the game')
 end
 
--- Define a table to hold all menu states
-local menuStates = {
-    settings = menu.settings.window,
-    keybinds = menu.keybinds.window,
-    fonts = menu.fonts.window,
-    skins = menu.skins.window,
-    blackmarket = menu.blackmarket.window,
-    factionlocker = menu.factionlocker.window,
-}
-
--- Table to track the previous state of each menu
-local previousMenuStates = {
-    settings = false,
-    keybinds = false,
-    fonts = false,
-    skins = false,
-    blackmarket = false,
-    factionlocker = false,
-}
-
--- Flag to indicate that the Escape key was pressed
-local escapePressed = false
-
 -- OnWindowMessage
 function onWindowMessage(msg, wparam, lparam)
     if wparam == VK_ESCAPE then
@@ -4390,18 +4343,6 @@ function onWindowMessage(msg, wparam, lparam)
         end
     end
 end
-
-local isUpdateHovered = false
-
-local statusColors = {
-    Stored = clr.REALRED,
-    Spawned = clr.REALGREEN,
-    Respawned = clr.REALGREEN,
-    Occupied = clr.YELLOW,
-    Damaged = clr.ORANGE,
-    Disabled = clr.REALRED,
-    Impounded = clr.REALRED
-}
 
 -- Settings Window
 imgui.OnFrame(function() return menu.initialized[0] end,
@@ -4429,23 +4370,18 @@ function(self)
         for key, state in pairs(menuStates) do
             if state[0] then
                 state[0] = false
-                print(key .. " menu closed")
             end
             -- Update previous state to reflect that the menu is now closed
             previousMenuStates[key] = false
         end
         escapePressed = false
-        print("All menus closed")
 
         if autobind.Settings.autoSave then
             saveConfigWithErrorHandling(Files.settings, autobind)
-            print("Settings saved")
         end
     else
         for key, state in pairs(menuStates) do
             if previousMenuStates[key] and not state[0] then
-                print(key .. " menu closed")
-
                 if key == "settings" then
                     if autobind.Settings.autoSave then
                         autobind.AutoVest.names = setToList(names)
@@ -4468,7 +4404,6 @@ function(self)
 
             -- Detect if the menu has just been opened
             if not previousMenuStates[key] and state[0] then
-                print(key .. " menu opened")
                 if key == "settings" then
                     fetchDataDirectlyFromURL(Urls.update(autobind.Settings.fetchBeta), function(content)
                         if content and content.version and content.lastversion then
@@ -4853,135 +4788,11 @@ function(self)
     end
 
     if menu.blackmarket.window[0] then
-        -- Handle Window Dragging
-        local newPos, status = imgui.handleWindowDragging("BlackMarket", autobind.WindowPos.BlackMarket, menu.blackmarket.size, menu.blackmarket.pivot, true)
-        if status then 
-            autobind.WindowPos.BlackMarket = newPos
-            imgui.SetNextWindowPos(autobind.WindowPos.BlackMarket, imgui.Cond.Always, menu.blackmarket.pivot)
-        else
-            imgui.SetNextWindowPos(autobind.WindowPos.BlackMarket, imgui.Cond.FirstUseEver, menu.blackmarket.pivot)
-        end
-
-        -- Set the window size
-        imgui.SetNextWindowSize(menu.blackmarket.size, imgui.Cond.FirstUseEver)
-        
-        -- Calculate total price
-        local totalPrice = calculateTotalPrice(autobind.BlackMarket[string.format("Kit%d", menu.blackmarket.pageId)], blackMarket.Items)
-
-        -- Define a table to map kitId to key and menu data
-        local kits = {}
-        for i = 1, autobind.Settings.currentBlackMarketKits do
-            kits[i] = {key = string.format('BlackMarket%d', i), menu = autobind.BlackMarket[string.format("Kit%d", i)]}
-        end
-
-        -- Blackmarket Window
-        local title = string.format("Black Market - Kit: %d - $%s", menu.blackmarket.pageId, formatNumber(totalPrice))
-        if imgui.Begin(title, menu.blackmarket.window, imgui_flags) then
-            -- Display the key editor and menu based on the selected kitId
-            for id, kit in pairs(kits) do
-                if menu.blackmarket.pageId == id then
-                    -- Keybind
-                    keyEditor("Keybind", kit.key)
-
-                    -- Preview Kit
-                    imgui.SameLine()
-                    imgui.BeginGroup()
-                    imgui.PushItemWidth(82)
-                    if imgui.BeginCombo("##blackmarket_preview", fa.ICON_FA_SHOPPING_CART .. " Kit " .. id) then
-                        for i = 1, autobind.Settings.currentBlackMarketKits do
-                            if imgui.Selectable(fa.ICON_FA_SHOPPING_CART .. " Kit " .. i .. (i == id and ' [x]' or ''), menu.blackmarket.pageId == i) then
-                                menu.blackmarket.pageId = i
-                            end
-                        end
-                        imgui.EndCombo()
-                    end
-                    imgui.PopItemWidth()
-
-                    -- Create new kit
-                    if imgui.Button("Add New Kit", imgui.ImVec2(82, 20)) then
-                        if autobind.Settings.currentBlackMarketKits < maxKits then
-                            autobind.Settings.currentBlackMarketKits = autobind.Settings.currentBlackMarketKits + 1
-                            autobind.BlackMarket[string.format("Kit%d", autobind.Settings.currentBlackMarketKits)] = {1, 2, 10, 11}
-
-                            menu.blackmarket.pageId = autobind.Settings.currentBlackMarketKits
-
-                            autobind.Keybinds[string.format("BlackMarket%d", autobind.Settings.currentBlackMarketKits)] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
-                        end
-                    end
-                    imgui.EndGroup()
-
-                    -- Create selection menu
-                    createMenu('Selection', blackMarket.Items, kit.menu, blackMarket.ExclusiveGroups, blackMarket.maxSelections, {combineGroups = blackMarket.ExclusiveGroups})
-                end
-            end
-        end
-        imgui.End()
+        renderLockerWindow("Black Market", "BlackMarket", blackMarket)
     end
 
     if menu.factionlocker.window[0] then
-        -- Handle Window Dragging
-        local newPos, status = imgui.handleWindowDragging("FactionLocker", autobind.WindowPos.FactionLocker, menu.factionlocker.size, menu.factionlocker.pivot, true)
-        if status then 
-            autobind.WindowPos.FactionLocker = newPos
-            imgui.SetNextWindowPos(autobind.WindowPos.FactionLocker, imgui.Cond.Always, menu.factionlocker.pivot)
-        else
-            imgui.SetNextWindowPos(autobind.WindowPos.FactionLocker, imgui.Cond.FirstUseEver, menu.factionlocker.pivot)
-        end
-
-        -- Set the window size
-        imgui.SetNextWindowSize(menu.factionlocker.size, imgui.Cond.FirstUseEver)
-
-        -- Calculate total price
-        local totalPrice = calculateTotalPrice(autobind.FactionLocker[string.format("Kit%d", menu.factionlocker.pageId)], factionLocker.Items)
-
-        -- Define a table to map kitId to key and menu data
-        local kits = {}
-        for i = 1, autobind.Settings.currentFactionLockerKits do
-            kits[i] = {key = string.format('FactionLocker%d', i), menu = autobind.FactionLocker[string.format("Kit%d", i)]}
-        end
-
-        -- Faction Locker Window
-        local title = string.format("Faction Locker - Kit: %d - $%s", menu.factionlocker.pageId, formatNumber(totalPrice))
-        if imgui.Begin(title, menu.factionlocker.window, imgui_flags) then
-            -- Display the key editor and menu based on the selected kitId
-            for id, kit in pairs(kits) do
-                if menu.factionlocker.pageId == id then
-                    -- Keybind
-                    keyEditor("Keybind", kit.key)
-
-                    -- Preview Kit
-                    imgui.SameLine()
-                    imgui.BeginGroup()
-                    imgui.PushItemWidth(82)
-                    if imgui.BeginCombo("##locker_preview", fa.ICON_FA_SHOPPING_CART .. " Kit " .. id) then
-                        for i = 1, autobind.Settings.currentFactionLockerKits do
-                            if imgui.Selectable(fa.ICON_FA_SHOPPING_CART .. " Kit " .. i .. (i == id and ' [x]' or ''), menu.factionlocker.pageId == i) then
-                                menu.factionlocker.pageId = i
-                            end
-                        end
-                        imgui.EndCombo()
-                    end
-                    imgui.PopItemWidth()
-
-                    -- Create new kit
-                    if imgui.Button("Add New Kit", imgui.ImVec2(82, 20)) then
-                        if autobind.Settings.currentFactionLockerKits < maxKits then
-                            autobind.Settings.currentFactionLockerKits = autobind.Settings.currentFactionLockerKits + 1
-                            autobind.FactionLocker[string.format("Kit%d", autobind.Settings.currentFactionLockerKits)] = {1, 2, 10, 11}
-
-                            menu.factionlocker.pageId = autobind.Settings.currentFactionLockerKits
-
-                            autobind.Keybinds[string.format("FactionLocker%d", autobind.Settings.currentFactionLockerKits)] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
-                        end
-                    end
-                    imgui.EndGroup()
-                    
-                    -- Create selection menu
-                    createMenu('Selection', factionLocker.Items, kit.menu, factionLocker.ExclusiveGroups, factionLocker.maxSelections, {combineGroups = factionLocker.combineGroups})
-                end
-            end
-        end
-        imgui.End()
+        renderLockerWindow("Faction Locker", "FactionLocker", factionLocker)
     end
 
     if menu.confirm.window[0] then
@@ -5010,6 +4821,77 @@ function(self)
         imgui.End()
     end
 end).HideCursor = true
+
+function renderLockerWindow(label, name, locker)
+    local lowerName = name:lower()
+
+    -- Handle Window Dragging
+    local newPos, status = imgui.handleWindowDragging(label, autobind.WindowPos[name], menu[lowerName].size, menu[lowerName].pivot, true)
+    if status then 
+        autobind.WindowPos[name] = newPos
+        imgui.SetNextWindowPos(autobind.WindowPos[name], imgui.Cond.Always, menu[lowerName].pivot)
+    else
+        imgui.SetNextWindowPos(autobind.WindowPos[name], imgui.Cond.FirstUseEver, menu[lowerName].pivot)
+    end
+
+    -- Set the window size
+    imgui.SetNextWindowSize(menu[lowerName].size, imgui.Cond.FirstUseEver)
+    
+    local pageId = menu[lowerName].pageId
+    local currentKits = "current" .. name .. "Kits"
+
+    -- Calculate total price
+    local totalPrice = calculateTotalPrice(autobind[name]["Kit" .. pageId], locker.Items)
+
+    -- Define a table to map kitId to key and menu data
+    local kits = {}
+    for i = 1, autobind.Settings[currentKits] do
+        kits[i] = {key = name .. i, menu = autobind[name]["Kit" .. i]}
+    end
+
+    -- Locker Window
+    local title = string.format("%s - Kit: %d - $%s", label, pageId, formatNumber(totalPrice))
+    if imgui.Begin(title, menu[lowerName].window, imgui_flags) then
+        -- Display the key editor and menu based on the selected kitId
+        for id, kit in pairs(kits) do
+            if pageId == id then
+                -- Keybind
+                keyEditor("Keybind", kit.key)
+
+                -- Preview Kit
+                imgui.SameLine()
+                imgui.BeginGroup()
+                imgui.PushItemWidth(82)
+                if imgui.BeginCombo("##" .. name .. "_preview", fa.ICON_FA_SHOPPING_CART .. " Kit " .. id) then
+                    for i = 1, autobind.Settings[currentKits] do
+                        if imgui.Selectable(fa.ICON_FA_SHOPPING_CART .. " Kit " .. i .. (i == id and ' [x]' or ''), pageId == i) then
+                            menu[lowerName].pageId = i
+                        end
+                    end
+                    imgui.EndCombo()
+                end
+                imgui.PopItemWidth()
+
+                -- Create new kit
+                if imgui.Button("Add New Kit", imgui.ImVec2(82, 20)) then
+                    if autobind.Settings[currentKits] < maxKits then
+                        autobind.Settings[currentKits] = autobind.Settings[currentKits] + 1
+                        autobind[name]["Kit" .. autobind.Settings[currentKits]] = {1, 2, 10, 11}
+
+                        menu[lowerName].pageId = autobind.Settings[currentKits]
+
+                        autobind.Keybinds[name .. autobind.Settings[currentKits]] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
+                    end
+                end
+                imgui.EndGroup()
+
+                -- Create selection menu
+                createMenu('Selection', locker.Items, kit.menu, locker.ExclusiveGroups, locker.maxSelections, {combineGroups = locker.combineGroups})
+            end
+        end
+    end
+    imgui.End()
+end
 
 -- Function to calculate total price for a given kit
 function calculateTotalPrice(kit, items)
@@ -5529,7 +5411,7 @@ function createMenu(title, items, tbl, exclusiveGroups, maxSelections, options)
             local item = items[index]
             if item then
                 createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
-                imgui.CustomTooltip(string.format("Price: %s", item.price and formatNumber("$" .. item.price) or "Free"))
+                imgui.CustomTooltip(string.format("Price: %s", item.price and "$" .. formatNumber(item.price) or "Free"))
                 if i < #group then
                     imgui.SameLine()
                 end
@@ -5542,7 +5424,7 @@ function createMenu(title, items, tbl, exclusiveGroups, maxSelections, options)
     for index, item in ipairs(items) do
         if not tableContains(handledIndices, index) then
             createCheckbox(item.label, index, tbl, exclusiveGroups, maxSelections)
-            imgui.CustomTooltip(string.format("Price: %s", item.price and formatNumber("$" .. item.price) or "Free"))
+            imgui.CustomTooltip(string.format("Price: %s", item.price and "$" .. formatNumber(item.price) or "Free"))
         end
     end
 end
@@ -5993,7 +5875,7 @@ function saveConfig(filePath, config)
     if not file then
         return false, "Could not save file."
     end
-    file:write(encodeJson(config, false))
+    file:write(encodeJson(config, true))
     file:close()
     return true
 end
@@ -6057,9 +5939,9 @@ function formattedAddChatMessage(string)
 end
 
 -- Format Number
-function formatNumber(n)
-    n = tostring(n)
-    return n:reverse():gsub("...","%0,",math.floor((#n-1)/3)):reverse()
+function formatNumber(num)
+    num = tostring(num)
+    return num:reverse():gsub("...","%0,",math.floor((#num-1)/3)):reverse()
 end
 
 -- Compare Versions
