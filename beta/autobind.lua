@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind Menu")
-script_version("1.8.22")
+script_version("1.8.22b")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -9,10 +9,15 @@ local betaTesters = { -- WIP
     {nickName = "Wolly", bugFinds = 9, hoursWasted = 1.0, discord = "xwollyx"},
     {nickName = "Allen", bugFinds = 6, hoursWasted = 0.9, discord = "allen_7"},
     {nickName = "Moorice", bugFinds = 3, hoursWasted = 0.4, discord = "moorice"},
-    {nickName = "Dwayne", bugFinds = 1, hoursWasted = 0.9, discord = "dickshaft"}
+    {nickName = "Dwayne", bugFinds = 2, hoursWasted = 1.0, discord = "dickshaft"}
 }
 
 local changelog = {
+    ["1.8.22a"] = {
+        "Fixed: There was a bug in the /vst menu that would not show the vehicles because the vehicle list was not being updated.",
+        "Added: Status is now color coded, you can now see at a glance what the status of the vehicle is.",
+        "New: imguiRGBA has been added, it allows you to use predefined colors in imgui from the color table."
+    },
     ["1.8.22"] = {
         "New: Added a new parameter to the /vst command you can use to spawn vehicles via there index in from the dialog box (e.g. /vst 1).",
         "New: When typing /vst in chat without entering the command, an imgui menu will automatically open."
@@ -109,7 +114,8 @@ Paths.skins = Paths.resource .. 'skins\\'
 
 -- Files Table
 local Files = {
-    settings = Paths.settings .. 'autobind.json'
+    settings = Paths.settings .. 'autobind.json',
+    fawesome5 = Paths.resource .. 'fonts\\fa-solid-900.ttf'
 }
 
 -- Helper Function to Construct Base URL
@@ -709,7 +715,9 @@ local clr = {
 	GOV = 0xE8E79B, -- #E8E79B
     BETA = 0x5D8AA8, -- #5D8AA8
     DEV = 0xC27C0E, -- #C27C0E
-    ARES = 0x1C77B3 -- #1C77B3
+    ARES = 0x1C77B3, -- #1C77B3
+    DARKGREY = 0x1A1A1A, -- #1A1A1A
+    ALTRED = 0x661F1F -- #661F1F
 }
 
 -- Helper function for rounding to the nearest integer
@@ -832,6 +840,7 @@ function HSVtoRGB(h, s, v)
     return r, g, b
 end
 
+-- onServerMessage color table
 local clrRGBA = {}
 for name, color in pairs(clr) do
     -- Extract color components using ABGR format
@@ -853,6 +862,26 @@ for name, color in pairs(clr) do
     end
 
     clrRGBA[name] = joinARGB(clrs.r, clrs.g, clrs.b, clrs.a, false)
+end
+
+-- imgui color table
+local imguiRGBA = {}
+for name, color in pairs(clr) do
+    -- Extract color components using ABGR format
+    local clrs = convertColor(color, true, true, false)
+
+    if name == "REALRED" or 
+       name == "REALGREEN" or
+       name == "RED" or
+       name == "GREEN" or
+       name == "FADE5" or
+       name == "DARKGREY" then
+        clrs.a = 0.9 -- Set alpha to 0.9 for REALRED and REALGREEN
+    else
+        clrs.a = 1.0 -- Default alpha value
+    end
+
+    imguiRGBA[name] = imgui.ImVec4(clrs.r, clrs.g, clrs.b, clrs.a)
 end
 
 -- Capitalize First Letter
@@ -886,6 +915,7 @@ local autobind = {
     PedsCount = {},
     AutoFind = {},
     LastBackup = {},
+    CurrentPlayer = {},
 	WindowPos = {Settings = {}, Skins = {}, Keybinds = {}, Fonts = {}, BlackMarket = {}, FactionLocker = {}},
 	BlackMarket = {Kit1 = {}, Kit2 = {}, Kit3 = {}, Kit4 = {}, Kit5 = {}, Kit6 = {}, Locations = {}},
 	FactionLocker = {Kit1 = {}, Kit2 = {}, Kit3 = {}, Kit4 = {}, Kit5 = {}, Kit6 = {}, Locations = {}},
@@ -1065,6 +1095,9 @@ local autobind_defaultSettings = {
     }
 }
 
+-- HZRP Health Ammount
+local hzrpHealth = 5000000
+
 -- Commands
 local cmds = {
 	vestnear = {cmd = "vestnear", desc = "Sends a vest offer to the nearest player"},
@@ -1156,9 +1189,9 @@ local family = {
 -- Factions
 local factions = {
 	skins = {
-		[61] = true, [71] = true, [73] = true, [163] = true, [164] = true, [165] = true, [166] = true, [179] = true, [191] = true, [206] = true, [285] = true, [287] = true, -- ARES
+		[61] = true, [71] = true, [73] = true, [163] = true, [164] = true, [165] = true, [166] = true, [179] = true, [191] = true, [206] = true, [287] = true, -- ARES
         [120] = true, [141] = true, [253] = true, [286] = true, [294] = true, -- FBI
-        [71] = true, [265] = true, [266] = true, [267] = true, [280] = true, [281] = true, [282] = true, [283] = true, [284] = true, [285] = true, [288] = true, [300] = true, [301] = true, [302] = true, [306] = true, [307] = true, [309] = true, [310] = true, [311] = true, -- SASD/LSPD
+        [265] = true, [266] = true, [267] = true, [280] = true, [281] = true, [282] = true, [283] = true, [284] = true, [285] = true, [288] = true, [300] = true, [301] = true, [302] = true, [306] = true, [307] = true, [309] = true, [310] = true, [311] = true, -- SASD/LSPD
 	},
 	colors = {
 		[0x2641FE] = true, [0x8D8DFF] = true, [0xBEBEBE] = true, [0xCC9933] = true, [0x1C77B3] = true, -- No Alpha (LSPD, FBI, GOV, SASD, ARES) [Badge]
@@ -1195,7 +1228,7 @@ local menu = {
 		pageId = 1
 	},
     vehiclestorage = {
-        title = "Vehicle Storage",
+        title = "Vehicle Storage:",
 		window = new.bool(false),
         size = {x = 338, y = 165},
         pivot = {x = 0.5, y = 0.5},
@@ -1410,148 +1443,8 @@ function main()
 	-- Wait for SAMP
     while not isSampAvailable() do wait(100) end
 
-    -- Autobind Help
-    sampRegisterChatCommand(scriptName .. ".help", function()
-        formattedAddChatMessage("Autobind Help:")
-        formattedAddChatMessage("/autobind - Opens the Autobind menu for configuration and settings.")
-        formattedAddChatMessage("/autobind.font - Opens the Font menu for configuration and settings.")
-        formattedAddChatMessage("/autobind.commands - Provides a list of available Autobind commands and their descriptions.")
-        formattedAddChatMessage("/autobind.keybinds - Opens the Keybinds menu for configuration and settings.")
-        formattedAddChatMessage("/autobind.listbinds - Lists all configured keybinds and their associated keys.")
-        formattedAddChatMessage("/autobind.skins - Opens the Skins menu for selecting skins.")
-        formattedAddChatMessage("/autobind.status - Displays the current status of all Autobind functions.")
-    end)
-
-    -- Register Menu Command
-	sampRegisterChatCommand(scriptName, function()
-		menu.settings.pageId = 1
-		menu.settings.window[0] = not menu.settings.window[0]
-    end)
-
-    -- Keybinds Command
-    sampRegisterChatCommand(scriptName .. ".keybinds", function()
-        menu.keybinds.window[0] = not menu.keybinds.window[0]
-    end)
-
-    -- Font Command
-    sampRegisterChatCommand(scriptName .. ".font", function()
-        menu.fonts.window[0] = not menu.fonts.window[0]
-    end)
-
-    -- Commands
-    sampRegisterChatCommand(scriptName .. ".commands", function()
-        formattedAddChatMessage("Commands:")
-        for _, command in pairs(cmds) do
-            formattedAddChatMessage(string.format("/%s - {%06x}%s.", command.cmd, clr.GREY, command.desc))
-        end
-    end)
-
-    -- List Keybinds
-    sampRegisterChatCommand(scriptName .. ".listbinds", function()
-        -- Collect keybinds into a sortable table
-        local keybindsList = {}
-        for bind, _ in pairs(autobind.Keybinds) do
-            table.insert(keybindsList, bind)
-        end
-
-        -- Sort the keybinds alphabetically
-        table.sort(keybindsList)
-
-        -- Display sorted keybinds
-        for _, bind in ipairs(keybindsList) do
-            local keybindMessage = string.format(
-                "{%06x}Keybind: {%06x}%s{%06x}, Enabled: {%06x}%s{%06x}, Keys: {%06x}%s.", 
-                clr.WHITE, 
-                clr.YELLOW, 
-                bind, 
-                clr.WHITE, 
-                autobind.Keybinds[bind].Toggle and clr.GREEN or clr.RED, 
-                autobind.Keybinds[bind].Toggle and "Yes" or "No", 
-                clr.WHITE, 
-                clr.LIGHTBLUE, 
-                getKeybindKeys(bind)
-            )
-            formattedAddChatMessage(keybindMessage)
-        end
-    end)
-
-    -- Skins Editor
-    sampRegisterChatCommand(scriptName .. ".skins", function()
-        menu.skins.window[0] = not menu.skins.window[0]
-    end)
-
-    -- Status Command
-    sampRegisterChatCommand(scriptName .. ".status", statusCommand)
-
-	-- Black Market Command
-	sampRegisterChatCommand("bms", function()
-		menu.blackmarket.pageId = 1
-		menu.blackmarket.window[0] = not menu.blackmarket.window[0]
-	end)
-
-    sampRegisterChatCommand("getskin", function(params)
-        local playerId = tonumber(params)
-        local result, peds = sampGetCharHandleBySampPlayerId(playerId)
-        if result then
-            formattedAddChatMessage(string.format("Skin ID: %d", getCharModel(peds)))
-        end
-    end)
-
-    sampRegisterChatCommand("vst", function(params)
-        -- Check if params is a valid number
-        local vehicleIndex = tonumber(params)
-        if not vehicleIndex or not autobind.Settings.enable then
-            sampSendChat("/vst")
-            formattedAddChatMessage("USAGE: /vst [slot ID]")
-            return
-        end
-    
-        -- Check if player ID and name can be retrieved
-        local _, playerId = sampGetPlayerIdByCharHandle(ped)
-        if not playerId then
-            formattedAddChatMessage("Unable to retrieve player ID!")
-            return
-        end
-    
-        local playerName = sampGetPlayerNickname(playerId)
-        local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
-    
-        -- Validate the vehicle index range
-        if vehicleIndex < 1 or vehicleIndex > 20 then
-            formattedAddChatMessage("Please pick a number between 1 and 20!")
-            return
-        end
-    
-        -- Handle unpopulated vehicles
-        if Vehicles == nil then
-            formattedAddChatMessage("Please wait, vehicles have not been populated!")
-            vehicles.spawning = true
-            vehicles.currentIndex = vehicleIndex - 1
-            sampSendChat("/vst")
-            return
-        end
-    
-        -- Check if the vehicle exists in the player's storage
-        local vehicleFound = false
-        for _, vehicle in ipairs(Vehicles) do
-            if vehicle.id == (vehicleIndex - 1) then
-                vehicleFound = true
-                vehicles.spawning = true
-                vehicles.currentIndex = vehicleIndex - 1
-                sampSendChat("/vst")
-                break
-            end
-        end
-    
-        if not vehicleFound then
-            formattedAddChatMessage("No vehicle found or invalid slot used!")
-        end
-    end)
-
-	-- Register Chat Commands
-	if autobind.Settings.enable then
-		registerChatCommands()
-	end
+    -- Create Chat Commands
+    createChatCommands()
 
     -- Set Vest Timer
     timers.Vest.timer =  autobind.AutoVest.Donor and ddguardTime or guardTime
@@ -1606,7 +1499,7 @@ function main()
                 autobind.Settings.updateInProgress = false
                 saveConfigWithErrorHandling(Files.settings, autobind)
             else
-                if autobind.Settings.checkForUpdates then 
+                if autobind.Settings.checkForUpdates then
                     checkForUpdates() 
                 end
             end
@@ -1822,11 +1715,11 @@ function playerHasItem(item)
     elseif item.label == 'Baton/Mace' then -- Check if item is a baton or mace
         return hasCharGotWeapon(ped, 3) or hasCharGotWeapon(ped, 41)
     elseif item.label == 'Health' then -- Check full health
-        return getCharHealth(ped) - 5000000 == 100
+        return getCharHealth(ped) - hzrpHealth == 100
     elseif item.label == 'Armor' then -- Check full armor
         return getCharArmour(ped) == 100
     elseif item.label == 'Health/Armor' then -- Check full health and armor
-        local health = getCharHealth(ped) - 5000000
+        local health = getCharHealth(ped) - hzrpHealth
         local armor = getCharArmour(ped)
         return health == 100 and armor == 100
     end
@@ -1886,7 +1779,9 @@ function handleBlackMarket(kitNumber)
     -- Check if the user can heal
 	if checkHeal() then
 		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
-		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
+		formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
+        resetLocker(blackMarket)
+		return
 	end
 
     resetLocker(blackMarket)
@@ -1950,7 +1845,9 @@ function handleFactionLocker(kitNumber)
     -- Check if the user can heal
 	if checkHeal() then
 		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
-		return string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1)
+		formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
+        resetLocker(factionLocker)
+		return
 	end
 
     resetLocker(factionLocker)
@@ -2146,8 +2043,7 @@ end
 local subZones = {
     GAN1 = 'Grove Street', GAN2 = "Apartments", IWD1 = 'Freeway', IWD2 = 'Drug Den', IWD3A = 'Gas Station', IWD3B = 'Maximus Club',
     IWD4 = 'Ghetto Area', IWD5 = 'Pizza', LMEX1A = "South", LMEX1B = "North", ELS1A = "Crack Lab", ELS1B = "Pig Pen", ELS2 = "Apartments", 
-    ELS3A = "The Court", ELS3C = "Alleyway", ELS4 = "Carwash", ELCO1 = "Unity Station", ELCO2 = "Apartments", ELCO1 = "Unity Station", 
-    ELCO2 = "Apartments", UNITY = "Traintracks", LIND1A = "West", LIND2B = "South", LIND1A = "North", LIND2A = "South", LIND3 = "East"
+    ELS3A = "The Court", ELS3C = "Alleyway", ELS4 = "Carwash", ELCO1 = "Unity Station", ELCO2 = "Apartments", LIND1A = "West", LIND2A = "South", LIND2B = "South", LIND3 = "East"
 }
 
 function getSubZoneName(x, y, z)
@@ -2262,7 +2158,7 @@ function createSprunkSpam()
     end
 
     -- Return if already full health and drop the sprunk
-    local health = getCharHealth(ped) - 5000000
+    local health = getCharHealth(ped) - hzrpHealth
     if health == 100 then
         local key = gkeys.player.ENTERVEHICLE
         setGameKeyState(key, 255)
@@ -2417,6 +2313,7 @@ end
 function statusCommand()
     local started = {}
     local failed = {}
+    local disabled = {}
 
     -- Iterate through the functionStatus table to collect running and failed functions
     for name, status in pairs(funcsLoop.functionStatus) do
@@ -2424,6 +2321,8 @@ function statusCommand()
             table.insert(started, name)
         elseif status == "failed" then
             table.insert(failed, name)
+        elseif status == "disabled" then
+            table.insert(disabled, name)
         end
     end
 
@@ -2433,6 +2332,10 @@ function statusCommand()
         
         if #failed > 0 then
             formattedAddChatMessage(string.format("{%06x}Failed Functions: {%06x}%s.", clr.WHITE, clr.RED, table.concat(failed, ", ")))
+        end
+
+        if #disabled > 0 then
+            formattedAddChatMessage(string.format("{%06x}Disabled Functions: {%06x}%s.", clr.WHITE, clr.RED, table.concat(disabled, ", ")))
         end
     else
         formattedAddChatMessage("None of the functions are running.")
@@ -2592,6 +2495,152 @@ function statusCommand()
     end
 end
 
+-- Create Chat Commands
+function createChatCommands()
+    -- Autobind Help
+    sampRegisterChatCommand(scriptName .. ".help", function()
+        formattedAddChatMessage("Autobind Help:")
+        formattedAddChatMessage("/autobind - Opens the Autobind menu for configuration and settings.")
+        formattedAddChatMessage("/autobind.font - Opens the Font menu for configuration and settings.")
+        formattedAddChatMessage("/autobind.commands - Provides a list of available Autobind commands and their descriptions.")
+        formattedAddChatMessage("/autobind.keybinds - Opens the Keybinds menu for configuration and settings.")
+        formattedAddChatMessage("/autobind.listbinds - Lists all configured keybinds and their associated keys.")
+        formattedAddChatMessage("/autobind.skins - Opens the Skins menu for selecting skins.")
+        formattedAddChatMessage("/autobind.status - Displays the current status of all Autobind functions.")
+    end)
+
+    -- Register Menu Command
+    sampRegisterChatCommand(scriptName, function()
+        menu.settings.pageId = 1
+        menu.settings.window[0] = not menu.settings.window[0]
+    end)
+
+    -- Keybinds Command
+    sampRegisterChatCommand(scriptName .. ".keybinds", function()
+        menu.keybinds.window[0] = not menu.keybinds.window[0]
+    end)
+
+    -- Font Command
+    sampRegisterChatCommand(scriptName .. ".font", function()
+        menu.fonts.window[0] = not menu.fonts.window[0]
+    end)
+
+    -- Commands
+    sampRegisterChatCommand(scriptName .. ".commands", function()
+        formattedAddChatMessage("Commands:")
+        for _, command in pairs(cmds) do
+            formattedAddChatMessage(string.format("/%s - {%06x}%s.", command.cmd, clr.GREY, command.desc))
+        end
+    end)
+
+    -- List Keybinds
+    sampRegisterChatCommand(scriptName .. ".listbinds", function()
+        -- Collect keybinds into a sortable table
+        local keybindsList = {}
+        for bind, _ in pairs(autobind.Keybinds) do
+            table.insert(keybindsList, bind)
+        end
+
+        -- Sort the keybinds alphabetically
+        table.sort(keybindsList)
+
+        -- Display sorted keybinds
+        for _, bind in ipairs(keybindsList) do
+            local keybindMessage = string.format(
+                "{%06x}Keybind: {%06x}%s{%06x}, Enabled: {%06x}%s{%06x}, Keys: {%06x}%s.", 
+                clr.WHITE, 
+                clr.YELLOW, 
+                bind, 
+                clr.WHITE, 
+                autobind.Keybinds[bind].Toggle and clr.GREEN or clr.RED, 
+                autobind.Keybinds[bind].Toggle and "Yes" or "No", 
+                clr.WHITE, 
+                clr.LIGHTBLUE, 
+                getKeybindKeys(bind)
+            )
+            formattedAddChatMessage(keybindMessage)
+        end
+    end)
+
+    -- Skins Editor
+    sampRegisterChatCommand(scriptName .. ".skins", function()
+        menu.skins.window[0] = not menu.skins.window[0]
+    end)
+
+    -- Status Command
+    sampRegisterChatCommand(scriptName .. ".status", statusCommand)
+
+    -- Black Market Command
+    sampRegisterChatCommand("bms", function()
+        menu.blackmarket.pageId = 1
+        menu.blackmarket.window[0] = not menu.blackmarket.window[0]
+    end)
+
+    sampRegisterChatCommand("getskin", function(params)
+        local playerId = tonumber(params)
+        local result, peds = sampGetCharHandleBySampPlayerId(playerId)
+        if result then
+            formattedAddChatMessage(string.format("Skin ID: %d", getCharModel(peds)))
+        end
+    end)
+
+    sampRegisterChatCommand("vst", function(params)
+        -- Check if params is a valid number
+        local vehicleIndex = tonumber(params)
+        if not vehicleIndex or not autobind.Settings.enable then
+            sampSendChat("/vst")
+            formattedAddChatMessage("USAGE: /vst [slot ID]")
+            return
+        end
+
+        -- Check if player ID and name can be retrieved
+        local _, playerId = sampGetPlayerIdByCharHandle(ped)
+        if not playerId then
+            formattedAddChatMessage("Unable to retrieve player ID!")
+            return
+        end
+
+        local playerName = sampGetPlayerNickname(playerId)
+        local Vehicles = autobind.VehicleStorage.Vehicles[playerName]
+
+        -- Validate the vehicle index range
+        if vehicleIndex < 1 or vehicleIndex > 20 then
+            formattedAddChatMessage("Please pick a number between 1 and 20!")
+            return
+        end
+
+        -- Handle unpopulated vehicles
+        if Vehicles == nil then
+            formattedAddChatMessage("Please wait, vehicles have not been populated!")
+            vehicles.spawning = true
+            vehicles.currentIndex = vehicleIndex - 1
+            sampSendChat("/vst")
+            return
+        end
+
+        -- Check if the vehicle exists in the player's storage
+        local vehicleFound = false
+        for _, vehicle in ipairs(Vehicles) do
+            if vehicle.id == (vehicleIndex - 1) then
+                vehicleFound = true
+                vehicles.spawning = true
+                vehicles.currentIndex = vehicleIndex - 1
+                sampSendChat("/vst")
+                break
+            end
+        end
+
+        if not vehicleFound then
+            formattedAddChatMessage("No vehicle found or invalid slot used!")
+        end
+    end)
+
+    -- Register Chat Commands
+    if autobind.Settings.enable then
+        registerChatCommands()
+    end
+end
+
 --- Register Chat Commands
 function registerChatCommands()
     local CMD = sampRegisterChatCommand
@@ -2735,7 +2784,7 @@ function registerChatCommands()
             return
         end
 
-        local health = getCharHealth(ped) - 5000000
+        local health = getCharHealth(ped) - hzrpHealth
         if health == 100 then
             formattedAddChatMessage("You already have full health.")
             return
@@ -2814,13 +2863,32 @@ local messageHandlers = {
             end
         end
     },
+    -- Welcome to Horizon Roleplay, Firstname Lastname.
     {
-        pattern = "^Welcome to Horizon Roleplay, (.+)%.$",
+        pattern = "^Welcome to Horizon Roleplay, (.-)%.$",
         color = clrRGBA["NEWS"],
         action = function(name)
             if name then
+                -- Set current player name and id
                 autobind.CurrentPlayer.name = name:gsub("%s+", "_")
                 autobind.CurrentPlayer.id = sampGetPlayerIdByNickname(autobind.CurrentPlayer.name)
+
+                -- Reset vehicle storage status
+                if autobind.CurrentPlayer.name ~= "" then
+                    local Vehicles = autobind.VehicleStorage.Vehicles[autobind.CurrentPlayer.name]
+                    if Vehicles then
+                        for _, vehicle in pairs(Vehicles) do
+                            if vehicle.status ~= "Stored" and vehicle.status ~= "Disabled" and vehicle.status ~= "Impounded" then
+                                vehicle.status = "Stored"
+                            end
+                        end
+                    end
+                end
+
+                -- Reset vehicle initial fetch
+                vehicles.initialFetch = false
+
+                -- Save settings
                 saveConfigWithErrorHandling(Files.settings, autobind)
 
                 sampAddChatMessage(string.format("{%06x}Welcome to Horizon Roleplay, %s.", clr.NEWS, name), -1)
@@ -3678,25 +3746,22 @@ function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedP
     end
 end
 
+function string:trim()
+    return self:match("^%s*(.-)%s*$")
+end
+
 -- OnShowDialog
 function sampev.onShowDialog(id, style, title, button1, button2, text)
     if title:find("Vehicle storage") and style == 2 then
         if not vehicles.initialFetch then
             local Vehicles = autobind.VehicleStorage.Vehicles
-        
+
             local _, playerId = sampGetPlayerIdByCharHandle(ped)
             local playerName = sampGetPlayerNickname(playerId)
-            
+
             -- Ensure the playerName key exists as a table in vehicles
-            if not Vehicles[playerName] then
-                Vehicles[playerName] = {}
-            end
-            
-            -- Function to trim spaces from a string
-            local function trimSpaces(s)
-                return (s:gsub("^%s*(.-)%s*$", "%1"))
-            end
-        
+            Vehicles[playerName] = Vehicles[playerName] or {}
+
             -- Function to check if the vehicle already exists and update it
             local function updateOrAddVehicle(playerVehicles, indexId, newVehicle, newStatus, newLocation)
                 for _, entry in ipairs(playerVehicles) do
@@ -3715,20 +3780,18 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
                     location = newLocation
                 })
             end
-        
+
             -- Parse the data
             local currentId = 0 -- Start with an initial ID (or fetch from server if needed)
             for line in text:gmatch("[^\n]+") do
                 local adjustedMessage = removeHexBrackets(line)
-                local vehicle = adjustedMessage:match("Vehicle: ([^|]+)")
-                local status = adjustedMessage:match("Status: ([^|]+)")
-                local location = adjustedMessage:match("Location: (.+)")
+                local vehicle, status, location = adjustedMessage:match("Vehicle: ([^|]+)%s*|%s*Status: ([^|]+)%s*|%s*Location: (.+)")
                 if vehicle and status and location then
-                    -- Trim spaces from each extracted value
-                    vehicle = trimSpaces(vehicle)
-                    status = trimSpaces(status)
-                    location = trimSpaces(location)
-        
+                    -- Trim the strings
+                    vehicle = vehicle:trim()
+                    status = status:trim()
+                    location = location:trim()
+
                     -- Update or add the vehicle, including the index ID
                     updateOrAddVehicle(Vehicles[playerName], currentId, vehicle, status, location)
                     currentId = currentId + 1 -- Increment the ID for the next vehicle
@@ -4066,7 +4129,7 @@ imgui.OnInitialize(function()
     imgui.GetIO().IniFilename = nil
 
     -- Load FontAwesome5 Icons
-    loadFontIcons(true, 14.0, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", Paths.resource))
+    loadFontIcons(true, 14.0, fa.min_range, fa.max_range, Files.fawesome5)
 
 	-- Load the font with the desired size
 	local fontFile = getFolderPath(0x14) .. '\\trebucbd.ttf'
@@ -4074,14 +4137,14 @@ imgui.OnInitialize(function()
 	fontData.font = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSize)
 
 	-- Load FontAwesome5 Icons (Again for the font above)
-	loadFontIcons(true, fontData.fontSize, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", Paths.resource))
+	loadFontIcons(true, fontData.fontSize, fa.min_range, fa.max_range, Files.fawesome5)
 
 
     -- Load the small font
     fontData.fontSmall = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSmallSize)
 
     -- Load FontAwesome5 Icons (Small)
-    loadFontIcons(true, fontData.fontSmallSize, fa.min_range, fa.max_range, string.format("%sfonts\\fa-solid-900.ttf", Paths.resource))
+    loadFontIcons(true, fontData.fontSmallSize, fa.min_range, fa.max_range, Files.fawesome5)
 
 	-- Load Skins
 	for i = 0, 311 do
@@ -4094,20 +4157,6 @@ imgui.OnInitialize(function()
 	end
 end)
 
--- Define constants and static objects at the top
-local color_default = imgui.ImVec4(0.16, 0.16, 0.16, 0.9)
-local color_hover = imgui.ImVec4(0.40, 0.12, 0.12, 1)
-local color_active = imgui.ImVec4(0.30, 0.08, 0.08, 1)
-local button_size = imgui.ImVec2(75, 75)
-local child_size1 = imgui.ImVec2(85, 382)
-
--- Predefined Colors
-local color_default = imgui.ImVec4(0.16, 0.16, 0.16, 0.9)
-local color_hover = imgui.ImVec4(0.40, 0.12, 0.12, 1)
-local color_active = imgui.ImVec4(0.30, 0.08, 0.08, 1)
-local imgui_color_red = imgui.ImVec4(1, 0.19, 0.19, 0.5)
-local imgui_color_green = imgui.ImVec4(0.15, 0.59, 0.18, 0.7)
-
 -- Predefined Sizes
 local button_size_small = imgui.ImVec2(75, 75)
 local button_size_large = imgui.ImVec2(165, 75)
@@ -4115,6 +4164,7 @@ local child_size1 = imgui.ImVec2(85, 382)
 local child_size2 = imgui.ImVec2(500, 88)
 local child_size_pages = imgui.ImVec2(500, 276)
 local child_size_bottom = imgui.ImVec2(500, 20)
+local button_size_small2 = imgui.ImVec2(15, 15)
 
 -- Button Tables
 local buttons1 = {
@@ -4134,7 +4184,7 @@ local buttons1 = {
             updateButton1Tooltips() -- Update tooltips after state change
         end,
         color = function()
-            return autobind.Settings.enable and imgui_color_green or imgui_color_red
+            return autobind.Settings.enable and imguiRGBA["GREEN"] or imguiRGBA["RED"]
         end
     },
     {
@@ -4145,7 +4195,7 @@ local buttons1 = {
             saveConfigWithErrorHandling(Files.settings, autobind)
         end,
         color = function()
-            return color_default
+            return imguiRGBA["DARKGREY"]
         end
     },
     {
@@ -4156,7 +4206,7 @@ local buttons1 = {
             loadConfigs()
         end,
         color = function()
-            return color_default
+            return imguiRGBA["DARKGREY"]
         end
     },
     {
@@ -4171,7 +4221,9 @@ local buttons1 = {
                 {"WindowPos", "Skins"},
                 {"WindowPos", "Keybinds"},
                 {"WindowPos", "BlackMarket"},
-                {"WindowPos", "FactionLocker"}
+                {"WindowPos", "FactionLocker"},
+                {"CurrentPlayer", "name"},
+                {"CurrentPlayer", "id"}
             }
 
             -- Ensure Defaults
@@ -4186,9 +4238,12 @@ local buttons1 = {
             -- Initialize Key Functions
             InitializeBlackMarketKeyFunctions()
             InitializeFactionLockerKeyFunctions()
+
+            -- Reset vehicle initial fetch
+            vehicles.initialFetch = false
         end,
         color = function()
-            return color_default
+            return imguiRGBA["DARKGREY"]
         end
     },
     {
@@ -4199,7 +4254,7 @@ local buttons1 = {
             checkForUpdates()
         end,
         color = function()
-            return color_default
+            return imguiRGBA["DARKGREY"]
         end
     }
 }
@@ -4323,6 +4378,16 @@ end
 
 local isUpdateHovered = false
 
+local statusColors = {
+    Stored = clr.REALRED,
+    Spawned = clr.REALGREEN,
+    Respawned = clr.REALGREEN,
+    Occupied = clr.YELLOW,
+    Damaged = clr.ORANGE,
+    Disabled = clr.REALRED,
+    Impounded = clr.REALRED
+}
+
 -- Settings Window
 imgui.OnFrame(function() return menu.initialized[0] end,
 function(self)
@@ -4438,7 +4503,7 @@ function(self)
             for i, button in ipairs(buttons1) do
                 imgui.SetCursorPosY(cursor_positions_y_buttons1[i])
                 local color = button.color() -- Directly call the color function
-                if imgui.CustomButton(button.icon, color, color_hover, color_active, button_size_small) then
+                if imgui.CustomButton(button.icon, color, imguiRGBA["ALTRED"], imguiRGBA["RED"], button_size_small, imguiRGBA["WHITE"]) then
                     button.action()
                 end
                 if not isUpdateHovered then
@@ -4461,13 +4526,13 @@ function(self)
             imgui.SetCursorPos(imgui.ImVec2(85, 28))
 
             -- Second child (Page Buttons)
-            imgui.BeginChild("##2", imgui.ImVec2(500, 88), false)
+            imgui.BeginChild("##2", child_size2, false)
             for i, button in ipairs(buttons2) do
                 imgui.SetCursorPosX((i - 1) * 165)
                 imgui.SetCursorPosY(0)
                 local isActive = settings.pageId == button.pageId
-                local color = isActive and imgui.ImVec4(0.56, 0.16, 0.16, 1) or color_default
-                if imgui.CustomButton(string.format("%s  %s", button.icon, button.label), color, color_hover, color_active, button_size_large) then
+                local color = isActive and imguiRGBA["RED"] or imguiRGBA["DARKGREY"]
+                if imgui.CustomButton(string.format("%s  %s", button.icon, button.label), color, imguiRGBA["ALTRED"], imguiRGBA["RED"], button_size_large, imguiRGBA["WHITE"]) then
                     settings.pageId = button.pageId
                 end
                 if not isActive then
@@ -4531,52 +4596,57 @@ function(self)
         imgui.PushStyleVarFloat(imgui.StyleVar.WindowBorderSize, 0)
         imgui.PushStyleVarFloat(imgui.StyleVar.ScrollbarSize, 10)
 
-        local vehText = {vehicle = "Vehicle:\n", location = "Location:\n", status = "Status:\n", id = "ID:\n"}
-        local Vehicles = autobind.VehicleStorage.Vehicles[autobind.CurrentPlayer.name]
-        if Vehicles and #Vehicles > 0 and autobind.CurrentPlayer.name ~= "" then
-            for _, value in pairs(Vehicles) do
-                vehText.id = vehText.id .. string.format("%s\n", value.id + 1)
-                vehText.status = vehText.status .. string.format("%s\n", value.status)
-                vehText.vehicle = vehText.vehicle .. string.format("%s\n", value.vehicle)
-                vehText.location = vehText.location .. string.format("%s\n", value.location)
+        local vehText = {vehicle = {[0] = "Vehicle:"}, location = {[0] = "Location:"}, status = {[0] = "Status:"}, id = {[0] = "ID:"}}
+        local currentPlayerName = autobind.CurrentPlayer.name
+        if currentPlayerName and currentPlayerName ~= "" then
+            local Vehicles = autobind.VehicleStorage.Vehicles[currentPlayerName]
+            if Vehicles then
+                for _, value in pairs(Vehicles) do
+                    if value then
+                        local statusColor = statusColors[value.status] or clr.WHITE
+                        table.insert(vehText.id, string.format("%s", value.id and value.id + 1 or "N/A"))
+                        table.insert(vehText.status, string.format("{%06X}%s", statusColor, value.status or "Unknown"))
+                        table.insert(vehText.vehicle, string.format("%s", value.vehicle or "Unknown"))
+                        table.insert(vehText.location, string.format("%s", value.location or "Unknown"))
+                    end
+                end
             end
         end
 
         if imgui.Begin(menu.vehiclestorage.title, menu.vehiclestorage.window, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.NoMove) then
-            imgui.PushFont(fontData.font)
-
-            -- Add pin icon button
-            imgui.SetCursorPosX(imgui.GetWindowWidth() - 15 - 5)
+            imgui.SetCursorPosX(imgui.GetWindowWidth() - 20)
             imgui.SetCursorPosY(5)
             imgui.PushFont(fontData.fontSmall)
-            if imgui.CustomButton(menu.vehiclestorage.allowDrag[0] and "" or fa.ICON_FA_MAP_PIN, color_default, color_hover, color_active, imgui.ImVec2(15, 15)) then
+            local textColor = menu.vehiclestorage.allowDrag[0] and imguiRGBA["REALGREEN"] or imguiRGBA["REALRED"]
+            if imgui.CustomButton(fa.ICON_FA_MAP_PIN, imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], button_size_small2, textColor) then
                 menu.vehiclestorage.allowDrag[0] = not menu.vehiclestorage.allowDrag[0]
             end
             imgui.PopFont()
             if imgui.IsItemHovered() then
-                imgui.CustomTooltip(menu.vehiclestorage.allowDrag[0] and "Enable Pinning" or "Disable Pinning")
+                imgui.CustomTooltip(string.format("{%06X}Red{%06X} is pinned, {%06X}Green{%06X} is unpinned", clr["REALRED"], clr["WHITE"], clr["REALGREEN"], clr["WHITE"]))
             end
 
-            local titleBar = "Vehicle Storage:"
-            local textSize = imgui.CalcTextSize(titleBar)
+            local textSize = imgui.CalcTextSize(menu.vehiclestorage.title)
             imgui.SetCursorPosX(imgui.GetWindowWidth() / 2 - textSize.x / 2)
             imgui.SetCursorPosY(5)
-
-            imgui.TextColoredRGB(titleBar)
+            imgui.PushFont(fontData.font)
+            imgui.TextColoredRGB(menu.vehiclestorage.title)
 
             imgui.SetCursorPosX(10)
             imgui.SetCursorPosY(25)
-            if imgui.BeginChild("##vehicles", imgui.ImVec2(325, 132), false) then
-                imgui.PushFont(fontData.font)
-                imgui.TextColoredRGB(vehText.id)
-                imgui.SameLine(30)
-                imgui.TextColoredRGB(vehText.status)
-                imgui.SameLine(95)
-                imgui.TextColoredRGB(vehText.vehicle)
-                imgui.SameLine(180)
-                imgui.TextColoredRGB(vehText.location)
-                imgui.PopFont()
+            if imgui.BeginChild("##vehicles", imgui.ImVec2(325, 133.5), false) then
+                for i = 0, #vehText.id do
+                    imgui.TextColoredRGB(vehText.id[i])
+                    imgui.SameLine(30)
+                    imgui.TextColoredRGB(vehText.status[i])
+                    imgui.SameLine(95)
+                    imgui.TextColoredRGB(vehText.vehicle[i])
+                    imgui.SameLine(180)
+                    imgui.TextColoredRGB(vehText.location[i])
+                    imgui.SetCursorPosY(imgui.GetCursorPosY() - (i == 0 and 2.5 or 4))
+                end
             end
+            imgui.PopFont()
             imgui.EndChild()
         end
         imgui.PopStyleVar(3)
@@ -4696,7 +4766,7 @@ function(self)
 
                     -- Highlight the selected skin
                     if isSelected then
-                        imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.0, 1.0, 0.0, 1.0)) -- Green highlight
+                        imgui.PushStyleColor(imgui.Col.Button, imguiRGBA["REALGREEN"]) -- Green highlight
                     end
 
                     if skinTexture[skinId] == nil then
@@ -4901,13 +4971,13 @@ function(self)
             if menu.confirm.update[0] then
                 imgui.Text('Do you want to update this script?')
                 local buttonSize = imgui.ImVec2(85, 45)
-                if imgui.CustomButton(fa.ICON_FA_CHECK .. ' Update', color_default, color_hover, color_active, buttonSize) then
+                if imgui.CustomButton(fa.ICON_FA_CHECK .. ' Update', imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], buttonSize, imguiRGBA["WHITE"]) then
                     updateScript()
                     menu.confirm.update[0] = false
                     menu.confirm.window[0] = false
                 end
                 imgui.SameLine()
-                if imgui.CustomButton(fa.ICON_FA_TIMES .. ' Cancel', color_default, color_hover, color_active, buttonSize) then
+                if imgui.CustomButton(fa.ICON_FA_TIMES .. ' Cancel', imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], buttonSize, imguiRGBA["WHITE"]) then
                     menu.confirm.update[0] = false
                     menu.confirm.window[0] = false
                 end
@@ -5813,6 +5883,7 @@ function ensureDefaults(config, defaults, reset, ignoreKeys)
                     return true
                 end
             elseif key == ignoreKey then
+                print("Ignored key: " .. fullPath)
                 return true
             end
         end
@@ -6189,14 +6260,15 @@ function imgui.TextColoredRGB(text)
 end
 
 -- Custom Button
-function imgui.CustomButton(name, color, colorHovered, colorActive, size)
+function imgui.CustomButton(name, color, colorHovered, colorActive, size, textColor)
     local clr = imgui.Col
     imgui.PushStyleColor(clr.Button, color)
     imgui.PushStyleColor(clr.ButtonHovered, colorHovered)
     imgui.PushStyleColor(clr.ButtonActive, colorActive)
+    imgui.PushStyleColor(clr.Text, textColor)
     if not size then size = imgui.ImVec2(0, 0) end
     local result = imgui.Button(name, size)
-    imgui.PopStyleColor(3)
+    imgui.PopStyleColor(4)
     return result
 end
 
