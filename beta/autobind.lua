@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.22c")
+script_version("1.8.22d")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -662,6 +662,23 @@ local downloadProgress = {
     completedFiles = 0
 }
 
+-- Radio Stations
+local radioStations = {
+    [0] = {name = "Playback FM", desc = "Classic East Coast Hip Hop"},
+    [1] = {name = "K-Rose", desc = "Classic Country"},
+    [2] = {name = "K-DST", desc = "Classic Rock"},
+    [3] = {name = "Bounce FM", desc = "Funk, Disco"},
+    [4] = {name = "SF-UR", desc = "House"},
+    [5] = {name = "Radio Los Santos", desc = "West Coast Hip Hop, Gangsta Rap"},
+    [6] = {name = "Radio X", desc = "Alternative Rock, Grunge"},
+    [7] = {name = "CSR 103.9", desc = "New Jack Swing, Contemporary Soul"},
+    [8] = {name = "K-JAH West", desc = "Reggae, Dancehall"},
+    [9] = {name = "Master Sounds 98.3", desc = "Rare Groove, Classic Funk"},
+    [10] = {name = "WCTR", desc = "Talk Radio"},
+    [11] = {name = "User Track", desc = "Personal Audio Files"},
+    [12] = {name = "Radio Off", desc = "Turns off the radio"},
+}
+
 -- Color Table
 local clr = {
     GRAD1 = 0xB4B5B7, -- #B4B5B7
@@ -922,6 +939,9 @@ local cursorActive = false
 local updateStatus = "up_to_date"
 local currentContent = nil
 
+-- Radio Variables
+local currentRadio = 0
+
 -- Default Settings
 local autobind_defaultSettings = {
 	Settings = {
@@ -935,6 +955,8 @@ local autobind_defaultSettings = {
         autoPicklockOnFail = false,
         autoPicklockOnSuccess = false,
         autoFarm = false,
+        noRadio = false,
+        favoriteRadio = 6,
         currentBlackMarketKits = 3,
         currentFactionLockerKits = 3,
         callSecondaryBackup = false,
@@ -1088,9 +1110,11 @@ local autobind_defaultSettings = {
         autoReconnect = true,
     },
     TimeAndWeather = {
-        enable = true,
         time = 12,
-        weather = 1
+        modifyTime = false,
+        weather = 2,
+        modifyWeather = false,
+        serverWeather = 2
     },
 	Keybinds = {
         Accept = {Toggle = true, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}},
@@ -1114,8 +1138,10 @@ local autobind_defaultSettings = {
 -- Autobind Config
 local autobind = autobind_defaultSettings
 
--- HZRP Health Ammount
+-- HZRP Variables
 local hzrpHealth = 5000000
+local currentWeather = nil
+local currentTime = nil
 
 -- Timers
 local timers = {
@@ -1179,6 +1205,11 @@ local farmer = {
     farming = false,
     harvesting = false,
     harvestingCount = 0
+}
+
+-- Radio
+local radio = {
+    dialogId = 22274
 }
 
 -- Sprunk
@@ -1573,6 +1604,32 @@ function initializeComponents()
     -- Initialize Key Functions (Faction Locker)
     InitializeFactionLockerKeyFunctions()
 
+    -- Patch and set time
+    patch_samp_time_set(autobind.TimeAndWeather.modifyTime)
+    if autobind.TimeAndWeather.modifyTime then
+        setTimeOfDay(autobind.TimeAndWeather.time, 0)
+    end
+
+    -- Set weather
+    if autobind.TimeAndWeather.modifyWeather then
+        forceWeatherNow(autobind.TimeAndWeather.weather)
+    end
+
+    -- Toggle Radio
+    lua_thread.create(function()
+        if isCharInAnyCar(ped) and not autobind.Settings.noRadio then
+            setRadioChannel(12)
+            wait(1000)
+        end
+
+        toggleRadio(autobind.Settings.noRadio)
+
+        if autobind.Settings.noRadio then
+            wait(1000)
+            setRadioChannel(autobind.Settings.favoriteRadio or 0)
+        end
+    end)
+
     menu.initialized[0] = true
 end
 
@@ -1639,6 +1696,40 @@ function main()
                 autobind.Settings.autoFarm = true
                 formattedAddChatMessage("You have enabled auto farming.")
             end
+        end
+
+        -- Radio
+        local result3, button3, list3, _ = sampHasDialogRespond(radio.dialogId)
+        if result3 then
+            if button3 == 1 then
+                if list3 ~= 12 then
+                    formattedAddChatMessage(string.format("You have selected radio station %d: %s - %s.", list3, radioStations[list3].name, radioStations[list3].desc))
+                    lua_thread.create(function()
+                        if not autobind.Settings.noRadio then
+                            autobind.Settings.noRadio = true
+                            toggleRadio(true)
+                            wait(500)
+                        end
+
+                        setRadioChannel(list3)
+                    end)
+                else
+                    formattedAddChatMessage("You have selected radio station 12: Radio Off.")
+                    lua_thread.create(function()
+                        if autobind.Settings.noRadio then
+                            autobind.Settings.noRadio = false
+                            setRadioChannel(list3)
+                            wait(500)
+                            toggleRadio(false)
+                        end
+                    end)
+                end
+            end
+        end
+
+
+        if isCharInAnyCar(ped) then
+            currentRadio = getRadioChannel()
         end
 
         -- Cursor Active
@@ -2269,15 +2360,6 @@ function createSprunkSpam()
     end
 end
 
-function createTimeAndWeather()
-    if not autobind.TimeAndWeather.enable then
-        return
-    end
-
-    setTimeOfDay(autobind.TimeAndWeather.time, 0)
-    forceWeatherNow(autobind.TimeAndWeather.weather)
-end
-
 -- Functions Table
 local functionsToRun = {
     {
@@ -2341,13 +2423,6 @@ local functionsToRun = {
         name = "SprunkSpam",
         func = createSprunkSpam,
         interval = 0.01,
-        lastRun = localClock(),
-        enabled = true
-    },
-    {
-        name = "TimeAndWeather",
-        func = createTimeAndWeather,
-        interval = 0.001,
         lastRun = localClock(),
         enabled = true
     }
@@ -2791,8 +2866,192 @@ local cmds = {
                 formattedAddChatMessage(string.format("USAGE: /%s [faction|family]", cmd))
             end
         end
+    },
+    weather = {
+        cmd = "weather",
+        desc = "Manage weather settings or set by ID",
+        func = function(cmd, params)
+            if #params < 1 then
+                formattedAddChatMessage(string.format(
+                    "Status: {%06x}%s{FFFFFF}, Current Weather: {%06x}%s{FFFFFF}.", 
+                    autobind.TimeAndWeather.modifyWeather and clr.REALGREEN or clr.REALRED, 
+                    autobind.TimeAndWeather.modifyWeather and "Enabled" or "Disabled", 
+                    clr.LIGHTBLUE, 
+                    autobind.TimeAndWeather.weather or 'N/A'
+                ))
+                formattedAddChatMessage(string.format("Server Weather: {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, autobind.TimeAndWeather.serverWeather or 'N/A'))
+                formattedAddChatMessage(string.format("USAGE: /%s [help|toggle|reset|weatherId]", cmd))
+                return
+            end
+
+            if params:match("^help$") then
+                formattedAddChatMessage(string.format("USAGE: /%s [toggle|reset|weatherId]", cmd))
+                formattedAddChatMessage(string.format("Toggle: {%06x}Toggles weather on or off.", clr.GREY))
+                formattedAddChatMessage(string.format("Reset: {%06x}Resets weather to default.", clr.GREY))
+                formattedAddChatMessage(string.format("WeatherId: {%06x}Sets the weather to the specified ID.", clr.GREY))
+            elseif params:match("^toggle$") then
+                autobind.TimeAndWeather.modifyWeather = toggleBind("Weather", autobind.TimeAndWeather.modifyWeather)
+
+                if autobind.TimeAndWeather.modifyWeather then
+                    forceWeatherNow(autobind.TimeAndWeather.weather)
+                else
+                    forceWeatherNow(autobind.TimeAndWeather.serverWeather or autobind_defaultSettings.TimeAndWeather.serverWeather)
+                end
+            elseif params:match("^reset$") then
+                autobind.TimeAndWeather.weather = autobind_defaultSettings.TimeAndWeather.weather
+                formattedAddChatMessage("Weather has been reset to default.")
+                if autobind.TimeAndWeather.modifyWeather then
+                    forceWeatherNow(autobind.TimeAndWeather.weather)
+                end
+            else
+                local weatherId = tonumber(params)
+                if weatherId and weatherId >= 0 and weatherId <= 50 then
+                    autobind.TimeAndWeather.weather = weatherId
+                    formattedAddChatMessage(string.format("Weather has been set to {%06x}%d{FFFFFF}.", clr.LIGHTBLUE, weatherId))
+
+                    if autobind.TimeAndWeather.modifyWeather then
+                        forceWeatherNow(weatherId)
+                    end
+                else
+                    formattedAddChatMessage("Invalid parameter. Please use a number between 0 and 50.")
+                end
+            end
+        end
+    },
+    settime = {
+        cmd = "settime",
+        desc = "Sets the time of day",
+        func = function(cmd, params)
+            if #params < 1 then
+                formattedAddChatMessage(string.format("Status: {%06x}%s{FFFFFF}, Current Time: {%06x}%d{FFFFFF}.", autobind.TimeAndWeather.modifyTime and clr.REALGREEN or clr.REALRED, autobind.TimeAndWeather.modifyTime and "Enabled" or "Disabled", clr.LIGHTBLUE, autobind.TimeAndWeather.time))
+                formattedAddChatMessage(string.format("USAGE: /%s [help|toggle|reset|hour]", cmd))
+                return
+            end
+
+            if params:match("^help$") then
+                formattedAddChatMessage(string.format("USAGE: /%s [toggle|reset|hour]", cmd))
+                formattedAddChatMessage(string.format("Toggle: {%06x}Toggles time on or off.", clr.GREY))
+                formattedAddChatMessage(string.format("Reset: {%06x}Resets time to default.", clr.GREY))
+                formattedAddChatMessage(string.format("Hour: {%06x}Sets the time to the specified hour.", clr.GREY))
+            elseif params:match("^toggle$") then
+                autobind.TimeAndWeather.modifyTime = toggleBind("Time", autobind.TimeAndWeather.modifyTime)
+                patch_samp_time_set(autobind.TimeAndWeather.modifyTime)
+
+                if autobind.TimeAndWeather.modifyTime then
+                    setTimeOfDay(autobind.TimeAndWeather.time, 0)
+                end
+            elseif params:match("^reset$") then
+                autobind.TimeAndWeather.time = autobind_defaultSettings.TimeAndWeather.time
+                formattedAddChatMessage("Time has been reset to default.")
+
+                if autobind.TimeAndWeather.modifyTime then
+                    setTimeOfDay(autobind.TimeAndWeather.time, 0)
+                end
+            else
+                local timeId = tonumber(params)
+                if timeId and timeId >= 0 and timeId <= 23 then
+                    autobind.TimeAndWeather.time = timeId
+                    formattedAddChatMessage(string.format("Time has been set to {%06x}%d{FFFFFF}.", clr.LIGHTBLUE, timeId))
+
+                    if autobind.TimeAndWeather.modifyTime then
+                        patch_samp_time_set(true)
+                        setTimeOfDay(timeId, 0)
+                    end
+                else
+                    formattedAddChatMessage("Invalid parameter. Please use a number between 0 and 23.")
+                end
+            end
+        end
+    },
+    radio = {
+        cmd = "radio",
+        desc = "Toggles radio on or off, or sets a favorite radio channel",
+        func = function(cmd, params)
+            if not isCharInAnyCar(ped) then
+                formattedAddChatMessage("You must be in a vehicle to use this command.")
+                return
+            end
+
+            if #params < 1 then
+                formattedAddChatMessage(string.format(
+                    "Status: {%06x}%s{FFFFFF}, Current Radio: {%06x}%s{FFFFFF}.", 
+                    autobind.Settings.noRadio and clr.GREEN or clr.RED, 
+                    autobind.Settings.noRadio and "On" or "Off", 
+                    clr.LIGHTBLUE, 
+                    autobind.Settings.noRadio and radioStations[currentRadio].name or "Radio Off"
+                ))
+                formattedAddChatMessage(string.format("USAGE: /%s [toggle|fav|list|channel number]", cmd))
+                return
+            end
+
+            if params:match("^toggle$") then
+                autobind.Settings.noRadio = toggleBind("Radio", autobind.Settings.noRadio)
+
+                lua_thread.create(function()
+                    if isCharInAnyCar(ped) and not autobind.Settings.noRadio then
+                        setRadioChannel(12)
+                        wait(500)
+                    end
+    
+                    toggleRadio(autobind.Settings.noRadio)
+
+                    if autobind.Settings.noRadio then
+                        wait(500)
+                        setRadioChannel(autobind.Settings.favoriteRadio or 0)
+                        formattedAddChatMessage(string.format("Radio has been turned on, favorite channel set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio or 0].name))
+                        return
+                    end
+                end)
+            elseif params:match("^fav%s*(%d*)") then
+                local newParams = params:match("^fav%s*(%d*)")
+                if #newParams < 1 then
+                    setRadioChannel(autobind.Settings.favoriteRadio or 0)
+                    formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio or 0].name))
+                else
+                    local channel = tonumber(newParams)
+                    if channel and channel >= 0 and channel <= 11 then
+                        autobind.Settings.favoriteRadio = channel
+                        formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[channel].name))
+                    else
+                        formattedAddChatMessage("Invalid parameter. Please use a number between 0 and 11.")
+                    end
+                end
+            elseif params:match("^list$") then
+                local messages = ""
+                for i = 0, 12 do
+                    messages = messages .. string.format("%d: {%06x}%s{FFFFFF} - {%06x}%s\n", i, clr.LIGHTBLUE, radioStations[i].name, clr.GREY, radioStations[i].desc)
+                end
+
+                local title = string.format("[%s] Radio List", shortName:upper())
+                sampShowDialog(radio.dialogId, title, messages, "Select", "Close", 2)
+            else
+                local channel = tonumber(params)
+                if channel and channel >= 0 and channel <= 11 then
+                    formattedAddChatMessage(string.format("Radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[channel].name))
+                    lua_thread.create(function()
+                        if not autobind.Settings.noRadio then
+                            autobind.Settings.noRadio = true
+                            toggleRadio(true)
+                            wait(500)
+                        end
+
+                        setRadioChannel(channel)
+                    end)
+                else
+                    formattedAddChatMessage("Invalid parameter. Please use a number between 0 and 11.")
+                end
+            end
+        end
     }
 }
+
+function toggleRadio(bool)
+	mem.write(0x4EB9A0, bool and 0x8BE98B55 or 0x8B0004C2, 4, false)
+end
+
+function patch_samp_time_set(bool)
+    mem.write(sampGetBase() + 0x9C0A0, bool and 0x000008C2 or 0x824448B, 4, true)
+end
 
 -- Create Chat Commands
 function createAutobindCommands()
@@ -3055,6 +3314,7 @@ function autobindCommand(params)
             menu.factionlocker.window[0] = not menu.factionlocker.window[0]
         end,
         ["reload"] = function()
+            saveConfigWithErrorHandling(Files.settings, autobind)
             formattedAddChatMessage("Reloading script... please wait.")
             lua_thread.create(function()
                 wait(0)
@@ -3154,6 +3414,9 @@ local messageHandlers = {
                 -- Reset vehicle storage status
                 local playerName = autobind.CurrentPlayer.name
                 if playerName and playerName ~= "" then
+                    if autobind.VehicleStorage.Vehicles == nil then
+                        autobind.VehicleStorage.Vehicles = {}
+                    end
                     autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
 
                     for _, vehicle in pairs(autobind.VehicleStorage.Vehicles[playerName]) do
@@ -4395,15 +4658,21 @@ end
 
 -- OnSetWorldTime
 function sampev.onSetWorldTime(hour)
-    if autobind.TimeAndWeather and autobind.TimeAndWeather.enable then
-        return false
+    if autobind.TimeAndWeather then
+        autobind.TimeAndWeather.serverTime = hour
+        if autobind.TimeAndWeather.modifyTime then
+            return {autobind.TimeAndWeather.time}
+        end
     end
 end
 
 -- OnSetWeather
 function sampev.onSetWeather(weatherId)
-    if autobind.TimeAndWeather and autobind.TimeAndWeather.enable then
-        return false
+    if autobind.TimeAndWeather then
+        autobind.TimeAndWeather.serverWeather = weatherId
+        if autobind.TimeAndWeather.modifyWeather then
+            return {autobind.TimeAndWeather.weather}
+        end
     end
 end
 
