@@ -1,0 +1,32 @@
+[
+    {
+        "nickName": "Kenny",
+        "bugFinds": 14,
+        "hoursWasted": 3.0,
+        "discord": "peinv"
+    },
+    {
+        "nickName": "Wolly",
+        "bugFinds": 9,
+        "hoursWasted": 1.0,
+        "discord": "xwollyx"
+    },
+    {
+        "nickName": "Allen",
+        "bugFinds": 6,
+        "hoursWasted": 0.9,
+        "discord": "allen_7"
+    },
+    {
+        "nickName": "Moorice",
+        "bugFinds": 3,
+        "hoursWasted": 0.4,
+        "discord": "moorice"
+    },
+    {
+        "nickName": "Dwayne",
+        "bugFinds": 2,
+        "hoursWasted": 1.0,
+        "discord": "dickshaft"
+    }
+]
