@@ -1,16 +1,8 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.22d")
+script_version("1.8.23")
 script_authors("akacross")
 script_url("https://akacross.net/")
-
-local betaTesters = { -- WIP
-    {nickName = "Kenny", bugFinds = 14, hoursWasted = 3.0, discord = "peinv"},
-    {nickName = "Wolly", bugFinds = 9, hoursWasted = 1.0, discord = "xwollyx"},
-    {nickName = "Allen", bugFinds = 6, hoursWasted = 0.9, discord = "allen_7"},
-    {nickName = "Moorice", bugFinds = 3, hoursWasted = 0.4, discord = "moorice"},
-    {nickName = "Dwayne", bugFinds = 2, hoursWasted = 1.0, discord = "dickshaft"}
-}
 
 local changelog = {
     ["1.8.22c"] = {
@@ -124,7 +116,19 @@ Paths.skins = Paths.resource .. 'skins\\'
 
 -- Files Table
 local Files = {
-    settings = Paths.settings .. 'autobind.json',
+    settings = Paths.settings .. 'settings.json',
+    autovest = Paths.settings .. 'autovest.json',
+    pedscount = Paths.settings .. 'pedscount.json',
+    autofind = Paths.settings .. 'autofind.json',
+    lastbackup = Paths.settings .. 'lastbackup.json',
+    currentplayer = Paths.settings .. 'currentplayer.json',
+    windowpos = Paths.settings .. 'windowpos.json',
+    blackmarket = Paths.settings .. 'blackmarket.json',
+    factionlocker = Paths.settings .. 'factionlocker.json',
+    vehiclestorage = Paths.settings .. 'vehiclestorage.json',
+    reconnect = Paths.settings .. 'reconnect.json',
+    keybinds = Paths.settings .. 'keybinds.json',
+    timeandweather = Paths.settings .. 'timeandweather.json',
     fawesome5 = Paths.resource .. 'fonts\\fa-solid-900.ttf'
 }
 
@@ -677,6 +681,7 @@ local radioStations = {
     [10] = {name = "WCTR", desc = "Talk Radio"},
     [11] = {name = "User Track", desc = "Personal Audio Files"},
     [12] = {name = "Radio Off", desc = "Turns off the radio"},
+    [24] = {name = "User Track", desc = "Personal Audio Files"},
 }
 
 -- Color Table
@@ -942,6 +947,19 @@ local currentContent = nil
 -- Radio Variables
 local currentRadio = 0
 
+-- Function to deep copy a table
+local function deepCopy(original)
+    local copy = {}
+    for k, v in pairs(original) do
+        if type(v) == "table" then
+            copy[k] = deepCopy(v)
+        else
+            copy[k] = v
+        end
+    end
+    return copy
+end
+
 -- Default Settings
 local autobind_defaultSettings = {
 	Settings = {
@@ -1136,12 +1154,17 @@ local autobind_defaultSettings = {
 }
 
 -- Autobind Config
-local autobind = autobind_defaultSettings
+local autobind = deepCopy(autobind_defaultSettings)
+
+-- Config Table Sections
+local sections = {
+    "Settings", "AutoVest", "PedsCount", "AutoFind", "LastBackup", "CurrentPlayer", 
+    "WindowPos", "BlackMarket", "FactionLocker", "VehicleStorage", "Reconnect", 
+    "TimeAndWeather", "Keybinds"
+}
 
 -- HZRP Variables
 local hzrpHealth = 5000000
-local currentWeather = nil
-local currentTime = nil
 
 -- Timers
 local timers = {
@@ -1166,11 +1189,9 @@ local accepter = {
 	received = false,
 	playerName = "",
 	playerId = -1,
-    price = 0
+    price = 0,
+    thread = nil
 }
-
--- Accepter Thread
-local accepterThread = nil
 
 -- Offer Bodyguard
 local bodyguard = {
@@ -1509,39 +1530,47 @@ ffi.cdef[[
 	};
 ]]
 
+-- Define ignore keys for each section
+local ignoreKeysMap = {
+    AutoVest = {"skins", "names"},
+    Keybinds = {"BikeBind", "SprintBind", "Frisk", "TakePills", "Accept", "Offer", "AcceptDeath", "RequestBackup"},
+    BlackMarket = {"Locations"},
+    FactionLocker = {"Locations"},
+    VehicleStorage = {"Vehicles"},
+    Reconnect = {"serverList"}
+}
+
+-- Add dynamic keys for BlackMarket and FactionLocker
+for i = 1, maxKits do
+    table.insert(ignoreKeysMap.Keybinds, "BlackMarket" .. i)
+    table.insert(ignoreKeysMap.BlackMarket, "Kit" .. i)
+    table.insert(ignoreKeysMap.Keybinds, "FactionLocker" .. i)
+    table.insert(ignoreKeysMap.FactionLocker, "Kit" .. i)
+end
+
 -- Load Configs
-function loadConfigs()
-	-- Ignore Keys
-	local ignoreKeys = {
-		{"AutoVest", "skins"}, {"AutoVest", "names"}, 
-		{"Keybinds", "BikeBind"},
-		{"Keybinds", "SprintBind"},
-		{"Keybinds", "Frisk"},
-		{"Keybinds", "TakePills"},
-		{"Keybinds", "Accept"},
-		{"Keybinds", "Offer"},
-		{"Keybinds", "AcceptDeath"},
-		{"Keybinds", "RequestBackup"},
-		{"BlackMarket", "Locations"},
-		{"FactionLocker", "Locations"},
-        {"VehicleStorage", "Vehicles"},
-        {"Reconnect", "serverList"}
-	}
-
-    for i = 1, maxKits do
-        ignoreKeys[#ignoreKeys + 1] = {"Keybinds", "BlackMarket" .. i}
-        ignoreKeys[#ignoreKeys + 1] = {"BlackMarket", "Kit" .. i}
-        ignoreKeys[#ignoreKeys + 1] = {"Keybinds", "FactionLocker" .. i}
-        ignoreKeys[#ignoreKeys + 1] = {"FactionLocker", "Kit" .. i}
+function loadAllConfigs()
+    -- Load each section
+    for _, section in ipairs(sections) do
+        local ignoreKeys = ignoreKeysMap[section] or {}
+        local success, config, err = handleConfigFile(Files[section:lower()], autobind_defaultSettings[section], autobind[section], ignoreKeys)
+        if not success then
+            print("Failed to handle config file for " .. section .. ": " .. err)
+            return
+        end
+        autobind[section] = deepCopy(config)
     end
+end
 
-	-- Handle Config File
-    local success, config, err = handleConfigFile(Files.settings, autobind_defaultSettings, autobind, ignoreKeys)
-	if not success then
-		print("Failed to handle config file: " .. err)
-		return
-	end
-	autobind = config
+-- Save All Configs
+function saveAllConfigs()
+    -- Save each section
+    for _, section in ipairs(sections) do
+        local success, err = saveConfigWithErrorHandling(Files[section:lower()], autobind[section])
+        if not success then
+            print("Failed to save config file for " .. section .. ": " .. err)
+        end
+    end
 end
 
 -- initialize Components
@@ -1549,7 +1578,7 @@ function initializeComponents()
     if autobind.Settings.updateInProgress then
         formattedAddChatMessage(string.format("You have successfully upgraded from Version: %s to %s", autobind.Settings.lastVersion, scriptVersion))
         autobind.Settings.updateInProgress = false
-        saveConfigWithErrorHandling(Files.settings, autobind)
+        saveConfigWithErrorHandling(Files.settings, autobind.Settings)
     end
 
     -- Update Check
@@ -1644,7 +1673,7 @@ function main()
     end
 
 	-- Load Configs
-	loadConfigs()
+	loadAllConfigs()
 
 	-- Wait for SAMP
     while not isSampAvailable() do wait(100) end
@@ -1661,7 +1690,7 @@ function main()
         if sampGetGamestate() ~= 3 then
             resetAccepterAndBodyguard()
         end
-
+        
         -- Check if dialog is active
         local result, button, _, _ = sampHasDialogRespond(farmer.dialogId)
         if result then
@@ -1711,6 +1740,9 @@ function main()
                             wait(500)
                         end
 
+                        -- Fix user tracks
+                        if list3 == 11 then list3 = 24 end
+
                         setRadioChannel(list3)
                     end)
                 else
@@ -1748,7 +1780,6 @@ function main()
         end)
     end
 end
-
 
 -- Reset Accepter and Bodyguard
 function resetAccepterAndBodyguard()
@@ -2648,7 +2679,7 @@ local cmds = {
         end
     },
 	autoaccept = {
-        cmd = "autoaccept", 
+        cmd = "av",
         desc = "Automatically accepts offers from other players",
         func = function(cmd)
             accepter.enable = toggleBind("Auto Accept", accepter.enable)
@@ -2658,7 +2689,7 @@ local cmds = {
         cmd = "ddmode", 
         desc = "Toggles between DD and non-DD vesting",
         func = function(cmd)
-            autobind.AutoVest.donor = toggleBind("DD Vest Mode", autobind.AutoVest.donor)
+            autobind.AutoVest.donor = toggleBind("DD Mode", autobind.AutoVest.donor)
             timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
         end
     },
@@ -2973,12 +3004,17 @@ local cmds = {
             end
 
             if #params < 1 then
+                local radioInfo = radioStations[currentRadio]
+                if not radioInfo then
+                    radioInfo = radioStations[12]
+                end
+
                 formattedAddChatMessage(string.format(
                     "Status: {%06x}%s{FFFFFF}, Current Radio: {%06x}%s{FFFFFF}.", 
                     autobind.Settings.noRadio and clr.GREEN or clr.RED, 
                     autobind.Settings.noRadio and "On" or "Off", 
                     clr.LIGHTBLUE, 
-                    autobind.Settings.noRadio and radioStations[currentRadio].name or "Radio Off"
+                    autobind.Settings.noRadio and radioInfo.name or "Radio Off"
                 ))
                 formattedAddChatMessage(string.format("USAGE: /%s [toggle|fav|list|channel number]", cmd))
                 return
@@ -2997,21 +3033,27 @@ local cmds = {
 
                     if autobind.Settings.noRadio then
                         wait(500)
-                        setRadioChannel(autobind.Settings.favoriteRadio or 0)
-                        formattedAddChatMessage(string.format("Radio has been turned on, favorite channel set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio or 0].name))
+                        setRadioChannel(autobind.Settings.favoriteRadio)
+                        formattedAddChatMessage(string.format("Radio has been turned on, favorite channel set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio].name))
                         return
                     end
                 end)
             elseif params:match("^fav%s*(%d*)") then
                 local newParams = params:match("^fav%s*(%d*)")
                 if #newParams < 1 then
-                    setRadioChannel(autobind.Settings.favoriteRadio or 0)
-                    formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio or 0].name))
+                    setRadioChannel(autobind.Settings.favoriteRadio)
+                    formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio].name))
                 else
                     local channel = tonumber(newParams)
                     if channel and channel >= 0 and channel <= 11 then
-                        autobind.Settings.favoriteRadio = channel
                         formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[channel].name))
+
+                        -- Fix user tracks
+                        if channel == 11 then channel = 24 end
+
+                        autobind.Settings.favoriteRadio = channel
+
+                        setRadioChannel(channel)
                     else
                         formattedAddChatMessage("Invalid parameter. Please use a number between 0 and 11.")
                     end
@@ -3035,6 +3077,9 @@ local cmds = {
                             wait(500)
                         end
 
+                        -- Fix user tracks
+                        if channel == 11 then channel = 24 end
+
                         setRadioChannel(channel)
                     end)
                 else
@@ -3055,6 +3100,15 @@ end
 
 -- Create Chat Commands
 function createAutobindCommands()
+
+    if sampIsChatCommandDefined(scriptName) then
+        sampUnregisterChatCommand(scriptName)
+    end
+
+    if sampIsChatCommandDefined(shortName) then
+        sampUnregisterChatCommand(shortName)
+    end
+
     sampRegisterChatCommand(scriptName, autobindCommand)
     sampRegisterChatCommand(shortName, autobindCommand)
 
@@ -3067,6 +3121,10 @@ end
 --- Register Autobind Commands
 function registerAutobindCommands()
     for _, command in pairs(cmds) do
+        if sampIsChatCommandDefined(command.cmd) then
+            sampUnregisterChatCommand(command.cmd)
+        end
+
         sampRegisterChatCommand(command.cmd, function(params)
             if not autobind.Settings.enable then
                 return
@@ -3232,7 +3290,7 @@ function autobindCommand(params)
                 local accepterName = accepter.playerName ~= "" and string.format("%s (%s)", accepter.playerName, accepterId) or "N/A"
                 local accepterEnableStatus = accepter.enable and "Yes" or "No"
                 local accepterReceivedStatus = accepter.received and "Yes" or "No"
-                local accepterThreadStatus = accepterThread ~= nil and "On" or "Off"
+                local accepterThreadStatus = accepter.thread ~= nil and "On" or "Off"
 
                 formattedAddChatMessage(string.format(
                     "Accepter: %s, Enabled: %s, Received: %s, Price: $%d, Thread: %s.",
@@ -3314,7 +3372,7 @@ function autobindCommand(params)
             menu.factionlocker.window[0] = not menu.factionlocker.window[0]
         end,
         ["reload"] = function()
-            saveConfigWithErrorHandling(Files.settings, autobind)
+            saveAllConfigs()
             formattedAddChatMessage("Reloading script... please wait.")
             lua_thread.create(function()
                 wait(0)
@@ -3353,10 +3411,6 @@ end
 -- OnScriptTerminate
 function onScriptTerminate(scr, quitGame)
 	if scr == script.this then
-        --[[if autobind.Settings.autoSave then
-            saveConfigWithErrorHandling(Files.settings, autobind)
-        end]]
-
 		-- Unregister chat commands
 		for _, command in pairs(cmds) do
 			sampUnregisterChatCommand(command.cmd)
@@ -3446,7 +3500,8 @@ local messageHandlers = {
                 end)
 
                 -- Save settings
-                saveConfigWithErrorHandling(Files.settings, autobind)
+                saveConfigWithErrorHandling(Files.currentplayer, autobind.CurrentPlayer)
+                saveConfigWithErrorHandling(Files.vehiclestorage, autobind.VehicleStorage)
 
                 return {clrRGBA["NEWS"], string.format("Welcome to Horizon Roleplay, %s.", name)}
             end
@@ -3517,7 +3572,7 @@ local messageHandlers = {
             local config = autobind.Settings
             if type:match("Family") then
                 config.mode = type
-                saveConfigWithErrorHandling(Files.settings, autobind)
+                saveConfigWithErrorHandling(Files.settings, autobind.Settings)
 
                 --[[local freq, allies = motdMsg:match("[Ff]req:?%s*(-?%d+)%s*[/%s]*[Aa]llies:?%s*([^,]+)")
                 if freq and allies then
@@ -3546,7 +3601,7 @@ local messageHandlers = {
             elseif type:match("[LSPD|SASD|FBI|ARES|GOV]") then
                 config.mode = "Faction"
                 config.Faction.type = type
-                saveConfigWithErrorHandling(Files.settings, autobind)
+                saveConfigWithErrorHandling(Files.settings, autobind.Settings)
                 if accepter.enable then
                     formattedAddChatMessage("Auto Accept is now disabled because you are now in Faction Mode.")
                     accepter.enable = false
@@ -3568,7 +3623,7 @@ local messageHandlers = {
             elseif type:match("LSFMD") then
                 config.mode = "Faction"
                 config.Faction.type = type
-                saveConfigWithErrorHandling(Files.settings, autobind)
+                saveConfigWithErrorHandling(Files.settings, autobind.Settings)
 
                 return {clrRGBA["DEPTRADIO"], string.format("%s MOTD: %s", type, motdMsg)}
             end
@@ -3772,7 +3827,7 @@ local messageHandlers = {
             local cleanPrice = price:gsub(",", "")
             accepter.price = tonumber(cleanPrice)
 
-            accepterThread = lua_thread.create(function()
+            accepter.thread = lua_thread.create(function()
                 wait(0)
                 if accepter.price ~= 200 then
                     return
@@ -3784,7 +3839,7 @@ local messageHandlers = {
                 end
 
                 accepter.received = true
-                accepterThread = nil
+                accepter.thread = nil
             end)
 
             if accepter.playerName ~= "" and accepter.playerId ~= -1 then
@@ -3799,17 +3854,18 @@ local messageHandlers = {
         pattern = "^%* You accepted the protection for %$(%d+) from (.+)%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(price, nickname)
+            local playerId = accepter.playerId
 
-            if accepterThread and accepter.enable then
-                accepterThread:terminate()
-                accepterThread = nil
+            if accepter.thread and accepter.enable then
+                accepter.thread:terminate()
+                accepter.thread = nil
             end
 
             accepter.playerName = ""
             accepter.playerId = -1
             accepter.received = false
             accepter.price = 0
-            return {clrRGBA["LIGHTBLUE"], string.format("* You accepted the protection for $%d from %s (%d).", price, nickname, accepter.playerId)}
+            return {clrRGBA["LIGHTBLUE"], string.format("* You accepted the protection for $%d from %s (%d).", price, nickname, playerId)}
         end
     },
     -- They Accepted Protection
@@ -3817,10 +3873,12 @@ local messageHandlers = {
         pattern = "%* (.+) accepted your protection, and the %$(%d+) was added to your money.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(nickname, price)
+            local playerId = bodyguard.playerId
+            
             bodyguard.playerName = ""
             bodyguard.playerId = -1
             bodyguard.received = false
-            return {clrRGBA["LIGHTBLUE"], string.format("* %s (%d) accepted your protection, and the $%d was added to your money.", nickname, bodyguard.playerId, price)}
+            return {clrRGBA["LIGHTBLUE"], string.format("* %s (%d) accepted your protection, and the $%d was added to your money.", nickname, playerId, price)}
         end
     },
     -- Can't Afford Protection
@@ -3892,6 +3950,7 @@ local messageHandlers = {
         color = clrRGBA["GREY"],
         action = function()
             if autofind.enable then
+                autofind.received = false
                 if autofind.counter > 0 then
                     autofind.counter = 0
                 end
@@ -3905,6 +3964,7 @@ local messageHandlers = {
         color = clrRGBA["GREY"],
         action = function()
             if autofind.enable and autofind.playerName ~= "" and autofind.playerId ~= -1 then
+                autofind.received = false
                 if autofind.counter > 0 then
                     autofind.counter = 0
                 end
@@ -3920,6 +3980,7 @@ local messageHandlers = {
         color = clrRGBA["GREY"],
         action = function()
             if autofind.enable then
+                autofind.received = false
                 if autofind.counter > 0 then
                     autofind.counter = 0
                 end
@@ -3935,6 +3996,7 @@ local messageHandlers = {
         color = clrRGBA["LIGHTBLUE"],
         action = function()
             if autofind.playerName ~= "" and autofind.playerId ~= -1 then
+                autofind.received = false
                 if autofind.counter > 0 then
                     autofind.counter = 0
                 end
@@ -3951,6 +4013,7 @@ local messageHandlers = {
         color = clrRGBA["GREY"],
         action = function()
             if autofind.enable then
+                autofind.received = false
                 autofind.counter = autofind.counter + 1
                 if autofind.counter >= 5 then
                     autofind.enable = false
@@ -3969,6 +4032,17 @@ local messageHandlers = {
         pattern = "^(.+) has been last seen at (.+)%.$",
         color = clrRGBA["GRAD2"],
         action = function(nickname, location)
+            if autofind.enable then
+                timers.Find.last = localClock()
+                autofind.received = false
+            end
+        end
+    },
+    -- SMS: I need the where-abouts of Player Name, Sender: Player Name (Phone Number)
+    {
+        pattern = "^SMS: I need the where%-abouts of ([^,]+), Sender: ([^%(]+)%((%d+)%)$",
+        color = clrRGBA["YELLOW"],
+        action = function(nickname, sender, phonenumber)
             if autofind.enable then
                 timers.Find.last = localClock()
                 autofind.received = false
@@ -4995,7 +5069,7 @@ local buttons1 = {
         icon = function() return fa.ICON_FA_SAVE end,
         tooltip = function() return 'Save configuration' end,
         action = function()
-            saveConfigWithErrorHandling(Files.settings, autobind)
+            saveAllConfigs()
         end,
         color = function()
             return imguiRGBA["DARKGREY"]
@@ -5006,7 +5080,7 @@ local buttons1 = {
         icon = function() return fa.ICON_FA_SYNC end,
         tooltip = function() return 'Reload configuration' end,
         action = function()
-            loadConfigs()
+            loadAllConfigs()
         end,
         color = function()
             return imguiRGBA["DARKGREY"]
@@ -5045,6 +5119,30 @@ local buttons1 = {
             vehicles.initialFetch = false
             vehicles.populating = true
             sampSendChat("/vst")
+
+            -- Fetch Skins
+            if autobind.AutoVest.autoFetchSkins then
+                fetchDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
+                    if decodedData then
+                        autobind.AutoVest.skins = decodedData
+                        family.skins = listToSet(autobind.AutoVest.skins)
+                    end
+                end)
+            else
+                family.skins = listToSet(autobind.AutoVest.skins)
+            end
+
+            -- Fetch Names
+            if autobind.AutoVest.autoFetchNames then
+                fetchDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
+                    if decodedData then
+                        autobind.AutoVest.names = decodedData
+                        names = listToSet(autobind.AutoVest.names)
+                    end
+                end)
+            else
+                names = listToSet(autobind.AutoVest.names)
+            end
         end,
         color = function()
             return imguiRGBA["DARKGREY"]
@@ -5167,7 +5265,7 @@ function(self)
         escapePressed = false
 
         if autobind.Settings.autoSave then
-            saveConfigWithErrorHandling(Files.settings, autobind)
+            saveAllConfigs()
         end
     else
         for key, state in pairs(menuStates) do
@@ -5176,7 +5274,7 @@ function(self)
                 if key == "settings" then
                     if autobind.Settings.autoSave then
                         autobind.AutoVest.names = setToList(names)
-                        saveConfigWithErrorHandling(Files.settings, autobind)
+                        saveAllConfigs()
                     end
                 end
 
@@ -5726,7 +5824,7 @@ function renderSettings()
         end, true)
         
         createRow(string.format('Diamond Donator (/%s)', cmds.ddmode.cmd), 'Enable for Diamond Donators. Uses /guardnear does not have armor/paused checks.', autobind.AutoVest.donor, function()
-            autobind.AutoVest.donor = toggleBind("DD Vest Mode", autobind.AutoVest.donor)
+            autobind.AutoVest.donor = toggleBind("DD Mode", autobind.AutoVest.donor)
             timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
         end, false)
         
@@ -6093,6 +6191,7 @@ function updateScript()
             end)
         else
             formattedAddChatMessage("Update download failed! Please try again later.")
+            autobind.Settings.updateInProgress = false
         end
     end)
 end
@@ -6605,7 +6704,6 @@ function ensureDefaults(config, defaults, reset, ignoreKeys)
                     return true
                 end
             elseif key == ignoreKey then
-                print("Ignored key: " .. fullPath)
                 return true
             end
         end
