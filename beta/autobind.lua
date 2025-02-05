@@ -40,18 +40,18 @@ local changelog = {
     }
 }
 
+-- Short Name
+local shortName = "ab"
+
 -- Script Information
 local scriptPath = thisScript().path
 local scriptName = thisScript().name
 local scriptVersion = thisScript().version
 
--- Short Name
-local shortName = "ab"
-
 -- Dependency Manager
-local function safeRequire(module)
-    local success, result = pcall(require, module)
-    return success and result or nil, result
+local function safeRequire(moduleName)
+    local ok, result = pcall(require, moduleName)
+    return ok and result or nil, result
 end
 
 -- Requirements
@@ -74,28 +74,35 @@ local dependencies = {
     {name = 'socket.url', var = 'url'}
 }
 
--- Load modules
-local loadedModules, statusMessages = {}, {success = {}, failed = {}}
-for _, dep in ipairs(dependencies) do
-    local loadedModule, errorMsg = safeRequire(dep.name)
-    if loadedModule and dep.callback then
-        loadedModule = dep.callback(loadedModule)
-    end
-    loadedModules[dep.var] = loadedModule
-    table.insert(statusMessages[loadedModule and "success" or "failed"], loadedModule and dep.name or ("%s (%s)"):format(dep.name, errorMsg))
-end
+-- Load modules, assign extras, and update globals in one loop
+local loadedModules = {}
+local statusMessages = {success = {}, failed = {}}
 
--- Assign loaded modules to local variables
-for var, module in pairs(loadedModules) do
-    _G[var] = module
-end
-
--- Assign extra fields
 for _, dep in ipairs(dependencies) do
-    if dep.extras and loadedModules[dep.var] then
-        for extraVar, extraField in pairs(dep.extras) do
-            _G[extraVar] = loadedModules[dep.var][extraField]
+    local mod, err = safeRequire(dep.name)
+    if mod and dep.callback then
+        local ok, result = pcall(dep.callback, mod)
+        if ok then
+            mod = result
+        else
+            mod = nil
+            err = result
         end
+    end
+
+    loadedModules[dep.var] = mod
+
+    if mod then
+        table.insert(statusMessages.success, dep.name)
+        _G[dep.var] = mod
+
+        if dep.extras then
+            for extraVar, extraField in pairs(dep.extras) do
+                _G[extraVar] = mod[extraField]
+            end
+        end
+    else
+        table.insert(statusMessages.failed, string.format("%s (%s)", dep.name, err))
     end
 end
 
@@ -121,26 +128,16 @@ local Paths = {
     resource = workingDir .. '\\resource\\'
 }
 
--- Adding dependent paths after initial definitions
+-- Settings Path
 Paths.settings = Paths.config .. scriptName .. '\\'
+
+-- Skin Icons Path
 Paths.skins = Paths.resource .. 'skins\\'
 
 -- Files Table
 local Files = {
-    settings = Paths.settings .. 'settings.json',
-    autovest = Paths.settings .. 'autovest.json',
-    pedscount = Paths.settings .. 'pedscount.json',
-    autofind = Paths.settings .. 'autofind.json',
-    lastbackup = Paths.settings .. 'lastbackup.json',
-    currentplayer = Paths.settings .. 'currentplayer.json',
-    windowpos = Paths.settings .. 'windowpos.json',
-    blackmarket = Paths.settings .. 'blackmarket.json',
-    factionlocker = Paths.settings .. 'factionlocker.json',
-    vehiclestorage = Paths.settings .. 'vehiclestorage.json',
-    reconnect = Paths.settings .. 'reconnect.json',
-    keybinds = Paths.settings .. 'keybinds.json',
-    timeandweather = Paths.settings .. 'timeandweather.json',
-    fawesome5 = Paths.resource .. 'fonts\\fa-solid-900.ttf'
+    fawesome5 = Paths.resource .. 'fonts\\fa-solid-900.ttf',
+    trebucbd = getFolderPath(0x14) .. '\\trebucbd.ttf'
 }
 
 -- Helper Function to Construct Base URL
@@ -1065,6 +1062,8 @@ local autobind_defaultSettings = {
         callSecondaryBackup = false,
         notifySkins = false,
 		mode = "Family",
+        HZRadio = true,
+        LoginAudio = true,
         Frisk = {
             mustTarget = false,
             mustAim = true
@@ -1244,13 +1243,6 @@ local autobind_defaultSettings = {
 -- Autobind Config
 local autobind = deepCopy(autobind_defaultSettings)
 
--- Config Table Sections
-local sections = {
-    "Settings", "AutoVest", "PedsCount", "AutoFind", "LastBackup", "CurrentPlayer", 
-    "WindowPos", "BlackMarket", "FactionLocker", "VehicleStorage", "Reconnect", 
-    "TimeAndWeather", "Keybinds"
-}
-
 -- HZRP Variables
 local hzrpHealth = 5000000
 
@@ -1262,7 +1254,7 @@ local timers = {
 	Find = {timer = 20.0, last = 0, sentTime = 0, timeOut = 5.0},
 	Muted = {timer = 13.0, last = 0},
 	Binds = {timer = 0.5, last = {}},
-    Capture = {timer = 1.5, last = 0, sentTime = 0, timeOut = 10.0},
+    Capture = {timer = 1.5, last = 0, sentTime = 0, timeOut = 5.0},
     Sprunk = {timer = 0.2, last = 0},
     Point = {timer = 180.0, last = 0},
     AFK = {timer = 45.0, last = 0, sentTime = 0, timeOut = 5.0}
@@ -1297,7 +1289,8 @@ local autofind ={
     received = false,
 	playerName = "",
 	playerId = -1,
-    counter = 0
+    counter = 0,
+    location = ""
 }
 
 -- Backup
@@ -1632,6 +1625,13 @@ ffi.cdef[[
 	};
 ]]
 
+-- Config Table Sections
+local sections = {
+    "Settings", "AutoVest", "PedsCount", "AutoFind", "LastBackup", "CurrentPlayer", 
+    "WindowPos", "BlackMarket", "FactionLocker", "VehicleStorage", "Reconnect", 
+    "TimeAndWeather", "Keybinds"
+}
+
 -- Define ignore keys for each section
 local ignoreKeysMap = {
     AutoVest = {"skins", "names"},
@@ -1648,6 +1648,12 @@ for i = 1, maxKits do
     table.insert(ignoreKeysMap.BlackMarket, "Kit" .. i)
     table.insert(ignoreKeysMap.Keybinds, "FactionLocker" .. i)
     table.insert(ignoreKeysMap.FactionLocker, "Kit" .. i)
+end
+
+-- create the files table
+for _, section in pairs(sections) do
+    local name = section:lower()
+    Files[name] = Paths.settings .. name .. '.json'
 end
 
 -- Load Configs
@@ -1780,6 +1786,11 @@ function main()
         -- Check if not connected to the server
         if sampGetGamestate() ~= 3 then
             resetAccepterAndBodyguard()
+
+            if autobind.CurrentPlayer.name ~= "" and autobind.CurrentPlayer.id ~= -1 then
+                autobind.CurrentPlayer.name = ""
+                autobind.CurrentPlayer.id = -1
+            end
         end
         
         -- Check if dialog is active
@@ -1850,6 +1861,17 @@ function main()
             end
         end
 
+        if factionLocker.isProcessing then
+            if not isPlayerInLocation(autobind.FactionLocker.Locations) then
+                factionLocker.isProcessing = false
+            end
+        end
+
+        if blackMarket.isProcessing then
+            if not isPlayerInLocation(autobind.BlackMarket.Locations) then
+                blackMarket.isProcessing = false
+            end
+        end
 
         if isCharInAnyCar(ped) then
             currentRadio = getRadioChannel()
@@ -1859,7 +1881,7 @@ function main()
         cursorActive = sampIsCursorActive()
 
         -- Vehicle Storage
-        menu.vehiclestorage.window[0] = (sampGetChatInputText():find("/v") and sampIsChatInputActive()) and true or false
+        menu.vehiclestorage.window[0] = (--[[sampGetChatInputText():find("/v") and ]]sampIsChatInputActive()) and true or false
 
         -- Start Functions Loop
         functionsLoop(function(started, failed)
@@ -2566,37 +2588,41 @@ function createAFKCheck()
         return
     end
 
-    -- Check if the AFK timer has expired
+    -- Check if the AFK timer has expired (player is considered AFK)
     if currentTime - timers.AFK.last >= timers.AFK.timer then
         timers.AFK.last = currentTime
         isPlayerAFK = true
         return
     end
 
-    -- Check if the AFK timer has expired
-    --[[if currentTime - timers.AFK.sentTime >= timers.AFK.timeOut then
-        timers.AFK.sentTime = currentTime
+    -- Check if the AFK timer reset timeout has passed.
+    if currentTime - timers.AFK.sentTime <= timers.AFK.timeOut then
         return
-    end]]
+    end
 
-    -- Check if the player is in a moving vehicle
+    -- Check if the player is in a moving vehicle and only reset if enough time has passed
     if isCharInAnyCar(ped) then
         local vehid = storeCarCharIsInNoSave(ped)
         if getCarSpeed(vehid) > 1.0 then
-            print("Player is in a moving vehicle, resetting AFK status.")
-            isPlayerAFK = false
-            timers.AFK.last = currentTime
-            return
+            -- Only reset if the timeout has passed since the last reset
+            if currentTime - timers.AFK.sentTime >= timers.AFK.timeOut then
+                isPlayerAFK = false
+                timers.AFK.last = currentTime
+                timers.AFK.sentTime = currentTime
+                return
+            end
         end
     end
 
-    -- Check if any key is pressed to reset AFK status
+    -- Check if any key is pressed to reset AFK status (only if allowed by the timeout)
     for _, key in ipairs(afkKeys) do
         if isButtonPressed(h, key) then
-            print("Player pressed a key, resetting AFK status.")
-            isPlayerAFK = false
-            timers.AFK.last = currentTime
-            return
+            if currentTime - timers.AFK.sentTime >= timers.AFK.timeOut then
+                isPlayerAFK = false
+                timers.AFK.last = currentTime
+                timers.AFK.sentTime = currentTime
+                return
+            end
         end
     end
 end
@@ -2830,6 +2856,7 @@ local cmds = {
 	vestnear = {
         cmd = "vestnear",
         desc = "Sends a vest offer to the nearest player",
+        id = 1,
         func = function(cmd)
             local message = checkAndSendVest(true)
 		    if message then
@@ -2840,6 +2867,7 @@ local cmds = {
 	repairnear = {
         cmd = "repairnear",
         desc = "Sends a repair request to the nearest player that is in a vehicle",
+        id = 2,
         func = function(cmd)
             local found = false
             for _, player in ipairs(getVisiblePlayers(5, "car")) do
@@ -2855,6 +2883,7 @@ local cmds = {
 	sprintbind = {
         cmd = "sprintbind", 
         desc = "Automatic sprinting, will run faster when you press the sprint key",
+        id = 3,
         func = function(cmd)
             autobind.Keybinds.SprintBind.Toggle = toggleBind("SprintBind", autobind.Keybinds.SprintBind.Toggle)
         end
@@ -2862,6 +2891,7 @@ local cmds = {
 	bikebind = {
         cmd = "bikebind", 
         desc = "Automatic pedalling for bikecycles, motorcycles will go faster",
+        id = 4,
         func = function(cmd)
             autobind.Keybinds.BikeBind.Toggle = toggleBind("BikeBind", autobind.Keybinds.BikeBind.Toggle)
         end
@@ -2870,6 +2900,7 @@ local cmds = {
         cmd = "find",
         alt = {"autofind", "af"},
         desc = "Repeativly finds a player every 20 seconds",
+        id = 5,
         func = function(cmd, params)
             if checkMuted() then
                 formattedAddChatMessage(string.format("You are muted, you cannot use the /%s command.", cmd))
@@ -2904,6 +2935,7 @@ local cmds = {
             if autofind.enable then
                 local displayName = name and name:gsub("_", " ") or "Unknown"
                 formattedAddChatMessage(string.format("Now finding: {%06x}%s (ID %d).", clr.REALGREEN, displayName, playerid))
+                autofind.location = ""
                 return
             end
     
@@ -2915,6 +2947,7 @@ local cmds = {
         cmd = "autocap",
         alt = {"tcap", "ac"},
         desc = "Automatically types /capturf every 1.5 seconds",
+        id = 6,
         func = function(cmd)
             toggleAutoCapture()
         end
@@ -2922,6 +2955,7 @@ local cmds = {
     capcheck = {
         cmd = "capcheck", 
         desc = "Automatically types /capturf at signcheck time",
+        id = 7,
         func = function(cmd)
             local mode = autobind.Settings.mode or "Family"
             autobind.Settings[mode].turf = toggleBind("Capture at Signcheck", autobind.Settings[mode].turf)
@@ -2931,6 +2965,7 @@ local cmds = {
         cmd = "autoguard", 
         alt = {"autog", "ag"},
         desc = "Toggles auto guarding to vest automatically",
+        id = 8,
         func = function(cmd)
             autobind.AutoVest.enable = toggleBind("Auto Guard", autobind.AutoVest.enable)
         end
@@ -2939,6 +2974,7 @@ local cmds = {
         cmd = "autovest",
         alt = {"avest", "av"},
         desc = "Automatically accepts vest offers from other players",
+        id = 9,
         func = function(cmd)
             accepter.enable = toggleBind("Auto Vest", accepter.enable)
         end
@@ -2946,6 +2982,7 @@ local cmds = {
 	ddmode = {
         cmd = "ddmode", 
         desc = "Toggles between DD and non-DD vesting",
+        id = 10,
         func = function(cmd)
             autobind.AutoVest.donor = toggleBind("DD Mode", autobind.AutoVest.donor)
             timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
@@ -2954,6 +2991,7 @@ local cmds = {
     vestall = {
         cmd = "vestall", 
         desc = "Allows you to offer vests to all players, byasses any armor/skin/color restrictions",
+        id = 11,
         func = function(cmd)
             autobind.AutoVest.everyone = toggleBind("Allow Everyone", autobind.AutoVest.everyone)
         end
@@ -2961,6 +2999,7 @@ local cmds = {
     sprunkspam = {
         cmd = "sprunkspam", 
         desc = "Opens a can of sprunk and heals you until full health",
+        id = 12,
         func = function(cmd)
             if checkMuted() then
                 formattedAddChatMessage(string.format("You are muted, you cannot use the /%s command.", cmd))
@@ -2995,6 +3034,7 @@ local cmds = {
         cmd = "vst",
         alt = {"vstorage", "v"},
         desc = "Opens or spawns from vehicle storage via slot ID or partial vehicle name",
+        id = 13,
         func = function(cmd, params)
             -- If no params are provided, just display usage and open /vst dialog
             if not params or params == "" then
@@ -3095,6 +3135,7 @@ local cmds = {
         cmd = "resetvst", 
         alt = {"rvst"},
         desc = "Resets your vehicle storage, will populate vehicles again for the menu",
+        id = 14,
         func = function(cmd)
             local playerName = autobind.CurrentPlayer.name
             if not playerName or playerName == "" then
@@ -3117,6 +3158,7 @@ local cmds = {
     autofarm = {
         cmd = "autofarm",
         desc = "Toggles auto farming to manage crops automatically",
+        id = 15,
         func = function(cmd)
             autobind.Settings.autoFarm = toggleBind("Auto Farm", autobind.Settings.autoFarm)
         end
@@ -3124,6 +3166,7 @@ local cmds = {
     autopicklock = {
         cmd = "autopicklock",
         desc = "Auto picklock on failure or success [Good for leveling up]",
+        id = 16,
         func = function(cmd, params)
             if #params < 1 then
                 formattedAddChatMessage(string.format("USAGE: /%s [success|fail]", cmd))
@@ -3143,6 +3186,7 @@ local cmds = {
     autobadge = {
         cmd = "autobadge",
         desc = "Types /badge when you spawn",
+        id = 17,
         func = function(cmd)
             autobind.Settings.Faction.autoBadge = toggleBind("Auto Badge", autobind.Settings.Faction.autoBadge)
         end
@@ -3150,6 +3194,7 @@ local cmds = {
     reconnect = {
         cmd = "recon",
         desc = "Reconnects to the server",
+        id = 18,
         func = function(cmd)
             GameModeRestart()
             sampSetGamestate(1)
@@ -3158,6 +3203,7 @@ local cmds = {
     autoreconnect = {
         cmd = "autorecon",
         desc = "Auto reconnects on rejection, closure, ban, or disconnection",
+        id = 19,
         func = function(cmd)
             autobind.Reconnect.autoReconnect = toggleBind("Auto Reconnect", autobind.Reconnect.autoReconnect)
         end
@@ -3165,6 +3211,7 @@ local cmds = {
     name = {
         cmd = "name",
         desc = "Changes your name and reconnects you to the server",
+        id = 20,
         func = function(cmd, params)
             if #params < 1 then
                 formattedAddChatMessage(string.format("USAGE: /%s [playername]", cmd))
@@ -3186,6 +3233,7 @@ local cmds = {
         cmd = "changemode",
         alt = {"switchmode"},
         desc = "Switches between Faction and Family mode",
+        id = 21,
         func = function(cmd, params)
             if #params < 1 then
                 formattedAddChatMessage(string.format("Current Mode: {%06x}%s{FFFFFF}.", clr.GREY, autobind.Settings.mode or "N/A"))
@@ -3205,6 +3253,7 @@ local cmds = {
         cmd = "changeweather",
         alt = {"cw"},
         desc = "Manage weather settings or set by ID",
+        id = 22,
         func = function(cmd, params)
             if #params < 1 then
                 formattedAddChatMessage(string.format(
@@ -3258,6 +3307,7 @@ local cmds = {
         cmd = "changetime",
         alt = {"ct"},
         desc = "Sets the hour and minute.",
+        id = 23,
         func = function(cmd, params)
             if #params < 1 then
                 formattedAddChatMessage(string.format("Status: {%06x}%s{FFFFFF}, Current Time: {%06x}%s (%02d:%02d){FFFFFF}.", autobind.TimeAndWeather.modifyTime and clr.REALGREEN or clr.REALRED, autobind.TimeAndWeather.modifyTime and "Enabled" or "Disabled", clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.hour), autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute))
@@ -3308,6 +3358,7 @@ local cmds = {
     radio = {
         cmd = "radio",
         desc = "Toggles radio on or off, or sets a favorite radio channel",
+        id = 24,
         func = function(cmd, params)
             if not isCharInAnyCar(ped) then
                 formattedAddChatMessage("You must be in a vehicle to use this command.")
@@ -3408,6 +3459,7 @@ local cmds = {
         cmd = "secondarybackup",
         alt = {"sb"},
         desc = "Toggles secondary backup call on or off",
+        id = 25,
         func = function(cmd)
             autobind.Settings.callSecondaryBackup = toggleBind("Secondary Backup", autobind.Settings.callSecondaryBackup)
         end
@@ -3486,14 +3538,14 @@ function autobindCommand(params)
         ["help"] = function(newParams)
             if #newParams < 1 then
                 formattedAddChatMessage(string.format("Help {%06x}| Type '{%06x}/ab help desc{%06x}' to display the description of all commands.", clr.WHITE, clr.GREY, clr.WHITE), clr.REALGREEN)
-                formattedAddChatMessage(string.format("/ab {%06x}cmds, listbinds, getskin, status, funcs, reload", clr.GREY))
+                formattedAddChatMessage(string.format("/ab {%06x}cmds, showkeys, getskin, status, funcs, reload", clr.GREY))
                 formattedAddChatMessage(string.format("/ab {%06x}fonts, keybinds, skins, bms, locker", clr.GREY))
             elseif newParams:match("^desc$") then
                 formattedAddChatMessage(string.format("/ab {%06x}- Opens the autobind settings menu.", clr.GREY))
                 formattedAddChatMessage(string.format("/ab cmds {%06x}- Lists all commands.", clr.GREY))
                 formattedAddChatMessage(string.format("/ab fonts {%06x}- Opens the font menu for customization.", clr.GREY))
                 formattedAddChatMessage(string.format("/ab keybinds {%06x}- Opens the keybinds menu for customization.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab listbinds {%06x}- Lists all keybinds.", clr.GREY))
+                formattedAddChatMessage(string.format("/ab showkeys {%06x}- Lists all keys for keybinds.", clr.GREY))
                 formattedAddChatMessage(string.format("/ab skins {%06x}- Opens the skins menu for customization.", clr.GREY))
                 formattedAddChatMessage(string.format("/ab getskin [playerid/partofname] {%06x}- Gets the skin ID of a player.", clr.GREY))
                 formattedAddChatMessage(string.format("/ab bms {%06x}- Opens the black market menu.", clr.GREY))
@@ -3542,11 +3594,23 @@ function autobindCommand(params)
 
                 formattedAddChatMessage(string.format("%d commands available.", commandCount), clr.GREY)
             elseif newParams:match("^desc$") then
+                local sortedCommands = {}
                 for _, command in pairs(cmds) do
-                    formattedAddChatMessage(string.format("/%s {%06x}- %s.", command.cmd, clr.GREY, command.desc))
+                    table.insert(sortedCommands, command)
+                end
+                table.sort(sortedCommands, function(a, b) return a.id < b.id end)
+
+                for _, command in pairs(sortedCommands) do
+                    formattedAddChatMessage(string.format("/%s {%06x}- %s. ID: %d", command.cmd, clr.GREY, command.desc, command.id))
                 end
             elseif newParams:match("^alts$") then
+                local sortedCommands = {}
                 for _, command in pairs(cmds) do
+                    table.insert(sortedCommands, command)
+                end
+                table.sort(sortedCommands, function(a, b) return a.id < b.id end)
+
+                for _, command in pairs(sortedCommands) do
                     if command.alt then
                         local altList = {}
                         for _, alt in ipairs(command.alt) do
@@ -3559,17 +3623,23 @@ function autobindCommand(params)
                 formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab cmds [desc|alts]{FFFFFF} for more information.", clr.GREY))
             end
         end,
-        ["listbinds"] = function()
+        ["showkeys"] = function()
             local keybindsList = {}
             for bind, _ in pairs(autobind.Keybinds) do
                 table.insert(keybindsList, bind)
             end
             table.sort(keybindsList)
             for _, bind in ipairs(keybindsList) do
+                local newName = bind
+                if bind:find("BlackMarket") then
+                    newName = bind:gsub("BlackMarket", "BM")
+                elseif bind:find("FactionLocker") then
+                    newName = bind:gsub("FactionLocker", "FLocker")
+                end
                 local keybindMessage = string.format(
                     "Keybind: {%06x}%s{FFFFFF}, Enabled: {%06x}%s{FFFFFF}, Keys: {%06x}%s.",
                     clr.YELLOW, 
-                    bind,
+                    newName,
                     autobind.Keybinds[bind].Toggle and clr.GREEN or clr.RED, 
                     autobind.Keybinds[bind].Toggle and "Yes" or "No", 
                     clr.LIGHTBLUE, 
@@ -4531,12 +4601,11 @@ local messageHandlers = {
             if autofind.enable then
                 timers.Find.last = localClock()
                 autofind.received = false
-
-                if cleanLocation == "" then
-                    return {clrRGBA["GRAD2"], string.format("%s has been last seen out of the map or no location was provided.", nickname)}
-                else
-                    return {clrRGBA["GRAD2"], string.format("%s has been last seen at %s.", nickname, cleanLocation)}
+                if autofind.playerName:gsub("_", " "):match(nickname) then
+                    autofind.location = cleanLocation
                 end
+
+                return {clrRGBA["GRAD2"], string.format("%s (%d) has been last seen %s.", nickname, autofind.playerId, (cleanLocation == "" and "out of the map or no location was provided" or string.format("at {%06x}%s", clr.YELLOW, cleanLocation)))}
             end
         end
     },
@@ -5270,13 +5339,11 @@ end
 
 -- OnPlayAudioStream
 function sampev.onPlayAudioStream(url, position, radius, usePosition)
-    if url:match("^https://hzgaming.net/horizonfm/radio.pls$") then
+    if url:match("^https://hzgaming.net/horizonfm/radio.pls$") and not autobind.Settings.HZRadio then
         return false
-    elseif url:match("^https://hzgaming.net/zhao/sounds%/%w+.mp3$") then
-        print("onPlayAudioStream", url, position, radius, usePosition)
+    elseif url:match("^https://hzgaming.net/zhao/sounds%/%w+.mp3$") and not autobind.Settings.LoginAudio then
         return false
     end
-    print("onPlayAudioStream", url, position, radius, usePosition)
 end
 
 -- Elements Data (Renders)
@@ -5340,7 +5407,8 @@ local elements = {
         textFunc = function(self)
             local autoFind = string.format("%s (%d)", autofind.playerName:gsub("_", " "), autofind.playerId)
             local timeLeft = math.ceil(timers.Find.timer - (localClock() - timers.Find.last))
-            return string.format("{%06x}Auto Find: {%06x}%s; Next: %ds", self.colors().text, self.colors().value, menu.fonts.window[0] and "Player_Name (ID)" or autoFind, timeLeft < 0 and 0 or timeLeft)
+            local locationText = menu.fonts.window[0] and "; Location" or (autofind.location == "" and "" or ("; " .. autofind.location))
+            return string.format("{%06x}Auto Find: {%06x}%s; Next: %02ds%s", self.colors().text, self.colors().value, menu.fonts.window[0] and "Player_Name (ID)" or autoFind, timeLeft < 0 and 0 or timeLeft, locationText)
         end,
         isVisible = function()
             return (autofind.playerName and autofind.playerName ~= "" and autofind.playerId and autofind.playerId ~= -1) or menu.fonts.window[0]
@@ -5525,8 +5593,8 @@ imgui.OnInitialize(function()
     loadFontIcons(true, 14.0, fa.min_range, fa.max_range, Files.fawesome5)
 
 	-- Load the font with the desired size
-	local fontFile = getFolderPath(0x14) .. '\\trebucbd.ttf'
-	assert(doesFileExist(fontFile), '[autobind] Font "' .. fontFile .. '" doesn\'t exist!')
+	local fontFile = Files.trebucbd
+	assert(doesFileExist(fontFile), '[AB] Font "' .. fontFile .. '" doesn\'t exist!')
 	fontData.font = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSize)
 
 	-- Load FontAwesome5 Icons (Again for the font above)
@@ -5743,6 +5811,7 @@ end
 function onWindowMessage(msg, wparam, lparam)
     if msg == wm.WM_SETFOCUS then
         isPlayerPaused = false
+        isPlayerAFK = true
     elseif msg == wm.WM_KILLFOCUS then
         isPlayerPaused = true
     end
