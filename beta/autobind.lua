@@ -1,10 +1,16 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.24a")
+script_version("1.8.24b")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
 local changelog = {
+    ["1.8.24a"] = {
+        "New: Added AFK System, it will automatically stop commands from being executed when you are AFK.",
+        "Improved: handleLocker now pre-checks needed items, reducing wait times and optimizing retrieval.",
+        "Fixed: /setfreq was not working properly.",
+        "Fixed: /find was not working properly when someone was outside the map."
+    },
     ["1.8.23"] = {
         "Improved: Configuration files have been split into multiple files for easier management and modification.",
         "Improved: Help and command structures have been completely revamped, with all data now stored in easily modifiable tables.",
@@ -817,7 +823,8 @@ local clr = {
     DEV = 0xC27C0E, -- #C27C0E
     ARES = 0x1C77B3, -- #1C77B3
     DARKGREY = 0x1A1A1A, -- #1A1A1A
-    ALTRED = 0x661F1F -- #661F1F
+    ALTRED = 0x661F1F, -- #661F1F
+    BLUE = 0xB7D1EB -- #B7D1EB
 }
 
 -- Helper function for rounding to the nearest integer
@@ -1003,8 +1010,7 @@ local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 
 -- Function Status Table
 local funcsLoop = {
-    functionStatus = {},
-    callbackCalled = false,
+    callbackCalled = false
 }
 
 -- Screen Resolution
@@ -1259,7 +1265,7 @@ local timers = {
     Capture = {timer = 1.5, last = 0, sentTime = 0, timeOut = 10.0},
     Sprunk = {timer = 0.2, last = 0},
     Point = {timer = 180.0, last = 0},
-    AFK = {timer = 45.0, last = 0}
+    AFK = {timer = 45.0, last = 0, sentTime = 0, timeOut = 5.0}
 }
 
 -- Guard
@@ -1853,7 +1859,7 @@ function main()
         cursorActive = sampIsCursorActive()
 
         -- Vehicle Storage
-        menu.vehiclestorage.window[0] = (sampGetChatInputText():find("/vst") and sampIsChatInputActive()) and true or false
+        menu.vehiclestorage.window[0] = (sampGetChatInputText():find("/v") and sampIsChatInputActive()) and true or false
 
         -- Start Functions Loop
         functionsLoop(function(started, failed)
@@ -2111,41 +2117,36 @@ function handleLocker(kitNumber, locker, name, command)
     -- Check if player is muted
     if checkMuted() then
         formattedAddChatMessage("You have been muted for spamming, please wait.", clr.YELLOW)
-        resetLocker(locker)
         return
     end
 
     -- Make sure player is in the correct location
     if not isPlayerInLocation(autobind[fullName].Locations) then
         formattedAddChatMessage(("You are not at the %s!"):format(name), clr.GREY)
-        resetLocker(locker)
         return
     end
 
     -- Prevent item retrieval when frozen
     if not isPlayerControlOn(h) then
         formattedAddChatMessage("You cannot get items while frozen, please wait.", clr.YELLOW)
-        resetLocker(locker)
         return
     end
 
     -- Example "cooldown" check (heal/damage timers etc.)
-	if checkHeal() then
-		local timeLeft = math.ceil(timers.Heal.timer - (localClock() - timers.Heal.last))
-		formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
-        resetLocker(locker)
-		return
-	end
+    if checkHeal() then
+        local timeLeft = math.ceil(timers.Heal.timer - (localClock() - timers.Heal.last))
+        formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
+        return
+    end
 
     -- Check if the player can afford the kit
     local money = getPlayerMoney()
     local totalPrice = calculateTotalPrice(autobind[fullName]["Kit" .. kitNumber], locker.Items)
-    if totalPrice and money < totalPrice then
+    if totalPrice and money < totalPrice and totalPrice ~= 0 then
         formattedAddChatMessage(("You do not have enough money to buy this kit, you need $%s more. Total price: $%s."):format(
             formatNumber(totalPrice - money), 
             formatNumber(totalPrice)), 
         clr.YELLOW)
-        resetLocker(locker)
         return
     end
 
@@ -2167,7 +2168,7 @@ function handleLocker(kitNumber, locker, name, command)
                 if canObtainItem(item, locker.Items) then
                     table.insert(neededItems, item)
                 else
-                    -- We skip this item (because we already have it, or can't get it)
+                    -- We skip this item (because the player already has it, or can't get it)
                     table.insert(skippedItems, item.label)
                 end
             end
@@ -2186,18 +2187,52 @@ function handleLocker(kitNumber, locker, name, command)
 
             if (i % 3 == 0) and (i < #neededItems) then
                 local waitTime = math.random(1500, 1750)
-                formattedAddChatMessage(("You are still getting %d items from %s, please wait %0.1f seconds."):
-                    format(#neededItems - i, name:lower(), waitTime / 1000), clr.YELLOW)
+                
+                -- Gather the remaining items' labels
+                local stillNeeded = {}
+                for j = i + 1, #neededItems do
+                    table.insert(stillNeeded, neededItems[j].label)
+                end
+
+                formattedAddChatMessage(string.format(
+                    "You are still getting %d items from %s, please wait %0.1f seconds.",
+                    (#neededItems - i),
+                    name:lower(),
+                    waitTime / 1000
+                ), clr.YELLOW)
+
+                formattedAddChatMessage(string.format("Items left: {%06x}%s", clr.WHITE, table.concat(stillNeeded, ", ")), clr.YELLOW)
+                
                 wait(waitTime)
             end
         end
 
+        -- Check if items were obtained
         if #locker.obtainedItems > 0 then
             formattedAddChatMessage(string.format("Obtained items: {%06x}%s.", clr.WHITE, table.concat(locker.obtainedItems, ", ")), clr.YELLOW)
         end
         
+        -- Check if items were skipped
         if #skippedItems > 0 then
             formattedAddChatMessage(string.format("Skipped items: {%06x}%s.", clr.WHITE, table.concat(skippedItems, ", ")), clr.REALRED)
+        end
+
+        wait(1500)
+
+        -- FINAL CHECK: Verify items are actually in the player's possession now
+        local notObtained = {}
+        for _, item in ipairs(neededItems) do
+            if canObtainItem(item, locker.Items) then
+                table.insert(notObtained, item.label)
+            end
+        end
+
+        -- If anything is still missing, notify the player
+        if #notObtained > 0 then
+            formattedAddChatMessage(("The following items were not successfully fetched (due to lag or other issues): {%06x}%s"):format(
+                clr.REALRED,
+                table.concat(notObtained, ", ")
+            ), clr.YELLOW)
         end
         
         -- Cleanup
@@ -2436,6 +2471,11 @@ function createAutoFind()
         return
     end
 
+    -- Check if the player is frozen
+    if not isPlayerControlOn(h) then
+        return
+    end
+
     if not sampIsPlayerConnected(autofind.playerId) then
         formattedAddChatMessage("The player you were finding has disconnected, you are no longer finding anyone.")
         autofind.enable = false
@@ -2515,7 +2555,7 @@ local afkKeys = {
 
 local initialAFKStart = true
 
-function createAFK()
+function createAFKCheck()
     local currentTime = localClock()
 
     -- Check if the initial AFK start condition is true
@@ -2533,11 +2573,29 @@ function createAFK()
         return
     end
 
+    -- Check if the AFK timer has expired
+    --[[if currentTime - timers.AFK.sentTime >= timers.AFK.timeOut then
+        timers.AFK.sentTime = currentTime
+        return
+    end]]
+
+    -- Check if the player is in a moving vehicle
+    if isCharInAnyCar(ped) then
+        local vehid = storeCarCharIsInNoSave(ped)
+        if getCarSpeed(vehid) > 1.0 then
+            print("Player is in a moving vehicle, resetting AFK status.")
+            isPlayerAFK = false
+            timers.AFK.last = currentTime
+            return
+        end
+    end
+
     -- Check if any key is pressed to reset AFK status
     for _, key in ipairs(afkKeys) do
         if isButtonPressed(h, key) then
+            print("Player pressed a key, resetting AFK status.")
             isPlayerAFK = false
-            timers.AFK.last = currentTime  -- Reset the last activity time
+            timers.AFK.last = currentTime
             return
         end
     end
@@ -2546,6 +2604,7 @@ end
 -- Functions Table
 local functionsToRun = {
     {
+        id = 1,
         name = "DownloadManager",
         func = function()
             if downloadManager and (downloadManager.isDownloading or downloadManager.isFetching) then
@@ -2554,87 +2613,92 @@ local functionsToRun = {
         end,
         interval = 0.001,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"  -- New status field
     },
     {
+        id = 2,
         name = "AutoVest",
         func = function()
             checkAndSendVest(false)
         end,
         interval = 0.001,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"
     },
     {
+        id = 3,
         name = "AutoAccept",
         func = function() 
             checkAndAcceptVest(accepter.enable)
         end,
         interval = 0.001,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"
     },
     {
+        id = 4,
         name = "Keybinds",
         func = createKeybinds,
         interval = 0.001,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"
     },
     {
+        id = 5,
         name = "AutoCapture",
         func = createAutoCapture,
         interval = 0.001,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"
     },
     {
+        id = 6,
         name = "PointBounds",
         func = createPointBounds,
         interval = 1.5,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"
     },
     {
+        id = 7,
         name = "AutoFind",
         func = createAutoFind,
         interval = 0.0,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"
     },
     {
+        id = 8,
         name = "SprunkSpam",
         func = createSprunkSpam,
         interval = 0.01,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"
     },
     {
-        name = "AFK",
-        func = createAFK,
-        interval = 0.4,
+        id = 9,
+        name = "AFKCheck",
+        func = createAFKCheck,
+        interval = 0.5,
         lastRun = localClock(),
-        enabled = true
+        enabled = true,
+        status = "idle"
     }
 }
 
--- Initialize Function Status
-local function initializeFunctionStatus()
-    funcsLoop.functionStatus = {}
-    for _, func in ipairs(functionsToRun) do
-        funcsLoop.functionStatus[func.name] = "idle"
-    end
-end
+-- Define the delay before a restarted function becomes "running" (in seconds)
+local restartDelay = 5.0
 
--- Initialize Function Status at Start
-initializeFunctionStatus()
-
--- Functions Loop
+-- Functions Loop now stores status in each functionsToRun entry.
 function functionsLoop(onFunctionsStatus)
-    --[[if not autobind.Settings.enable then
-        return
-    end]]
-
     -- Check if the autobind is enabled
     if isPlayerPaused then
         print("Player is paused, skipping functions loop.")
@@ -2648,29 +2712,40 @@ function functionsLoop(onFunctionsStatus)
             if not success then
                 print(string.format("Error in %s function: %s", item.name, err))
                 item.errorCount = (item.errorCount or 0) + 1
-                funcsLoop.functionStatus[item.name] = "failed"
+                item.status = "failed"
 
                 if item.errorCount >= 5 then
                     print(string.format("%s function disabled after repeated errors.", item.name))
                     item.enabled = false
-                    funcsLoop.functionStatus[item.name] = "disabled"
+                    item.status = "disabled"
                 end
             else
                 item.errorCount = 0
-                funcsLoop.functionStatus[item.name] = "running"
+                -- If the function was idle, simply update to running.
+                if item.status == "idle" then
+                    item.status = "running"
+                end
             end
             item.lastRun = currentTime
         end
+
+        -- Update functions that are in the "restarted" state.
+        if item.status == "restarted" and item.restartTimestamp and 
+           (currentTime - item.restartTimestamp >= restartDelay) then
+            item.status = "running"
+        end
     end
 
+    -- Use status from functionsToRun for the callback.
     if onFunctionsStatus and not funcsLoop.callbackCalled then
         local started = {}
         local failed = {}
-        for name, status in pairs(funcsLoop.functionStatus) do
-            if status == "running" then
-                table.insert(started, name)
+        for _, item in ipairs(functionsToRun) do
+            local status = item.status or "unknown"
+            if status == "running" or status == "idle" or status == "restarted" then
+                table.insert(started, item.name)
             elseif status == "failed" then
-                table.insert(failed, name)
+                table.insert(failed, item.name)
             end
         end
         onFunctionsStatus(started, failed)
@@ -2678,73 +2753,82 @@ function functionsLoop(onFunctionsStatus)
     end
 end
 
--- Timers
-function displayTimers()
-    local currentTime = localClock()
-    for name, timer in pairs(timers) do
-        local timerInfo = ""
-        for fieldName, fieldValue in pairs(timer) do
-            if fieldName == 'last' then
-                if type(fieldValue) == "number" then
-                    -- 'last' is a number; calculate elapsed time
-                    local elapsedTime = currentTime - fieldValue
-                    timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(elapsedTime), clr.WHITE)
-                elseif type(fieldValue) == "table" then
-                    -- 'last' is a table; process each bind entry
-                    local subTimerInfo = ""
-                    for bindName, bindTime in pairs(fieldValue) do
-                        if type(bindTime) == 'number' then
-                            -- Calculate elapsed time for each bind
-                            local elapsedTime = currentTime - bindTime
-                            subTimerInfo = subTimerInfo .. string.format("%s: {%06x}%s{%06x}, ", bindName, clr.GREY, formatTime(elapsedTime), clr.WHITE)
-                        end
-                    end
-                    -- Remove trailing comma and space
-                    if #subTimerInfo > 0 then
-                        subTimerInfo = subTimerInfo:sub(1, -3)
-                    end
-                    -- Include the subTimerInfo in the main timerInfo
-                    timerInfo = timerInfo .. string.format("%s: {%s}, ", fieldName:upperFirst(), subTimerInfo)
+-- Function Manager uses the status field directly from functionsToRun.
+local functionManager = {}
+functionManager.__index = functionManager
+
+-- Start a function by name (enables the function)
+function functionManager.start(name, callback)
+    for _, item in ipairs(functionsToRun) do
+        if item.name:lower() == name:lower() then
+            if item.enabled then
+                if item.status == "restarted" then
+                    item.status = "running"
                 end
-            elseif fieldName == 'sentTime' then
-                -- 'sentTime' processing
-                if type(fieldValue) == "number" then
-                    local elapsedTime = currentTime - fieldValue
-                    timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(elapsedTime), clr.WHITE)
-                end
-            elseif fieldName == 'timer' then
-                -- 'timer' field
-                if type(fieldValue) == 'number' then
-                    -- If 'last' is a number, calculate time left
-                    if type(timer.last) == 'number' then
-                        local timeElapsed = currentTime - timer.last
-                        local timeLeft = fieldValue - timeElapsed
-                        timeLeft = math.max(timeLeft, 0)
-                        timerInfo = timerInfo .. string.format("TimeLeft: {%06x}%s{%06x}, ", clr.GREY, formatTime(timeLeft), clr.WHITE)
-                    else
-                        -- 'last' is not a number; can't calculate time left
-                        timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(fieldValue), clr.WHITE)
-                    end
+
+                if callback then
+                    callback(item.name, "already started")
                 end
             else
-                -- Other fields
-                if type(fieldValue) == 'number' then
-                    timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(fieldValue), clr.WHITE)
+                item.enabled = true
+                item.status = "idle"
+
+                if callback then
+                    callback(item.name, "started")
                 end
             end
+            return
         end
-        -- Remove trailing comma and space
-        if #timerInfo > 0 then
-            timerInfo = timerInfo:sub(1, -3)
-        end
-        formattedAddChatMessage(string.format("%s: %s.", name, timerInfo))
     end
+    print("Function " .. name .. " not found.")
+end
+
+-- Stop a function by name (disables the function)
+function functionManager.stop(name, callback)
+    for _, item in ipairs(functionsToRun) do
+        if item.name:lower() == name:lower() then
+            if not item.enabled then
+                if callback then
+                    callback(item.name, "already stopped")
+                end
+            else
+                item.enabled = false
+                item.status = "stopped"
+
+                if callback then
+                    callback(item.name, "stopped")
+                end
+            end
+            return
+        end
+    end
+    print("Function " .. name .. " not found.")
+end
+
+-- Restart a function by name: reset its error count, update last run & enable it
+function functionManager.restart(name, callback)
+    for _, item in ipairs(functionsToRun) do
+        if item.name:lower() == name:lower() then
+            item.enabled = false  -- temporarily disable
+            item.errorCount = 0
+            item.lastRun = localClock()
+            item.enabled = true   -- then re-enable
+            item.status = "restarted"
+            item.restartTimestamp = localClock()
+
+            if callback then
+                callback(item.name, "restarted")
+            end
+            return
+        end
+    end
+    print("Function " .. name .. " not found.")
 end
 
 -- Commands
 local cmds = {
 	vestnear = {
-        cmd = "vestnear", 
+        cmd = "vestnear",
         desc = "Sends a vest offer to the nearest player",
         func = function(cmd)
             local message = checkAndSendVest(true)
@@ -2783,7 +2867,8 @@ local cmds = {
         end
     },
 	find = {
-        cmd = "find", 
+        cmd = "find",
+        alt = {"autofind", "af"},
         desc = "Repeativly finds a player every 20 seconds",
         func = function(cmd, params)
             if checkMuted() then
@@ -2827,7 +2912,8 @@ local cmds = {
         end
     },
 	autocap = {
-        cmd = "autocap", 
+        cmd = "autocap",
+        alt = {"tcap", "ac"},
         desc = "Automatically types /capturf every 1.5 seconds",
         func = function(cmd)
             toggleAutoCapture()
@@ -2842,17 +2928,19 @@ local cmds = {
         end
     },
 	autovest = {
-        cmd = "autovest", 
-        desc = "Toggles auto vesting to offer vests automatically",
+        cmd = "autoguard", 
+        alt = {"autog", "ag"},
+        desc = "Toggles auto guarding to vest automatically",
         func = function(cmd)
-            autobind.AutoVest.enable = toggleBind("Auto Vest", autobind.AutoVest.enable)
+            autobind.AutoVest.enable = toggleBind("Auto Guard", autobind.AutoVest.enable)
         end
     },
 	autoaccept = {
-        cmd = "av",
-        desc = "Automatically accepts offers from other players",
+        cmd = "autovest",
+        alt = {"avest", "av"},
+        desc = "Automatically accepts vest offers from other players",
         func = function(cmd)
-            accepter.enable = toggleBind("Auto Accept", accepter.enable)
+            accepter.enable = toggleBind("Auto Vest", accepter.enable)
         end
     },
 	ddmode = {
@@ -2904,23 +2992,22 @@ local cmds = {
         end
     },
     vst = {
-        cmd = "vst", 
-        desc = "Opens the vehicle storage menu and adds spawning via ID",
+        cmd = "vst",
+        alt = {"vstorage", "v"},
+        desc = "Opens or spawns from vehicle storage via slot ID or partial vehicle name",
         func = function(cmd, params)
-            -- Check if params is a valid number
-            local vehicleIndex = tonumber(params)
-            if not vehicleIndex or not autobind.Settings.enable then
+            -- If no params are provided, just display usage and open /vst dialog
+            if not params or params == "" then
                 sampSendChat("/vst")
-                formattedAddChatMessage("USAGE: /vst [slot ID]")
+                formattedAddChatMessage(string.format("USAGE: /%s [slot ID or partial vehicle name]", cmd))
                 return
             end
-
-            -- Validate the vehicle index range
-            if vehicleIndex < 1 or vehicleIndex > 20 then
-                formattedAddChatMessage("Please pick a number between 1 and 20!")
+    
+            if not autobind.Settings.enable then
+                formattedAddChatMessage("Autobind is currently disabled!")
                 return
             end
-
+    
             local playerName = autobind.CurrentPlayer.name
             if not playerName or playerName == "" then
                 local _, playerId = sampGetPlayerIdByCharHandle(ped)
@@ -2928,40 +3015,85 @@ local cmds = {
                     formattedAddChatMessage("Current player not found!")
                     return
                 end
-
                 playerName = sampGetPlayerNickname(playerId)
             end
-
-            -- Handle unpopulated vehicles
+    
+            -- Ensure the table exists
             autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
-
-            if #autobind.VehicleStorage.Vehicles[playerName] == 0 then
-                formattedAddChatMessage("Please wait, vehicles have not been populated! Spawning selected vehicle...")
+            local vehsForPlayer = autobind.VehicleStorage.Vehicles[playerName]
+    
+            -- If no vehicles have been stored/fetched yet, re-populate
+            if #vehsForPlayer == 0 then
+                formattedAddChatMessage("Your vehicles are not yet populated! Spawning selected vehicle if valid...")
                 vehicles.spawning = true
-                vehicles.currentIndex = vehicleIndex - 1
+                -- The user might have typed a slot ID or name; we still attempt to spawn an index if it's numeric
+                local possibleIndex = tonumber(params)
+                vehicles.currentIndex = (possibleIndex and possibleIndex > 0) and (possibleIndex - 1) or -1
                 sampSendChat("/vst")
                 return
             end
 
-            -- Check if the vehicle exists in the player's storage
-            local vehicleFound = false
-            for _, vehicle in ipairs(autobind.VehicleStorage.Vehicles[playerName]) do
-                if vehicle.id and vehicle.id == (vehicleIndex - 1) then
-                    vehicleFound = true
-                    vehicles.spawning = true
-                    vehicles.currentIndex = vehicleIndex - 1
-                    sampSendChat("/vst")
-                    break
+            local parsedIndex = tonumber(params)
+            if parsedIndex then
+                -- Validate input range
+                if parsedIndex < 1 or parsedIndex > 20 then
+                    formattedAddChatMessage("Please pick a number between 1 and 20!")
+                    return
                 end
+    
+                -- Convert user-friendly index to the internal (server) index
+                local serverIndex = parsedIndex - 1
+    
+                -- Check if that index is in the player's storage
+                local foundNumeric = false
+                for _, vehicleData in ipairs(vehsForPlayer) do
+                    if vehicleData.id == serverIndex then
+                        foundNumeric = true
+                        vehicles.spawning = true
+                        vehicles.currentIndex = serverIndex
+                        sampSendChat("/vst")
+                        break
+                    end
+                end
+    
+                if not foundNumeric then
+                    formattedAddChatMessage("No vehicle found at that slot or invalid slot used!")
+                end
+                return
             end
 
-            if not vehicleFound then
-                formattedAddChatMessage("No vehicle found or invalid slot used!")
+            local nameMatches = findVehiclesByName(vehsForPlayer, params)
+            local matchCount = #nameMatches
+    
+            if matchCount == 0 then
+                formattedAddChatMessage(("No vehicles found matching '%s'!"):format(params))
+                return
+            elseif matchCount == 1 then
+                -- Exactly one match, spawn directly
+                local matchedVehicle = nameMatches[1]
+                vehicles.spawning = true
+                vehicles.currentIndex = matchedVehicle.id  -- This matches the server’s 0-based index
+                sampSendChat("/vst")
+            else
+                formattedAddChatMessage(("Multiple matches for '%s' found:"):format(params))
+                for _, vData in ipairs(nameMatches) do
+                    local userSlot = (vData.id or 0) + 1
+                    formattedAddChatMessage(
+                        (" • Slot %d => Vehicle: %s, Status: %s, Location: %s"):format(
+                            userSlot,
+                            vData.vehicle,
+                            vData.status or "N/A",
+                            vData.location or "N/A"
+                        )
+                    )
+                end
+                formattedAddChatMessage(string.format("Use /%s [Slot ID] for the specific vehicle you want.", cmd))
             end
         end
     },
     resetvst = {
         cmd = "resetvst", 
+        alt = {"rvst"},
         desc = "Resets your vehicle storage, will populate vehicles again for the menu",
         func = function(cmd)
             local playerName = autobind.CurrentPlayer.name
@@ -3052,6 +3184,7 @@ local cmds = {
     },
     changemode = {
         cmd = "changemode",
+        alt = {"switchmode"},
         desc = "Switches between Faction and Family mode",
         func = function(cmd, params)
             if #params < 1 then
@@ -3069,7 +3202,8 @@ local cmds = {
         end
     },
     weather = {
-        cmd = "weather",
+        cmd = "changeweather",
+        alt = {"cw"},
         desc = "Manage weather settings or set by ID",
         func = function(cmd, params)
             if #params < 1 then
@@ -3121,7 +3255,8 @@ local cmds = {
         end
     },
     settime = {
-        cmd = "settime",
+        cmd = "changetime",
+        alt = {"ct"},
         desc = "Sets the hour and minute.",
         func = function(cmd, params)
             if #params < 1 then
@@ -3176,6 +3311,11 @@ local cmds = {
         func = function(cmd, params)
             if not isCharInAnyCar(ped) then
                 formattedAddChatMessage("You must be in a vehicle to use this command.")
+                return
+            end
+
+            if isCharInAnyPoliceVehicle(ped) then
+                formattedAddChatMessage("You cannot use this command while in a police vehicle.")
                 return
             end
 
@@ -3263,6 +3403,14 @@ local cmds = {
                 end
             end
         end
+    },
+    secondarybackup = {
+        cmd = "secondarybackup",
+        alt = {"sb"},
+        desc = "Toggles secondary backup call on or off",
+        func = function(cmd)
+            autobind.Settings.callSecondaryBackup = toggleBind("Secondary Backup", autobind.Settings.callSecondaryBackup)
+        end
     }
 }
 
@@ -3297,6 +3445,25 @@ function registerAutobindCommands()
             sampUnregisterChatCommand(command.cmd)
         end
 
+        if command.alt then
+            for _, alt in ipairs(command.alt) do
+                if sampIsChatCommandDefined(alt) then
+                    sampUnregisterChatCommand(alt)
+                end
+
+                sampRegisterChatCommand(alt, function(params)
+                    if not autobind.Settings.enable then
+                        return
+                    end
+        
+                    local success, error = pcall(command.func, alt, params)
+                    if not success then
+                        print(string.format("Error in command /%s: %s", alt, error))
+                    end
+                end)
+            end
+        end
+
         sampRegisterChatCommand(command.cmd, function(params)
             if not autobind.Settings.enable then
                 return
@@ -3319,7 +3486,7 @@ function autobindCommand(params)
         ["help"] = function(newParams)
             if #newParams < 1 then
                 formattedAddChatMessage(string.format("Help {%06x}| Type '{%06x}/ab help desc{%06x}' to display the description of all commands.", clr.WHITE, clr.GREY, clr.WHITE), clr.REALGREEN)
-                formattedAddChatMessage(string.format("/ab {%06x}cmds, listbinds, getskin, status, reload", clr.GREY))
+                formattedAddChatMessage(string.format("/ab {%06x}cmds, listbinds, getskin, status, funcs, reload", clr.GREY))
                 formattedAddChatMessage(string.format("/ab {%06x}fonts, keybinds, skins, bms, locker", clr.GREY))
             elseif newParams:match("^desc$") then
                 formattedAddChatMessage(string.format("/ab {%06x}- Opens the autobind settings menu.", clr.GREY))
@@ -3339,7 +3506,7 @@ function autobindCommand(params)
         end,
         ["cmds"] = function(newParams)
             if #newParams < 1 then
-                formattedAddChatMessage(string.format("Commands{%06x} | Type '{%06x}/ab cmds desc{%06x}' to display the description of all commands.", clr.WHITE, clr.GREY, clr.WHITE), clr.REALGREEN)
+                formattedAddChatMessage(string.format("Commands{%06x} | Type '{%06x}/ab cmds [desc|alts]{%06x}' to display the description of all commands.", clr.WHITE, clr.GREY, clr.WHITE), clr.REALGREEN)
                 local commandsList = {}
                 local commandCount = 0
                 for _, command in pairs(cmds) do
@@ -3347,22 +3514,49 @@ function autobindCommand(params)
                     commandCount = commandCount + 1
                 end
                 table.sort(commandsList)
-                
-                local line = {}
-                for i, command in ipairs(commandsList) do
-                    table.insert(line, command)
-                    if #line == 6 or i == #commandsList then
-                        formattedAddChatMessage(table.concat(line, ", "))
-                        line = {}
+
+                -- Set your maximum length (in characters) for each line.
+                local maxLineLength = 80
+
+                local currentLine = {}
+                local currentLength = 0
+
+                for i, cmd in ipairs(commandsList) do
+                    local cmdLength = #cmd
+                    local sepLength = (#currentLine > 0) and 2 or 0  -- ", " separator length if needed
+
+                    if currentLength + sepLength + cmdLength > maxLineLength then
+                        formattedAddChatMessage(table.concat(currentLine, ", "))
+                        currentLine = { cmd }
+                        currentLength = cmdLength
+                    else
+                        table.insert(currentLine, cmd)
+                        currentLength = currentLength + sepLength + cmdLength
                     end
                 end
+
+                -- Print any remaining commands.
+                if #currentLine > 0 then
+                    formattedAddChatMessage(table.concat(currentLine, ", "))
+                end
+
                 formattedAddChatMessage(string.format("%d commands available.", commandCount), clr.GREY)
             elseif newParams:match("^desc$") then
                 for _, command in pairs(cmds) do
                     formattedAddChatMessage(string.format("/%s {%06x}- %s.", command.cmd, clr.GREY, command.desc))
                 end
+            elseif newParams:match("^alts$") then
+                for _, command in pairs(cmds) do
+                    if command.alt then
+                        local altList = {}
+                        for _, alt in ipairs(command.alt) do
+                            table.insert(altList, "/" .. alt)
+                        end
+                        formattedAddChatMessage(string.format("/%s {%06x}- %s.", command.cmd, clr.GREY, table.concat(altList, ", ")))
+                    end
+                end
             else
-                formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab cmds desc{FFFFFF} for more information.", clr.GREY))
+                formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab cmds [desc|alts]{FFFFFF} for more information.", clr.GREY))
             end
         end,
         ["listbinds"] = function()
@@ -3407,41 +3601,9 @@ function autobindCommand(params)
         end,
         ["status"] = function(newParams)
             if #newParams < 1 then
-                formattedAddChatMessage(string.format("Status {FFFFFF}| Type '{%06x}/ab status functions{FFFFFF}' there are more options below.", clr.GREY), clr.REALGREEN)
-                formattedAddChatMessage("functions, timers, bodyguard, accepter", clr.GREY)
-                formattedAddChatMessage("autofind, backup, farmer, misc", clr.GREY)
-            elseif newParams:match("^functions$") then
-                local started = {}
-                local failed = {}
-                local disabled = {}
-
-                -- Iterate through the functionStatus table to collect running, failed, and disabled functions
-                if funcsLoop and funcsLoop.functionStatus then
-                    for name, status in pairs(funcsLoop.functionStatus) do
-                        if status == "running" then
-                            table.insert(started, name)
-                        elseif status == "failed" then
-                            table.insert(failed, name)
-                        elseif status == "disabled" then
-                            table.insert(disabled, name)
-                        end
-                    end
-                end
-
-                -- Running Functions
-                if #started > 0 then
-                    formattedAddChatMessage(string.format("Running Functions: {%06x}%s.", clr.GREEN, table.concat(started, ", ")))
-                end
-
-                -- Failed Functions
-                if #failed > 0 then
-                    formattedAddChatMessage(string.format("Failed Functions: {%06x}%s.", clr.RED, table.concat(failed, ", ")))
-                end
-
-                -- Disabled Functions
-                if #disabled > 0 then
-                    formattedAddChatMessage(string.format("Disabled Functions: {%06x}%s.", clr.RED, table.concat(disabled, ", ")))
-                end
+                formattedAddChatMessage(string.format("Status {FFFFFF}| Type '{%06x}/ab status timers{FFFFFF}' there are more options below.", clr.GREY), clr.REALGREEN)
+                formattedAddChatMessage("timers, bodyguard, accepter, autofind", clr.GREY)
+                formattedAddChatMessage("backup, farmer, misc", clr.GREY)
             elseif newParams:match("^timers$") then
                 displayTimers()
             elseif newParams:match("^bodyguard$") then
@@ -3526,6 +3688,77 @@ function autobindCommand(params)
                 formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab status [bodyguard|accepter|autofind|backup|farmer|functions|timers]{FFFFFF} for more information.", clr.GREY))
             end
         end,
+        ["funcs"] = function(newParams)
+            local action, target = newParams:match("^(%S+)%s*(.*)$")
+            action = action and action:lower() or ""
+            target = target and target:trim() or ""
+
+            if action == "" then
+                formattedAddChatMessage("USAGE: /ab funcs [start|stop|restart] [function_name]", clr.GREY)
+
+                table.sort(functionsToRun, function(a, b) return a.id < b.id end)
+
+                for _, item in ipairs(functionsToRun) do
+                    local status = item.status or "unknown"
+                    local state = item.enabled and "enabled" or "disabled"
+
+                    local statusColor
+                    if status == "running" then
+                        statusColor = clr.GREEN
+                    elseif status == "idle" then
+                        statusColor = clr.NEWS
+                    elseif status == "restarted" then
+                        statusColor = clr.YELLOW
+                    elseif status == "failed" then
+                        statusColor = clr.RED
+                    elseif status == "disabled" or state == "disabled" then
+                        statusColor = clr.RED
+                    else
+                        statusColor = clr.GREY
+                    end
+                    formattedAddChatMessage(string.format("%s - Status: {%06x}%s{FFFFFF} (%s)", item.name, statusColor, status, state))
+                end
+                return
+            elseif action == "start" then
+                if target == "" then
+                    formattedAddChatMessage("USAGE: /ab funcs start [function_name]", clr.GREY)
+                else
+                    functionManager.start(target, function(name, status)
+                        if status == "started" then
+                            formattedAddChatMessage(string.format("Started function: {%06x}%s", clr.GREEN, name))
+                        else
+                            formattedAddChatMessage(string.format("Function %s is already started", name), clr.REALRED)
+                        end
+                    end)
+                end
+                return
+            elseif action == "stop" then
+                if target == "" then
+                    formattedAddChatMessage("USAGE: /ab funcs stop [function_name]", clr.GREY)
+                else
+                    functionManager.stop(target, function(name, status)
+                        if status == "stopped" then
+                            formattedAddChatMessage(string.format("Stopped function: {%06x}%s", clr.RED, name))
+                        else
+                            formattedAddChatMessage(string.format("Function %s is already stopped", name), clr.REALRED)
+                        end
+                    end)
+                end
+                return
+            elseif action == "restart" then
+                if target == "" then
+                    formattedAddChatMessage("USAGE: /ab funcs restart [function_name]", clr.GREY)
+                else
+                    functionManager.restart(target, function(name, status)
+                        formattedAddChatMessage(string.format("Restarted function: {%06x}%s", clr.YELLOW, name))
+                    end)
+                end
+                return
+            else
+                formattedAddChatMessage("USAGE: /ab funcs [start|stop|restart] [function_name]", clr.GREY)
+                return
+            end
+        end,
         ["fonts"] = function()
             menu.fonts.window[0] = not menu.fonts.window[0]
         end,
@@ -3564,20 +3797,67 @@ function autobindCommand(params)
     end
 end
 
--- Toggle Auto Capture
-function toggleAutoCapture()
-	if not checkAdminDuty() then
-		autocap = not autocap
-
-		formattedAddChatMessage(autocap and string.format("Starting capture attempt... {%06x}(type /%s to toggle)", clr.YELLOW, cmds.autocap.cmd) or "Auto Capture ended.")
-	end
-end
-
-function toggleBind(name, bool)
-    bool = not bool
-    local color = bool and clr.REALGREEN or clr.RED
-    formattedAddChatMessage(string.format("%s: {%06x}%s", name, color, bool and 'on' or 'off'))
-    return bool
+-- Timers
+function displayTimers()
+    local currentTime = localClock()
+    for name, timer in pairs(timers) do
+        local timerInfo = ""
+        for fieldName, fieldValue in pairs(timer) do
+            if fieldName == 'last' then
+                if type(fieldValue) == "number" then
+                    -- 'last' is a number; calculate elapsed time
+                    local elapsedTime = currentTime - fieldValue
+                    timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(elapsedTime), clr.WHITE)
+                elseif type(fieldValue) == "table" then
+                    -- 'last' is a table; process each bind entry
+                    local subTimerInfo = ""
+                    for bindName, bindTime in pairs(fieldValue) do
+                        if type(bindTime) == 'number' then
+                            -- Calculate elapsed time for each bind
+                            local elapsedTime = currentTime - bindTime
+                            subTimerInfo = subTimerInfo .. string.format("%s: {%06x}%s{%06x}, ", bindName, clr.GREY, formatTime(elapsedTime), clr.WHITE)
+                        end
+                    end
+                    -- Remove trailing comma and space
+                    if #subTimerInfo > 0 then
+                        subTimerInfo = subTimerInfo:sub(1, -3)
+                    end
+                    -- Include the subTimerInfo in the main timerInfo
+                    timerInfo = timerInfo .. string.format("%s: {%s}, ", fieldName:upperFirst(), subTimerInfo)
+                end
+            elseif fieldName == 'sentTime' then
+                -- 'sentTime' processing
+                if type(fieldValue) == "number" then
+                    local elapsedTime = currentTime - fieldValue
+                    timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(elapsedTime), clr.WHITE)
+                end
+            elseif fieldName == 'timer' then
+                -- 'timer' field
+                if type(fieldValue) == 'number' then
+                    -- If 'last' is a number, calculate time left
+                    if type(timer.last) == 'number' then
+                        local timeElapsed = currentTime - timer.last
+                        local timeLeft = fieldValue - timeElapsed
+                        timeLeft = math.max(timeLeft, 0)
+                        timerInfo = timerInfo .. string.format("TimeLeft: {%06x}%s{%06x}, ", clr.GREY, formatTime(timeLeft), clr.WHITE)
+                    else
+                        -- 'last' is not a number; can't calculate time left
+                        timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(fieldValue), clr.WHITE)
+                    end
+                end
+            else
+                -- Other fields
+                if type(fieldValue) == 'number' then
+                    timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(fieldValue), clr.WHITE)
+                end
+            end
+        end
+        -- Remove trailing comma and space
+        if #timerInfo > 0 then
+            timerInfo = timerInfo:sub(1, -3)
+        end
+        formattedAddChatMessage(string.format("%s: %s.", name, timerInfo))
+    end
 end
 
 -- OnScriptTerminate
@@ -4448,7 +4728,7 @@ local messageHandlers = {
         pattern = "You have stored your (.-)%. The vehicle has been despawned%.",
         color = clrRGBA["WHITE"],
         action = function(vehName)
-            updateVehicleStorage("Stored")
+            updateVehicleStorage("Stored", vehName)
             return {clrRGBA["WHITE"], string.format("You have stored your %s. The vehicle has been despawned.", vehName)}
         end
     },
@@ -4457,7 +4737,7 @@ local messageHandlers = {
         pattern = "You have taken your (.-) out of storage%. The vehicle has been spawned at the last parking location%.",
         color = clrRGBA["WHITE"],
         action = function(vehName)
-            updateVehicleStorage("Spawned")
+            updateVehicleStorage("Spawned", vehName)
             return {clrRGBA["WHITE"], string.format("You have taken your %s out of storage. The vehicle has been spawned at the last parking location.", vehName)}
         end
     },
@@ -4466,7 +4746,7 @@ local messageHandlers = {
         pattern = "Your (.-) has been sent to the location at which you last parked it%.$",
         color = clrRGBA["GRAD1"],
         action = function(vehName)
-            updateVehicleStorage("Respawned")
+            updateVehicleStorage("Respawned", vehName)
             return {clrRGBA["GRAD1"], string.format("Your %s has been sent to the location at which you last parked it.", vehName)}
         end
     },
@@ -4475,7 +4755,7 @@ local messageHandlers = {
         pattern = "You can not store this vehicle as someone is currently occupying it%.$",
         color = clrRGBA["GREY"],
         action = function()
-            updateVehicleStorage("Occupied")
+            updateVehicleStorage("Occupied", nil)
             return {clrRGBA["GREY"], "You cannot store this vehicle as someone is currently occupying it."}
         end
     },
@@ -4484,7 +4764,7 @@ local messageHandlers = {
         pattern = "This vehicle is too damaged to be stored%.$",
         color = clrRGBA["GREY"],
         action = function()
-            updateVehicleStorage("Damaged")
+            updateVehicleStorage("Damaged", nil)
             return {clrRGBA["GREY"], "This vehicle is too damaged to be stored."}
         end
     },
@@ -4493,7 +4773,7 @@ local messageHandlers = {
         pattern = "^You can't spawn a disabled vehicle. It is disabled due to your Donator level %(vehicle restrictions%)%.$",
         color = clrRGBA["WHITE"],
         action = function()
-            updateVehicleStorage("Disabled")
+            updateVehicleStorage("Disabled", nil)
             return {clrRGBA["WHITE"], "You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions)."}
         end
     },
@@ -4502,7 +4782,7 @@ local messageHandlers = {
         pattern = "^You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore%.$",
         color = clrRGBA["WHITE"],
         action = function()
-            updateVehicleStorage("Impounded")
+            updateVehicleStorage("Impounded", nil)
             return {clrRGBA["WHITE"], "You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore."}
         end
     },
@@ -4674,45 +4954,61 @@ local messageHandlers = {
 
             print(factionId, factionName)
         end
+    },
+    -- * You sold your (.+) to (.+) for %$([%d,]+)%.$
+    {
+        pattern = "^%* You sold your (.+) to (.+) for %$([%d,]+)%.$",
+        color = clrRGBA["WHITE"],
+        action = function(vehicle, buyer, price)
+            print("You sold your " .. vehicle .. " to " .. buyer .. " for $" .. price .. ".")
+        end
+    },
+    -- DIAMOND DONATOR: You have purchased an? (.-) for %$([%d,]+)%.
+    {
+        pattern = "^DIAMOND DONATOR: You have purchased an? (.-) for %$([%d,]+)%.$",
+        color = clrRGBA["BLUE"],
+        action = function(item, price)
+            if blackMarket.isProcessing then
+                return false
+            end
+        end
+    },
+    -- DIAMOND DONATOR: You have purchased full health and armor for %$350%.
+    {
+        pattern = "^DIAMOND DONATOR: You have purchased full health and armor for %$350%.$",
+        color = clrRGBA["BLUE"],
+        action = function()
+            if blackMarket.isProcessing then
+                return false
+            end
+        end
+    },
+    -- You have purchased an? (.+) for %$([%d,]+)%.$
+    {
+        pattern = "^You have purchased an? (.-) for %$([%d,]+)%.$",
+        color = clrRGBA["WHITE"],
+        action = function(item, price)
+            if factionLocker.isProcessing then
+                return false
+            end
+        end
     }
 }
 
-function createFarmerDialog()
-    local dialogText = "You have arrived at your designated farming spot.\nAuto-Typing /harvest to harvest some crops.\n\nWarning: Pressing disable will turn off auto farming."
-    sampShowDialog(farmer.dialogId, string.format("[%s] Auto Farming", shortName:upper()), dialogText, "Close", "Disable", 0)
-end
-
-function convertSpeed(speed, isMPHOrKMH)
-    return math.ceil(speed * (isMPHOrKMH and 2.98 or 4.80))
-end
-
-function updateVehicleStorage(status)
-    local playerName = autobind.CurrentPlayer.name
-    if vehicles.currentIndex ~= -1 and playerName and playerName ~= "" then
-        local currentIndex = vehicles.currentIndex + 1
-        autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
-
-        if autobind.VehicleStorage.Vehicles[playerName][currentIndex] ~= nil then
-            autobind.VehicleStorage.Vehicles[playerName][currentIndex].status = status
-        else
-            print("Vehicle not found", playerName, currentIndex, status)
-        end
-    else
-        print("Current player not found")
-    end
-end
-
 -- OnServerMessage
 function sampev.onServerMessage(color, text)
+    -- Do not run if autobind is disabled
     if not autobind.Settings.enable then
         return
     end
 
+    -- Do not run if the player is paused
     if isPlayerPaused then
         print("Player is paused")
         return
     end
 
+    -- Run the message handler
     for _, handler in ipairs(messageHandlers) do
         if color == handler.color then
             local captures = {text:match(handler.pattern)}
@@ -4928,34 +5224,6 @@ function sampev.onPlayerQuit(playerId, reason)
         backup.playerName = ""
         backup.playerId = -1
         backup.location = ""
-    end
-end
-
-function GameModeRestart()
-    local bs = raknetNewBitStream()
-    raknetEmulRpcReceiveBitStream(40, bs)
-    raknetDeleteBitStream(bs)
-end
-
-function setTime(hour, minute)
-    local bs = raknetNewBitStream()
-    raknetBitStreamWriteInt8(bs, hour)
-    raknetBitStreamWriteInt8(bs, minute)
-    raknetEmulRpcReceiveBitStream(29, bs)
-    raknetDeleteBitStream(bs)
-end
-
-function setWeather(weatherId)
-    local bs = raknetNewBitStream()
-    raknetBitStreamWriteInt8(bs, weatherId)
-    raknetEmulRpcReceiveBitStream(152, bs)
-    raknetDeleteBitStream(bs)
-end
-
-function autoConnect()
-    if autobind.Reconnect and autobind.Reconnect.autoReconnect then
-        GameModeRestart()
-        sampSetGamestate(1)
     end
 end
 
@@ -6753,24 +7021,96 @@ function keyEditor(title, index, description, callback)
     imgui.PopFont()
 end
 
-function printTable(tbl, indent)
-    indent = indent or 0
-    local indentStr = string.rep("  ", indent)
+-- Game Mode Restart
+function GameModeRestart()
+    local bs = raknetNewBitStream()
+    raknetEmulRpcReceiveBitStream(40, bs)
+    raknetDeleteBitStream(bs)
+end
 
-    if type(tbl) ~= "table" then
-        print(indentStr .. tostring(tbl))
-        return
+-- Set Time
+function setTime(hour, minute)
+    local bs = raknetNewBitStream()
+    raknetBitStreamWriteInt8(bs, hour)
+    raknetBitStreamWriteInt8(bs, minute)
+    raknetEmulRpcReceiveBitStream(29, bs)
+    raknetDeleteBitStream(bs)
+end
+
+-- Set Weather
+function setWeather(weatherId)
+    local bs = raknetNewBitStream()
+    raknetBitStreamWriteInt8(bs, weatherId)
+    raknetEmulRpcReceiveBitStream(152, bs)
+    raknetDeleteBitStream(bs)
+end
+
+-- Auto Connect
+function autoConnect()
+    if autobind.Reconnect and autobind.Reconnect.autoReconnect then
+        GameModeRestart()
+        sampSetGamestate(1)
     end
+end
 
-    for key, value in pairs(tbl) do
-        local formattedKey = tostring(key)
-        if type(value) == "table" then
-            print(indentStr .. formattedKey .. ":")
-            printTable(value, indent + 1)
+-- Toggle Auto Capture
+function toggleAutoCapture()
+	if not checkAdminDuty() then
+		autocap = not autocap
+
+		formattedAddChatMessage(autocap and string.format("Starting capture attempt... {%06x}(type /%s to toggle)", clr.YELLOW, cmds.autocap.cmd) or "Auto Capture ended.")
+	end
+end
+
+-- Toggle Bind
+function toggleBind(name, bool)
+    bool = not bool
+    local color = bool and clr.REALGREEN or clr.RED
+    formattedAddChatMessage(string.format("%s: {%06x}%s", name, color, bool and 'on' or 'off'))
+    return bool
+end
+
+-- Create Farmer Dialog
+function createFarmerDialog()
+    local dialogText = "You have arrived at your designated farming spot.\nAuto-Typing /harvest to harvest some crops.\n\nWarning: Pressing disable will turn off auto farming."
+    sampShowDialog(farmer.dialogId, string.format("[%s] Auto Farming", shortName:upper()), dialogText, "Close", "Disable", 0)
+end
+
+-- Update Vehicle Storage
+function updateVehicleStorage(status, vehName)
+    local playerName = autobind.CurrentPlayer.name
+    if vehicles.currentIndex ~= -1 then
+        if playerName and playerName ~= "" then
+            local currentIndex = vehicles.currentIndex + 1
+            autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
+
+            if autobind.VehicleStorage.Vehicles[playerName][currentIndex] ~= nil then
+                autobind.VehicleStorage.Vehicles[playerName][currentIndex].status = status
+            else
+                print("Vehicle not found", playerName, currentIndex, status)
+            end
         else
-            print(indentStr .. formattedKey .. ": " .. tostring(value))
+            print("Current player not found")
+        end
+    else
+        if vehName then
+            print("Vehicles.currentIndex not found", vehName)
+        else
+            print("Vehicles.currentIndex not found")
         end
     end
+end
+
+-- Search for vehicles that contain "partialName" (case-insensitive) in their 'vehicle' field.
+function findVehiclesByName(vehList, partialName)
+    local results = {}
+    partialName = partialName:lower()
+    for _, vehData in ipairs(vehList) do
+        if vehData.vehicle and vehData.vehicle:lower():find(partialName, 1, true) then
+            table.insert(results, vehData)
+        end
+    end
+    return results
 end
 
 -- Get Keybind Keys
@@ -6885,6 +7225,11 @@ end
 -- Reset timer
 function setTimer(additionalTime, timer)
 	timer.last = localClock() - (timer.timer - 0.2) + (additionalTime or 0)
+end
+
+-- Convert Speed (MPH or KMH)
+function convertSpeed(speed, isMPHOrKMH)
+    return math.ceil(speed * (isMPHOrKMH and 2.98 or 4.80))
 end
 
 -- Function to check if a table is a sparse array
@@ -7122,8 +7467,15 @@ end
 
 -- Format Number
 function formatNumber(num)
-    num = tostring(num)
-    return num:reverse():gsub("...","%0,",math.floor((#num-1)/3)):reverse()
+    -- Convert to string and handle negative numbers
+    local isNegative = num < 0
+    num = tostring(math.abs(num))
+    
+    -- Add commas
+    local formatted = num:reverse():gsub("...","%0,",math.floor((#num-1)/3)):reverse()
+    
+    -- Add negative sign if needed
+    return isNegative and "-" .. formatted or formatted
 end
 
 -- Compare Versions
