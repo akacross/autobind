@@ -1,0 +1,47 @@
+{
+  "1.8.24b": [
+    "Fixed: Resolved an issue where items from the faction locker could not be purchased if the kit was free and the user's balance was negative.",
+    "Added: When handleLocker pauses after fetching three items it will provide a summary of remaining items before continuing.",
+    "Added: A final verification step in HandleLocker ensures all items are fetched, with notifications for any missing items.",
+    "Improved: Server messages are temporarily hidden while HandleLocker processes items, reducing spam.",
+    "Improved: The AFK System will not activate when inside a moving vehicle, ensuring commands continue to execute.",
+    "New: Introduced functionManager, allowing users to start, stop, and restart functions via the /ab funcs command.",
+    "Improved: Added alternate commands for existing functionalities; use /ab help alts to explore additional options.",
+    "New: Vehicle spawning by name is now supported (e.g., '/v stuntplane').",
+    "Improved: The radio command is now disabled inside police vehicles.",
+    "Improved: RequestBackup now includes a Secondary Backup call (Factions: /d, Gangs: /pr), accessible via /secondarybackup or /sb.",
+    "Fixed: The formatNumber function now correctly handles negative numbers."
+  ],
+  "1.8.24a": [
+    "New: Added AFK System, it will automatically stop commands from being executed when you are AFK.",
+    "Improved: handleLocker now pre-checks needed items, reducing wait times and optimizing retrieval.",
+    "Fixed: /setfreq was not working properly.",
+    "Fixed: /find was not working properly when someone was outside the map."
+  ],
+  "1.8.23": [
+    "Improved: Configuration files have been split into multiple files for easier management and modification.",
+    "Improved: Help and command structures have been completely revamped, with all data now stored in easily modifiable tables.",
+    "Fixed: Reduced the number of hex brackets in the status help command, /ab status. (Thanks to @Enivc)",
+    "New: Introduced reconnect functions, including /autoreconnect for handling rejections, closures, bans, or disconnections, as well as /reconnect and /name [name] for changing your name.",
+    "New: Added original radio features, allowing /radio toggle to switch the radio on and off, and /radio [channel] to change channels.",
+    "New: Implemented Farmer Job features, with /autofarm to enable and /farm to activate once inside a harvest truck.",
+    "New: Introduced weather and time commands, /settime and /weather, for enhanced environmental control.",
+    "New: Added picklock features, allowing /autopicklock to enable automatic success or failure.",
+    "Improved: Streamlined code for locker and black market menus, consolidating functionality into a single function.",
+    "Fixed: Autobadge functionality now supports all factions.",
+    "Fixed: Additional corrections made to the /vst menu."
+  ],
+  "1.8.22a": [
+    "Fixed: There was a bug in the /vst menu that would not show the vehicles because the vehicle list was not being updated.",
+    "Added: Status is now color coded, you can now see at a glance what the status of the vehicle is.",
+    "New: imguiRGBA has been added, it allows you to use predefined colors in imgui from the color table."
+  ],
+  "1.8.22": [
+    "New: Added a new parameter to the /vst command you can use to spawn vehicles via there index in from the dialog box (e.g. /vst 1).",
+    "New: When typing /vst in chat without entering the command, an imgui menu will automatically open."
+  ],
+  "1.8.21": [
+    "Fixed: Download Manager properly queues downloads and starts the next download only after the previous one is complete.",
+    "Added: Update Manager had been added, it will now check for updates and notify you if there is a new version available in the menu."
+  ]
+}
