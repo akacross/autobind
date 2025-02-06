@@ -5,6 +5,19 @@ script_authors("akacross")
 script_url("https://akacross.net/")
 
 local changelog = {
+    ["1.8.24b"] = {
+        "Fixed: Resolved an issue where items from the faction locker could not be purchased if the kit was free and the user's balance was negative.",
+        "Added: When handleLocker pauses after fetching three items it will provide a summary of remaining items before continuing.",
+        "Added: A final verification step in HandleLocker ensures all items are fetched, with notifications for any missing items.",
+        "Improved: Server messages are temporarily hidden while HandleLocker processes items, reducing spam.",
+        "Improved: The AFK System will not activate when inside a moving vehicle, ensuring commands continue to execute.",
+        "New: Introduced functionManager, allowing users to start, stop, and restart functions via the /ab funcs command.",
+        "Improved: Added alternate commands for existing functionalities; use /ab help alts to explore additional options.",
+        "New: Vehicle spawning by name is now supported (e.g., '/v stuntplane').",
+        "Improved: The radio command is now disabled inside police vehicles.",
+        "Improved: RequestBackup now includes a Secondary Backup call (Factions: /d, Gangs: /pr), accessible via /secondarybackup or /sb.",
+        "Fixed: The formatNumber function now correctly handles negative numbers."
+    },
     ["1.8.24a"] = {
         "New: Added AFK System, it will automatically stop commands from being executed when you are AFK.",
         "Improved: handleLocker now pre-checks needed items, reducing wait times and optimizing retrieval.",
@@ -172,7 +185,6 @@ if not _G['lanes.download_manager'] then
         },
     },
     function(linda, taskType, fileUrl, filePath, identifier)
-        local lanes = require('lanes')       -- For lanes parallelization
         local ltn12 = require('ltn12')       -- For HTTP progress sink
         local http = require('socket.http')  -- For HTTP requests
         local https = require('ssl.https')   -- For HTTPS requests
@@ -327,8 +339,6 @@ if not _G['lanes.download_manager'] then
         },
     },
     function(linda)
-        local lanes = require('lanes')
-
         while true do
             -- Wait for a 'request' with a timeout of 10 ms
             local key, val = linda:receive(0, 'request')
@@ -343,9 +353,6 @@ if not _G['lanes.download_manager'] then
                 if not success then
                     linda:send('error_' .. identifier, { error = "Failed to start lane: " .. tostring(laneOrErr) })
                 end
-            else
-                -- No request received, sleep briefly to prevent CPU hogging
-                lanes.sleep(0.001)
             end
         end
     end)
@@ -1625,12 +1632,10 @@ ffi.cdef[[
 	};
 ]]
 
--- Config Table Sections
-local sections = {
-    "Settings", "AutoVest", "PedsCount", "AutoFind", "LastBackup", "CurrentPlayer", 
-    "WindowPos", "BlackMarket", "FactionLocker", "VehicleStorage", "Reconnect", 
-    "TimeAndWeather", "Keybinds"
-}
+local sections = {}
+for section, _ in pairs(autobind) do
+    table.insert(sections, section)
+end
 
 -- Define ignore keys for each section
 local ignoreKeysMap = {
@@ -2640,7 +2645,7 @@ local functionsToRun = {
         interval = 0.001,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"  -- New status field
+        status = "idle"
     },
     {
         id = 2,
