@@ -6794,9 +6794,20 @@ function updateScript()
     downloadFilesFromURL({{url = Urls.script(autobind.Settings.fetchBeta), path = scriptPath, replace = true}}, false, function(success)
         if success then
             lua_thread.create(function()
-                wait(1000)
-                formattedAddChatMessage("Update downloaded successfully! Reloading the script now.")
-                thisScript():reload()
+                formattedAddChatMessage("Update downloaded successfully! Validating correct version before reload.")
+                wait(2500)
+
+                local file = io.open(scriptPath, "r")
+                if file then
+                    local content = file:read("*a")
+                    file:close()
+
+                    if content:find(currentContent.version) then
+                        formattedAddChatMessage("Update has been validated! Please type '/ab reload' to finish the update.")
+                    else
+                        formattedAddChatMessage("Update was not validated! Please try again later.")
+                    end
+                end
             end)
         else
             formattedAddChatMessage("Update download failed! Please try again later.")
