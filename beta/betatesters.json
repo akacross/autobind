@@ -7,26 +7,32 @@
     },
     {
         "nickName": "Wolly",
-        "bugFinds": 9,
-        "hoursWasted": 1.0,
+        "bugFinds": 10,
+        "hoursWasted": 1.1,
         "discord": "xwollyx"
     },
     {
         "nickName": "Allen",
-        "bugFinds": 6,
-        "hoursWasted": 0.9,
+        "bugFinds": 8,
+        "hoursWasted": 1.225,
         "discord": "allen_7"
     },
     {
         "nickName": "Moorice",
-        "bugFinds": 3,
-        "hoursWasted": 0.4,
+        "bugFinds": 4,
+        "hoursWasted": 0.81,
         "discord": "moorice"
     },
     {
         "nickName": "Dwayne",
         "bugFinds": 2,
-        "hoursWasted": 1.0,
+        "hoursWasted": 0.985,
         "discord": "dickshaft"
+    },
+    {
+        "nickName": "Chandler",
+        "bugFinds": 1,
+        "hoursWasted": 0.355,
+        "discord": "woo_0_9_2"
     }
 ]
