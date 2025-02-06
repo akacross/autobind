@@ -1,57 +1,8 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.24b")
+script_version("1.8.24b1")
 script_authors("akacross")
 script_url("https://akacross.net/")
-
-local changelog = {
-    ["1.8.24b"] = {
-        "Fixed: Resolved an issue where items from the faction locker could not be purchased if the kit was free and the user's balance was negative.",
-        "Added: When handleLocker pauses after fetching three items it will provide a summary of remaining items before continuing.",
-        "Added: A final verification step in HandleLocker ensures all items are fetched, with notifications for any missing items.",
-        "Improved: Server messages are temporarily hidden while HandleLocker processes items, reducing spam.",
-        "Improved: The AFK System will not activate when inside a moving vehicle, ensuring commands continue to execute.",
-        "New: Introduced functionManager, allowing users to start, stop, and restart functions via the /ab funcs command.",
-        "Improved: Added alternate commands for existing functionalities; use /ab help alts to explore additional options.",
-        "New: Vehicle spawning by name is now supported (e.g., '/v stuntplane').",
-        "Improved: The radio command is now disabled inside police vehicles.",
-        "Improved: RequestBackup now includes a Secondary Backup call (Factions: /d, Gangs: /pr), accessible via /secondarybackup or /sb.",
-        "Fixed: The formatNumber function now correctly handles negative numbers."
-    },
-    ["1.8.24a"] = {
-        "New: Added AFK System, it will automatically stop commands from being executed when you are AFK.",
-        "Improved: handleLocker now pre-checks needed items, reducing wait times and optimizing retrieval.",
-        "Fixed: /setfreq was not working properly.",
-        "Fixed: /find was not working properly when someone was outside the map."
-    },
-    ["1.8.23"] = {
-        "Improved: Configuration files have been split into multiple files for easier management and modification.",
-        "Improved: Help and command structures have been completely revamped, with all data now stored in easily modifiable tables.",
-        "Fixed: Reduced the number of hex brackets in the status help command, /ab status. (Thanks to @Enivc)",
-        "New: Introduced reconnect functions, including /autoreconnect for handling rejections, closures, bans, or disconnections, as well as /reconnect and /name [name] for changing your name.",
-        "New: Added original radio features, allowing /radio toggle to switch the radio on and off, and /radio [channel] to change channels.",
-        "New: Implemented Farmer Job features, with /autofarm to enable and /farm to activate once inside a harvest truck.",
-        "New: Introduced weather and time commands, /settime and /weather, for enhanced environmental control.",
-        "New: Added picklock features, allowing /autopicklock to enable automatic success or failure.",
-        "Improved: Streamlined code for locker and black market menus, consolidating functionality into a single function.",
-        "Fixed: Autobadge functionality now supports all factions.",
-        "Fixed: Additional corrections made to the /vst menu."
-    },
-    ["1.8.22a"] = {
-        "Fixed: There was a bug in the /vst menu that would not show the vehicles because the vehicle list was not being updated.",
-        "Added: Status is now color coded, you can now see at a glance what the status of the vehicle is.",
-        "New: imguiRGBA has been added, it allows you to use predefined colors in imgui from the color table."
-    },
-    ["1.8.22"] = {
-        "New: Added a new parameter to the /vst command you can use to spawn vehicles via there index in from the dialog box (e.g. /vst 1).",
-        "New: When typing /vst in chat without entering the command, an imgui menu will automatically open."
-    },
-    ["1.8.21"] = {
-        "Improved: I have made some improvements to the Download Manager, I can now fetch json urls and directly convert them to lua tables.",
-        "Fixed: Download Manager properly queues downloads and starts the next download only after the previous one is complete.",
-        "Added: Update Manager had been added, it will now check for updates and notify you if there is a new version available in the menu."
-    }
-}
 
 -- Short Name
 local shortName = "ab"
@@ -169,7 +120,9 @@ local Urls = {
     end,
     skinsPath = getBaseUrl(false) .. "resource/skins/",
     skins = getBaseUrl(false) .. "skins.json",
-    names = getBaseUrl(false) .. "names.json"
+    names = getBaseUrl(false) .. "names.json",
+    changelog = getBaseUrl(false) .. "changelog.json",
+    betatesters = getBaseUrl(true) .. "betatesters.json"
 }
 
 -- Ensure Global `lanes.download_manager` Exists with `lane` and `linda`
@@ -1012,6 +965,12 @@ local ped, h = playerPed, playerHandle
 -- Key Press Type
 local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 
+-- Changelog
+local changelog = nil
+
+-- Betatesters
+local betatesters = nil
+
 -- Function Status Table
 local funcsLoop = {
     callbackCalled = false
@@ -1194,7 +1153,8 @@ local autobind_defaultSettings = {
         Keybinds = {x = resX / 2, y = resY / 2},
         Fonts = {x = resX / 2, y = resY / 2},
         BlackMarket = {x = resX / 2, y = resY / 2},
-        FactionLocker = {x = resX / 2, y = resY / 2}
+        FactionLocker = {x = resX / 2, y = resY / 2},
+        Changelog = {x = resX / 2, y = resY / 2}
 	},
 	BlackMarket = {
         Kit1 = {1, 4, 11},
@@ -1240,10 +1200,12 @@ local autobind_defaultSettings = {
         BikeBind = {Toggle = true, Keys = {VK_SHIFT}, Type = {'KeyDown', 'KeyDown'}},
         SprintBind = {Toggle = true, Keys = {VK_F11}, Type = {'KeyPressed'}},
         Frisk = {Toggle = false, Keys = {VK_MENU, VK_F}, Type = {'KeyDown', 'KeyPressed'}},
-        TakePills = {Toggle = true, Keys = {VK_F3}, Type = {'KeyPressed'}},
+        TakePills = {Toggle = true, Keys = {VK_F12}, Type = {'KeyPressed'}},
         AcceptDeath = {Toggle = true, Keys = {VK_OEM_PLUS}, Type = {'KeyPressed'}},
         RequestBackup = {Toggle = true, Keys = {VK_MENU, VK_B}, Type = {'KeyDown', 'KeyPressed'}},
-        Reconnect = {Toggle = true, Keys = {VK_SHIFT, VK_0}, Type = {'KeyDown', 'KeyPressed'}}
+        Reconnect = {Toggle = true, Keys = {VK_SHIFT, VK_0}, Type = {'KeyDown', 'KeyPressed'}},
+        UseCrack = {Toggle = true, Keys = {VK_F3}, Type = {'KeyPressed'}},
+        UsePot = {Toggle = true, Keys = {VK_F2}, Type = {'KeyPressed'}}
     }
 }
 
@@ -1435,6 +1397,12 @@ local menu = {
         pivot = {x = 0.5, y = 0.5},
         pageId = 1,
         dragging = new.bool(true)
+	},
+	changelog = {
+		window = new.bool(false),
+        size = {x = 650, y = 400},
+        pivot = {x = 0.5, y = 0.5},
+        dragging = new.bool(true)
 	}
 }
 
@@ -1455,7 +1423,8 @@ local menuStates = {
     blackmarket = menu.blackmarket.window,
     factionlocker = menu.factionlocker.window,
     vehiclestorage = menu.vehiclestorage.window,
-    confirm = menu.confirm.window
+    confirm = menu.confirm.window,
+    changelog = menu.changelog.window
 }
 
 -- Previous Menu States
@@ -1467,7 +1436,8 @@ local previousMenuStates = {
     blackmarket = false,
     factionlocker = false,
     vehiclestorage = false,
-    confirm = false
+    confirm = false,
+    changelog = false
 }
 
 -- Escape Key Pressed
@@ -1508,7 +1478,9 @@ local keyEditors = {
     {label = "Frisk", key = "Frisk", description = "Frisks a player. (Options are to the left)"},
     {label = "Bike-Bind", key = "BikeBind", description = "Makes bikes/motorcycles/quads faster by holding the bind key while riding."},
     {label = "Sprint-Bind", key = "SprintBind", description = "Makes you sprint faster by holding the bind key while sprinting. (This is only the toggle)"},
-    {label = "Request Backup", key = "RequestBackup", description = "Types the backup command depending on what mode is detected"}
+    {label = "Request Backup", key = "RequestBackup", description = "Types the backup command depending on what mode is detected"},
+    {label = "Use Crack", key = "UseCrack", description = "Types /usecrack."},
+    {label = "Use Pot", key = "UsePot", description = "Types /usepot."}
 }
 
 -- Skin Editor
@@ -1640,7 +1612,7 @@ end
 -- Define ignore keys for each section
 local ignoreKeysMap = {
     AutoVest = {"skins", "names"},
-    Keybinds = {"BikeBind", "SprintBind", "Frisk", "TakePills", "Accept", "Offer", "AcceptDeath", "RequestBackup"},
+    Keybinds = {"BikeBind", "SprintBind", "Frisk", "TakePills", "Accept", "Offer", "AcceptDeath", "RequestBackup", "UseCrack", "UsePot"},
     BlackMarket = {"Locations"},
     FactionLocker = {"Locations"},
     VehicleStorage = {"Vehicles"},
@@ -1723,6 +1695,14 @@ function initializeComponents()
     else
         names = listToSet(autobind.AutoVest.names)
     end
+
+    fetchDataDirectlyFromURL(Urls.betatesters, function(decodedData)
+        betatesters = decodedData or nil
+    end)
+
+    fetchDataDirectlyFromURL(Urls.changelog, function(decodedData)
+        changelog = decodedData or nil
+    end)
 
     -- Initialize Timers
     for name, timer in pairs(timers) do
@@ -2365,6 +2345,12 @@ local keyFunctions = {
     Reconnect = function()
         GameModeRestart()
         sampSetGamestate(1)
+    end,
+    UseCrack = function()
+        sampSendChat("/usecrack")
+    end,
+    UsePot = function()
+        sampSendChat("/usepot")
     end
 }
 
@@ -2732,7 +2718,6 @@ local restartDelay = 5.0
 function functionsLoop(onFunctionsStatus)
     -- Check if the autobind is enabled
     if isPlayerPaused then
-        print("Player is paused, skipping functions loop.")
         return
     end
 
@@ -3545,6 +3530,7 @@ function autobindCommand(params)
                 formattedAddChatMessage(string.format("Help {%06x}| Type '{%06x}/ab help desc{%06x}' to display the description of all commands.", clr.WHITE, clr.GREY, clr.WHITE), clr.REALGREEN)
                 formattedAddChatMessage(string.format("/ab {%06x}cmds, showkeys, getskin, status, funcs, reload", clr.GREY))
                 formattedAddChatMessage(string.format("/ab {%06x}fonts, keybinds, skins, bms, locker", clr.GREY))
+                formattedAddChatMessage(string.format("/ab {%06x}changelog, betatesters", clr.GREY))
             elseif newParams:match("^desc$") then
                 formattedAddChatMessage(string.format("/ab {%06x}- Opens the autobind settings menu.", clr.GREY))
                 formattedAddChatMessage(string.format("/ab cmds {%06x}- Lists all commands.", clr.GREY))
@@ -3858,6 +3844,21 @@ function autobindCommand(params)
                 wait(0)
                 thisScript():reload()
             end)
+        end,
+        ["betatesters"] = function()
+            if not betatesters then
+                formattedAddChatMessage("Failed to fetch betatesters data.", clr.RED)
+                return
+            end
+
+            formattedAddChatMessage("__________________ Betatesters _________________")
+            for _, tester in ipairs(betatesters) do
+                formattedAddChatMessage(string.format("%s | Bugs Found: %s | Hours Wasted: %s | Discord: %s.", tester.nickName, tester.bugFinds, convertDecimalToHours(tester.hoursWasted), tester.discord))
+            end
+            formattedAddChatMessage("_______________________________________________")
+        end,
+        ["changelog"] = function()
+            menu.changelog.window[0] = not menu.changelog.window[0]
         end
     }
 
@@ -3869,6 +3870,57 @@ function autobindCommand(params)
         end
     else
         formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab [help] {FFFFFF}for more information.", clr.GREY))
+    end
+end
+
+function convertDecimalToHours(decimalHours)
+    -- Calculate months. (1 month = 30 days * 24 hours = 720 hours)
+    local months = math.floor(decimalHours / 720)
+    decimalHours = decimalHours % 720
+
+    -- Calculate days (1 day = 24 hours)
+    local days = math.floor(decimalHours / 24)
+    decimalHours = decimalHours % 24
+
+    -- Calculate hours
+    local hours = math.floor(decimalHours)
+
+    -- Calculate minutes (rounding to the nearest whole number)
+    local minutes = math.floor((decimalHours - hours) * 60 + 0.5)
+
+    local parts = {}
+
+    if months > 0 then
+        table.insert(parts, string.format("%d month%s", months, months ~= 1 and "s" or ""))
+    end
+
+    if days > 0 then
+        table.insert(parts, string.format("%d day%s", days, days ~= 1 and "s" or ""))
+    end
+
+    if hours > 0 then
+        table.insert(parts, string.format("%d hour%s", hours, hours ~= 1 and "s" or ""))
+    end
+
+    if minutes > 0 then
+        if minutes == 30 then
+            table.insert(parts, "a half")
+        else
+            table.insert(parts, string.format("%d minute%s", minutes, minutes ~= 1 and "s" or ""))
+        end
+    end
+
+    -- If no parts were added, then the input was zero (or very small)
+    if #parts == 0 then
+        return "0 minutes"
+    end
+
+    -- For proper English joining:
+    if #parts == 1 then
+        return parts[1]
+    else
+        local last = table.remove(parts)
+        return table.concat(parts, ", ") .. " and " .. last
     end
 end
 
@@ -5078,7 +5130,6 @@ function sampev.onServerMessage(color, text)
 
     -- Do not run if the player is paused
     if isPlayerPaused then
-        print("Player is paused")
         return
     end
 
@@ -5821,6 +5872,18 @@ function onWindowMessage(msg, wparam, lparam)
         isPlayerPaused = true
     end
 
+    -- Auto Close Samp Help Dialog
+    if wparam == VK_F1 then
+        --[[if msg == wm.WM_KEYDOWN then
+            consumeWindowMessage(true, false)
+            sampCloseCurrentDialogWithButton(0)
+            print("F1 down")
+        end]]
+        if msg == wm.WM_KEYUP then
+            sampCloseCurrentDialogWithButton(0)
+        end
+    end
+
     if wparam == VK_ESCAPE then
         -- Check if any menu is open
         local anyMenuOpen = false
@@ -6266,7 +6329,54 @@ function(self)
     if menu.factionlocker.window[0] then
         renderLockerWindow("Faction Locker", "FactionLocker", factionLocker)
     end
+
+    if menu.changelog.window[0] then
+        renderChangelogWindow()
+    end
+
 end).HideCursor = true
+
+function renderChangelogWindow()
+    setupWindowDraggingAndSize("Changelog")
+
+    if imgui.Begin(string.format("%s - %s", scriptName:upperFirst(), scriptVersion), menu.changelog.window, imgui_flags) then
+        if changelog then
+            -- Build an array of version keys from the changelog table.
+            local sortedVersions = {}
+            for version, _ in pairs(changelog) do
+                table.insert(sortedVersions, version)
+            end
+
+            -- Sort the versions in descending order.
+            table.sort(sortedVersions, function(a, b)
+                return compareVersions(a, b) > 0
+            end)
+
+            -- Iterate over the sorted versions and display them.
+            for index, version in ipairs(sortedVersions) do
+                if index == 1 then
+                    imgui.Separator()
+                end
+                imgui.TextColoredRGB(string.format("Version: {%06x}%s", clr.BLUE, version))
+                imgui.NewLine()
+
+                for i, change in ipairs(changelog[version]) do
+                    local textColor = (i % 2 == 1) and imguiRGBA["WHITE"] or imguiRGBA["GREY"]
+                    imgui.PushStyleColor(imgui.Col.Text, textColor)
+                    imgui.PushFont(fontData.font)
+                    imgui.TextWrapped(change)
+                    imgui.PopFont()
+                    imgui.PopStyleColor()
+                end
+                imgui.NewLine()
+                imgui.Separator()
+            end
+        else
+            imgui.TextColoredRGB(string.format("Changelog failed to fetch. {%06x}%s", clr.RED, Urls.changelog))
+        end
+    end
+    imgui.End()
+end
 
 function setupWindowDraggingAndSize(label, allowSize)
     allowSize = allowSize or true
