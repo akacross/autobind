@@ -75,6 +75,7 @@ local dependencies = {
     },
     {name = 'socket.http', var = 'http', 
         localFiles = {
+            "socket.lua",
             "socket/core.dll",
             "socket/ftp.lua",
             "socket/headers.lua",
@@ -173,10 +174,11 @@ local function downloadFiles(table, onCompleteCallback)
     end
 end
 
+-- Missing Files
+local missingFiles = {}
+
 -- Check and Download Dependencies
 local function checkAndDownloadDependencies(callback)
-    local missingFiles = {}
-
     for _, dep in ipairs(dependencies) do
         local filesMissing = false
 
@@ -226,9 +228,7 @@ local function checkAndDownloadDependencies(callback)
     end
 
     if #missingFiles > 0 then
-        sampAddChatMessage("[AB] {FFFFFF}Some dependencies are missing, downloading now...", 0x33CCFF)
         downloadFiles(missingFiles, function(downloadResult)
-            sampAddChatMessage("[AB] {FFFFFF}Download complete. Re-checking dependencies.", 0x33CCFF)
             if downloadResult then
                 lua_thread.create(function()
                     wait(1000)
@@ -244,6 +244,13 @@ local function checkAndDownloadDependencies(callback)
 end
 
 function main()
+    -- Wait for SAMP
+    while not isSampAvailable() do wait(100) end
+
+    if #missingFiles > 0 then
+        sampAddChatMessage("[AB] {FFFFFF}Some dependencies are missing, downloading now...", 0x33CCFF)
+    end
+
     wait(-1)
 end
 
