@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.24b1")
+script_version("1.8.24b2")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -12,36 +12,248 @@ local scriptPath = thisScript().path
 local scriptName = thisScript().name
 local scriptVersion = thisScript().version
 
--- Dependency Manager
+-- Working Directory
+local workingDir = getWorkingDirectory()
+
+-- Paths Table
+local Paths = {
+    libraries = workingDir .. '\\lib\\',
+    config = workingDir .. '\\config\\',
+    resource = workingDir .. '\\resource\\'
+}
+
+-- Settings Path
+Paths.settings = Paths.config .. scriptName .. '\\'
+
+-- Skin Icons Path
+Paths.skins = Paths.resource .. 'skins\\'
+
+-- Files Table
+local Files = {
+    fawesome5 = Paths.resource .. 'fonts\\fa-solid-900.ttf',
+    trebucbd = getFolderPath(0x14) .. '\\trebucbd.ttf'
+}
+
+-- Helper Function to Construct Base URL
+local function getBaseUrl(beta, scriptname)
+    local branch = beta and "beta/" or ""
+    return "https://raw.githubusercontent.com/akacross/" .. scriptname .. "/main/" .. branch
+end
+
+-- URLs Table
+local Urls = {
+    libraries = getBaseUrl(false, "libraries") .. "lib/",
+    resource = getBaseUrl(false, "libraries") .. "resource/",
+    script = function(beta)
+        return getBaseUrl(beta, scriptName) .. scriptName .. ".lua"
+    end,
+    update = function(beta)
+        return getBaseUrl(beta, scriptName) .. "update.json"
+    end,
+    skinsPath = getBaseUrl(false, scriptName) .. "resource/skins/",
+    skins = getBaseUrl(false, scriptName) .. "skins.json",
+    names = getBaseUrl(false, scriptName) .. "names.json",
+    changelog = getBaseUrl(false, scriptName) .. "changelog.json",
+    betatesters = getBaseUrl(true, scriptName) .. "betatesters.json"
+}
+
+-- Use your safeRequire function
 local function safeRequire(moduleName)
     local ok, result = pcall(require, moduleName)
     return ok and result or nil, result
 end
 
--- Requirements
+-- Dependency definitions
 local dependencies = {
-    {name = 'moonloader', var = 'moonloader'},
-    {name = 'mimgui', var = 'imgui'},
+    {name = 'ltn12', var = 'ltn12', localFile = "ltn12.lua"},
+    {name = 'ssl.https', var = 'https', 
+        localFiles = {
+            "ssl.dll",
+            "ssl.lua", 
+            "ssl/https.lua"
+        }
+    },
+    {name = 'socket.http', var = 'http', 
+        localFiles = {
+            "socket/core.dll",
+            "socket/ftp.lua",
+            "socket/headers.lua",
+            "socket/http.lua",
+            "socket/smtp.lua",
+            "socket/tp.lua"
+        }
+    },
+    {name = 'socket.url', var = 'url', localFile = "socket/url.lua"},
+    {name = 'lfs', var = 'lfs', localFile = "lfs.dll"},
+    {name = 'lanes', var = 'lanes', 
+        localFiles = {
+            "lanes.lua",
+            "lanes/core.dll"
+        }, 
+        callback = function(module) return module.configure() end
+    },
+    {name = 'moonloader', var = 'moonloader', localFile = "moonloader.lua"}, 
     {name = 'ffi', var = 'ffi'},
-    {name = 'samp.events', var = 'sampev'},
     {name = 'memory', var = 'mem'},
-    {name = 'vkeys', var = 'vk'},
-    {name = 'game.keys', var = 'gkeys'},
-    {name = 'windows.message', var = 'wm'},
-    {name = 'fAwesome5', var = 'fa'},
-    {name = 'encoding', var = 'encoding'},
-    {name = 'lanes', var = 'lanes', callback = function(module) return module.configure() end},
-    {name = 'ltn12', var = 'ltn12'},
-    {name = 'socket.http', var = 'http'},
-    {name = 'ssl.https', var = 'https'},
-    {name = 'lfs', var = 'lfs'},
-    {name = 'socket.url', var = 'url'}
+    {name = 'vkeys', var = 'vk', localFile = "vkeys.lua"},
+    {name = 'game.keys', var = 'gkeys',
+        localFiles = {
+            "game/globals.lua", 
+            "game/keys.lua", 
+            "game/models.lua", 
+            "game/weapons.lua"
+        }
+    },
+    {name = 'windows.message', var = 'wm',
+        localFiles = {
+            "windows/init.lua", 
+            "windows/message.lua"
+        }
+    },
+    {name = 'mimgui', var = 'imgui',
+        localFiles = {
+            "mimgui/cdefs.lua",
+            "mimgui/cimguidx9.dll",
+            "mimgui/dx9.lua",
+            "mimgui/imgui.lua",
+            "mimgui/init.lua"
+        }
+    },
+    {name = 'encoding', var = 'encoding',
+        localFiles = {
+            "encoding.lua",
+            "iconv.dll"
+        }
+    },
+    {name = 'fAwesome5', var = 'fa', localFile = "fAwesome5.lua", resourceFile = "fonts/fa-solid-900.ttf"},
+    {name = 'samp.events', var = 'sampev',
+        localFiles = {
+            "samp/events.lua",
+            "samp/raknet.lua",
+            "samp/synchronization.lua",
+            "samp/events/bitstream_io.lua",
+            "samp/events/core.lua",
+            "samp/events/extra_types.lua",
+            "samp/events/handlers.lua",
+            "samp/events/utils.lua"
+        }
+    }
 }
 
--- Load modules, assign extras, and update globals in one loop
+-- Download Files
+local function downloadFiles(table, onCompleteCallback)
+    local downloadsInProgress = 0
+    local downloadsStarted = false
+    local callbackCalled = false
+
+    for _, file in ipairs(table) do
+        -- Extract folder path from file.path (everything before the last path separator)
+        local folderPath = file.path:match("^(.*)[\\/].+$")
+        if folderPath and #folderPath > 0 then
+            createDirectory(folderPath)
+        end
+
+        downloadsInProgress = downloadsInProgress + 1
+        downloadsStarted = true
+        downloadUrlToFile(file.url, file.path, function(id, status, p1, p2)
+            if status == 6 then
+                downloadsInProgress = downloadsInProgress - 1
+            end
+
+            if downloadsInProgress == 0 and onCompleteCallback and not callbackCalled then
+                callbackCalled = true
+                onCompleteCallback(downloadsStarted)
+            end
+        end)
+    end
+
+    if not downloadsStarted and onCompleteCallback and not callbackCalled then
+        callbackCalled = true
+        onCompleteCallback(downloadsStarted)
+    end
+end
+
+-- Check and Download Dependencies
+local function checkAndDownloadDependencies(callback)
+    local missingFiles = {}
+
+    for _, dep in ipairs(dependencies) do
+        local filesMissing = false
+
+        -- Check for a single file (localFile) or multiple files (localFiles)
+        if dep.localFiles then
+            -- For dependencies with multiple required files.
+            for _, file in ipairs(dep.localFiles) do
+                local fullPath = Paths.libraries .. file:gsub("/", "\\")
+                if not doesFileExist(fullPath) then
+                    filesMissing = true
+                    table.insert(missingFiles, {
+                        url = Urls.libraries .. file,
+                        path = fullPath
+                    })
+                end
+            end
+        elseif dep.localFile then
+            -- For dependencies with a single file.
+            local fullPath = Paths.libraries .. dep.localFile:gsub("/", "\\")
+            if not doesFileExist(fullPath) then
+                filesMissing = true
+                table.insert(missingFiles, {
+                    url = Urls.libraries .. dep.localFile,
+                    path = fullPath
+                })
+            end
+        end
+        
+        if dep.resourceFile then
+            local fullPath = Paths.resource .. dep.resourceFile:gsub("/", "\\")
+            if not doesFileExist(fullPath) then
+                filesMissing = true
+                table.insert(missingFiles, {
+                    url = Urls.resource .. dep.resourceFile,
+                    path = fullPath
+                })
+            end
+        end
+
+        -- Attempt to require the module only if files are not missing.
+        if not filesMissing then
+            local mod = safeRequire(dep.name)
+            if not mod then
+                print("Missing dependency and no download info provided: " .. dep.name)
+            end
+        end
+    end
+
+    if #missingFiles > 0 then
+        sampAddChatMessage("[AB] {FFFFFF}Some dependencies are missing, downloading now...", 0x33CCFF)
+        downloadFiles(missingFiles, function(downloadResult)
+            sampAddChatMessage("[AB] {FFFFFF}Download complete. Re-checking dependencies.", 0x33CCFF)
+            if downloadResult then
+                lua_thread.create(function()
+                    wait(1000)
+                    thisScript():reload()
+                end)
+            else
+                print("Download failed. Please check your internet connection and try again.")
+            end
+        end)
+    else
+        callback()  -- All files as required are already present.
+    end
+end
+
+function main()
+    wait(-1)
+end
+
+-- Start checking (and, if needed, downloading) missing dependencies.
+local mainscript, scriptError = xpcall(checkAndDownloadDependencies, debug.traceback, function()
+
 local loadedModules = {}
 local statusMessages = {success = {}, failed = {}}
 
+-- Load dependencies
 for _, dep in ipairs(dependencies) do
     local mod, err = safeRequire(dep.name)
     if mod and dep.callback then
@@ -76,54 +288,12 @@ if #statusMessages.failed > 0 then
     print("Failed to load modules: " .. table.concat(statusMessages.failed, ", "))
 end
 
--- Dynamically set script dependencies based on loaded modules
+-- Dynamically set script dependencies if needed.
 script_dependencies(table.unpack(statusMessages.success))
 
 -- Encoding
 encoding.default = 'CP1251'
 local u8 = encoding.UTF8
-
--- Working Directory
-local workingDir = getWorkingDirectory()
-
--- Paths Table
-local Paths = {
-    config = workingDir .. '\\config\\',
-    resource = workingDir .. '\\resource\\'
-}
-
--- Settings Path
-Paths.settings = Paths.config .. scriptName .. '\\'
-
--- Skin Icons Path
-Paths.skins = Paths.resource .. 'skins\\'
-
--- Files Table
-local Files = {
-    fawesome5 = Paths.resource .. 'fonts\\fa-solid-900.ttf',
-    trebucbd = getFolderPath(0x14) .. '\\trebucbd.ttf'
-}
-
--- Helper Function to Construct Base URL
-local function getBaseUrl(beta)
-    local branch = beta and "beta/" or ""
-    return "https://raw.githubusercontent.com/akacross/" .. scriptName .. "/main/" .. branch
-end
-
--- URLs Table
-local Urls = {
-    script = function(beta)
-        return getBaseUrl(beta) .. scriptName .. ".lua"
-    end,
-    update = function(beta)
-        return getBaseUrl(beta) .. "update.json"
-    end,
-    skinsPath = getBaseUrl(false) .. "resource/skins/",
-    skins = getBaseUrl(false) .. "skins.json",
-    names = getBaseUrl(false) .. "names.json",
-    changelog = getBaseUrl(false) .. "changelog.json",
-    betatesters = getBaseUrl(true) .. "betatesters.json"
-}
 
 -- Ensure Global `lanes.download_manager` Exists with `lane` and `linda`
 if not _G['lanes.download_manager'] then
@@ -7937,4 +8107,17 @@ function loadFontIcons(fileOrMemory, fontSize, min, max, fontdata)
 	else
 		imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fontdata, fontSize, config, iconRanges)
 	end
+end
+
+end) -- End of checkAndDownloadDependencies
+
+if scriptError then
+    print("scriptError")
+    print(scriptError)
+end
+
+if mainscript then
+    print(string.format("%s %s loaded successfully.", scriptName, scriptVersion))
+else
+    print(string.format("%s %s failed to load.", scriptName, scriptVersion))
 end
