@@ -141,12 +141,13 @@ local dependencies = {
     }
 }
 
--- Download Files
+-- File Download Function
 local function downloadFiles(table, onCompleteCallback)
     local downloadsInProgress = 0
     local downloadsStarted = false
     local callbackCalled = false
 
+    -- Download Files
     for _, file in ipairs(table) do
         -- Extract folder path from file.path (everything before the last path separator)
         local folderPath = file.path:match("^(.*)[\\/].+$")
@@ -154,6 +155,7 @@ local function downloadFiles(table, onCompleteCallback)
             createDirectory(folderPath)
         end
 
+        -- Update Progress
         downloadsInProgress = downloadsInProgress + 1
         downloadsStarted = true
         downloadUrlToFile(file.url, file.path, function(id, status, p1, p2)
@@ -168,6 +170,7 @@ local function downloadFiles(table, onCompleteCallback)
         end)
     end
 
+    -- Call Callback
     if not downloadsStarted and onCompleteCallback and not callbackCalled then
         callbackCalled = true
         onCompleteCallback(downloadsStarted)
@@ -247,15 +250,18 @@ function main()
     -- Wait for SAMP
     while not isSampAvailable() do wait(100) end
 
+    -- Check for missing files
     if #missingFiles > 0 then
-        sampAddChatMessage("[AB] {FFFFFF}Some dependencies are missing, downloading now...", 0x33CCFF)
+        local missingFileText = #missingFiles == 1 and "file" or "files"
+        sampAddChatMessage(string.format("[%s] {FFFFFF}Some dependencies are missing, downloading now... (Missing: %d %s)", shortName:upper(), #missingFiles, missingFileText), 0x33CCFF)
     end
 
+    -- Wait Indefinitely
     wait(-1)
 end
 
 -- Start checking (and, if needed, downloading) missing dependencies.
-local mainscript, scriptError = xpcall(checkAndDownloadDependencies, debug.traceback, function()
+local mainScript, scriptError = xpcall(checkAndDownloadDependencies, debug.traceback, function()
 
 local loadedModules = {}
 local statusMessages = {success = {}, failed = {}}
@@ -1138,6 +1144,9 @@ end
 -- Global Variables
 local new, str, sizeof = imgui.new, ffi.string, ffi.sizeof
 local ped, h = playerPed, playerHandle
+
+-- AutoReboot
+local autoReboot = false
 
 -- Key Press Type
 local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
@@ -5988,6 +5997,14 @@ local buttons1 = {
             updateCheck()
 
             if updateStatus == "new_version" or updateStatus == "beta_version" or updateStatus == "outdated" then
+                local autoRebootScript = script.find("ML-AutoReboot")
+                if autoRebootScript then
+                    autoRebootScript:unload()
+                    autoReboot = true
+                else
+                    autoReboot = false
+                end
+
                 menu.confirm.update[0] = true
                 menu.confirm.window[0] = true
             end
@@ -6493,6 +6510,10 @@ function(self)
                 if imgui.CustomButton(fa.ICON_FA_TIMES .. ' Cancel', imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], buttonSize) then
                     menu.confirm.update[0] = false
                     menu.confirm.window[0] = false
+
+                    if autoReboot then
+                        script.load(workingDir .. "\\AutoReboot.lua")
+                    end
                 end
             end
         end
@@ -7091,6 +7112,10 @@ function updateScript()
 
                     if content:find(currentContent.version) then
                         formattedAddChatMessage("Update has been validated! Please type '/ab reload' to finish the update.")
+
+                        if autoReboot then
+                            script.load(workingDir .. "\\AutoReboot.lua")
+                        end
                     else
                         formattedAddChatMessage("Update was not validated! Please try again later.")
                     end
@@ -8119,11 +8144,11 @@ end
 end) -- End of checkAndDownloadDependencies
 
 if scriptError then
-    print("scriptError")
+    print("scriptError:")
     print(scriptError)
 end
 
-if mainscript then
+if mainScript then
     print(string.format("%s %s loaded successfully.", scriptName, scriptVersion))
 else
     print(string.format("%s %s failed to load.", scriptName, scriptVersion))
