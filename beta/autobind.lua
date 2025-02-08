@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.24b2")
+script_version("1.8.24b3")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -30,6 +30,7 @@ Paths.skins = Paths.resource .. 'skins\\'
 
 -- Files Table
 local Files = {
+    script = Paths.settings .. scriptName .. '.lua',
     fawesome5 = Paths.resource .. 'fonts\\fa-solid-900.ttf',
     trebucbd = getFolderPath(0x14) .. '\\trebucbd.ttf'
 }
@@ -246,6 +247,81 @@ local function checkAndDownloadDependencies(callback)
     end
 end
 
+-- Color Table
+local clr = {
+    GRAD1 = 0xB4B5B7, -- #B4B5B7
+    GRAD2 = 0xBFC0C2, -- #BFC0C2
+    GRAD3 = 0xCBCCCE, -- #CBCCCE
+    GRAD4 = 0xD8D8D8, -- #D8D8D8
+    GRAD5 = 0xE3E3E3, -- #E3E3E3
+    GRAD6 = 0xF0F0F0, -- #F0F0F0
+    GREY = 0xAFAFAF, -- #AFAFAF
+    RED = 0xAA3333, -- #AA3333
+    ORANGE = 0xFF8000, -- #FF8000
+    YELLOW = 0xFFFF00, -- #FFFF00
+    FORSTATS = 0xFFFF91, -- #FFFF91
+    HOUSEGREEN = 0x00E605, -- #00E605
+    GREEN = 0x33AA33, -- #33AA33
+    LIGHTGREEN = 0x9ACD32, -- #9ACD32
+    CYAN = 0x40FFFF, -- #40FFFF
+    PURPLE = 0xC2A2DA, -- #C2A2DA
+    BLACK = 0x000000, -- #000000
+    WHITE = 0xFFFFFF, -- #FFFFFF
+    FADE1 = 0xE6E6E6, -- #E6E6E6
+    FADE2 = 0xC8C8C8, -- #C8C8C8
+    FADE3 = 0xAAAAAA, -- #AAAAAA
+    FADE4 = 0x8C8C8C, -- #8C8C8C
+    FADE5 = 0x6E6E6E, -- #6E6E6E
+    LIGHTRED = 0xFF6347, -- #FF6347
+    NEWS = 0xFFA500, -- #FFA500
+    TEAM_NEWS_COLOR = 0x049C71, -- #049C71
+    TWPINK = 0xE75480, -- #E75480
+    TWRED = 0xFF0000, -- #FF0000
+    TWBROWN = 0x654321, -- #654321
+    TWGRAY = 0x808080, -- #808080
+    TWOLIVE = 0x808000, -- #808000
+    TWPURPLE = 0x800080, -- #800080
+    TWTAN = 0xD2B48C, -- #D2B48C
+    TWAQUA = 0x00FFFF, -- #00FFFF
+    TWORANGE = 0xFF8C00, -- #FF8C00
+    TWAZURE = 0x007FFF, -- #007FFF
+    TWGREEN = 0x008000, -- #008000
+    TWBLUE = 0x0000FF, -- #0000FF
+    LIGHTBLUE = 0x33CCFF, -- #33CCFF
+    FIND_COLOR = 0xB90000, -- #B90000
+    TEAM_AZTECAS_COLOR = 0x01FCFF, -- #01FCFF
+    TEAM_TAXI_COLOR = 0xF2FF00, -- #F2FF00
+    DEPTRADIO = 0xFFD700, -- #FFD700
+    RADIO = 0x8D8DFF, -- #8D8DFF
+    TEAM_BLUE_COLOR = 0x2641FE, -- #2641FE
+    TEAM_FBI_COLOR = 0x8D8DFF, -- #8D8DFF
+    TEAM_MED_COLOR = 0xFF8282, -- #FF8282
+    TEAM_APRISON_COLOR = 0x9C7912, -- #9C7912
+    NEWBIE = 0x7DAEFF, -- #7DAEFF
+    PINK = 0xFF66FF, -- #FF66FF
+    OOC = 0xE0FFFF, -- #E0FFFF
+    PUBLICRADIO_COLOR = 0x6DFB6D, -- #6DFB6D
+    TEAM_GROVE_COLOR = 0x00D900, -- #00D900
+    REALRED = 0xFF0606, -- #FF0606
+    REALGREEN = 0x00FF00, -- #00FF00
+    WANTED_COLOR = 0xFF0000, -- #FF0000
+    MONEY = 0x2F5A26, -- #2F5A26
+    MONEY_NEGATIVE = 0x9C1619, -- #9C1619
+	GOV = 0xE8E79B, -- #E8E79B
+    BETA = 0x5D8AA8, -- #5D8AA8
+    DEV = 0xC27C0E, -- #C27C0E
+    ARES = 0x1C77B3, -- #1C77B3
+    DARKGREY = 0x1A1A1A, -- #1A1A1A
+    ALTRED = 0x661F1F, -- #661F1F
+    BLUE = 0xB7D1EB -- #B7D1EB
+}
+
+-- Formatted Add Chat Message
+local function formattedAddChatMessage(message, color)
+    color = color or clr.WHITE
+    sampAddChatMessage(("[%s] {%06x}%s"):format(shortName:upper(), color, message), clr.LIGHTBLUE)
+end
+
 function main()
     -- Wait for SAMP
     while not isSampAvailable() do wait(100) end
@@ -253,7 +329,7 @@ function main()
     -- Check for missing files
     if #missingFiles > 0 then
         local missingFileText = #missingFiles == 1 and "file" or "files"
-        sampAddChatMessage(string.format("[%s] {FFFFFF}Some dependencies are missing, downloading now... (Missing: %d %s)", shortName:upper(), #missingFiles, missingFileText), 0x33CCFF)
+        formattedAddChatMessage(("Some dependencies are missing, downloading now... (Missing: %d %s)"):format(#missingFiles, missingFileText))
     end
 
     -- Wait Indefinitely
@@ -291,7 +367,7 @@ for _, dep in ipairs(dependencies) do
             end
         end
     else
-        table.insert(statusMessages.failed, string.format("%s (%s)", dep.name, err))
+        table.insert(statusMessages.failed, ("%s (%s)"):format(dep.name, err))
     end
 end
 
@@ -898,75 +974,6 @@ local function getWeatherName(weatherId)
     return weatherNames[weatherId] or "Unknown"
 end
 
--- Color Table
-local clr = {
-    GRAD1 = 0xB4B5B7, -- #B4B5B7
-    GRAD2 = 0xBFC0C2, -- #BFC0C2
-    GRAD3 = 0xCBCCCE, -- #CBCCCE
-    GRAD4 = 0xD8D8D8, -- #D8D8D8
-    GRAD5 = 0xE3E3E3, -- #E3E3E3
-    GRAD6 = 0xF0F0F0, -- #F0F0F0
-    GREY = 0xAFAFAF, -- #AFAFAF
-    RED = 0xAA3333, -- #AA3333
-    ORANGE = 0xFF8000, -- #FF8000
-    YELLOW = 0xFFFF00, -- #FFFF00
-    FORSTATS = 0xFFFF91, -- #FFFF91
-    HOUSEGREEN = 0x00E605, -- #00E605
-    GREEN = 0x33AA33, -- #33AA33
-    LIGHTGREEN = 0x9ACD32, -- #9ACD32
-    CYAN = 0x40FFFF, -- #40FFFF
-    PURPLE = 0xC2A2DA, -- #C2A2DA
-    BLACK = 0x000000, -- #000000
-    WHITE = 0xFFFFFF, -- #FFFFFF
-    FADE1 = 0xE6E6E6, -- #E6E6E6
-    FADE2 = 0xC8C8C8, -- #C8C8C8
-    FADE3 = 0xAAAAAA, -- #AAAAAA
-    FADE4 = 0x8C8C8C, -- #8C8C8C
-    FADE5 = 0x6E6E6E, -- #6E6E6E
-    LIGHTRED = 0xFF6347, -- #FF6347
-    NEWS = 0xFFA500, -- #FFA500
-    TEAM_NEWS_COLOR = 0x049C71, -- #049C71
-    TWPINK = 0xE75480, -- #E75480
-    TWRED = 0xFF0000, -- #FF0000
-    TWBROWN = 0x654321, -- #654321
-    TWGRAY = 0x808080, -- #808080
-    TWOLIVE = 0x808000, -- #808000
-    TWPURPLE = 0x800080, -- #800080
-    TWTAN = 0xD2B48C, -- #D2B48C
-    TWAQUA = 0x00FFFF, -- #00FFFF
-    TWORANGE = 0xFF8C00, -- #FF8C00
-    TWAZURE = 0x007FFF, -- #007FFF
-    TWGREEN = 0x008000, -- #008000
-    TWBLUE = 0x0000FF, -- #0000FF
-    LIGHTBLUE = 0x33CCFF, -- #33CCFF
-    FIND_COLOR = 0xB90000, -- #B90000
-    TEAM_AZTECAS_COLOR = 0x01FCFF, -- #01FCFF
-    TEAM_TAXI_COLOR = 0xF2FF00, -- #F2FF00
-    DEPTRADIO = 0xFFD700, -- #FFD700
-    RADIO = 0x8D8DFF, -- #8D8DFF
-    TEAM_BLUE_COLOR = 0x2641FE, -- #2641FE
-    TEAM_FBI_COLOR = 0x8D8DFF, -- #8D8DFF
-    TEAM_MED_COLOR = 0xFF8282, -- #FF8282
-    TEAM_APRISON_COLOR = 0x9C7912, -- #9C7912
-    NEWBIE = 0x7DAEFF, -- #7DAEFF
-    PINK = 0xFF66FF, -- #FF66FF
-    OOC = 0xE0FFFF, -- #E0FFFF
-    PUBLICRADIO_COLOR = 0x6DFB6D, -- #6DFB6D
-    TEAM_GROVE_COLOR = 0x00D900, -- #00D900
-    REALRED = 0xFF0606, -- #FF0606
-    REALGREEN = 0x00FF00, -- #00FF00
-    WANTED_COLOR = 0xFF0000, -- #FF0000
-    MONEY = 0x2F5A26, -- #2F5A26
-    MONEY_NEGATIVE = 0x9C1619, -- #9C1619
-	GOV = 0xE8E79B, -- #E8E79B
-    BETA = 0x5D8AA8, -- #5D8AA8
-    DEV = 0xC27C0E, -- #C27C0E
-    ARES = 0x1C77B3, -- #1C77B3
-    DARKGREY = 0x1A1A1A, -- #1A1A1A
-    ALTRED = 0x661F1F, -- #661F1F
-    BLUE = 0xB7D1EB -- #B7D1EB
-}
-
 -- Helper function for rounding to the nearest integer
 local function round(value)
     return math.floor(value + 0.5)
@@ -1216,6 +1223,7 @@ local autobind_defaultSettings = {
 		mode = "Family",
         HZRadio = true,
         LoginAudio = true,
+        vehicleStorageMenu = false,
         Frisk = {
             mustTarget = false,
             mustAim = true
@@ -1390,8 +1398,8 @@ local autobind_defaultSettings = {
         AcceptDeath = {Toggle = true, Keys = {VK_OEM_PLUS}, Type = {'KeyPressed'}},
         RequestBackup = {Toggle = true, Keys = {VK_MENU, VK_B}, Type = {'KeyDown', 'KeyPressed'}},
         Reconnect = {Toggle = true, Keys = {VK_SHIFT, VK_0}, Type = {'KeyDown', 'KeyPressed'}},
-        UseCrack = {Toggle = true, Keys = {VK_F3}, Type = {'KeyPressed'}},
-        UsePot = {Toggle = true, Keys = {VK_F2}, Type = {'KeyPressed'}}
+        UsePot = {Toggle = true, Keys = {VK_F2}, Type = {'KeyPressed'}},
+        UseCrack = {Toggle = true, Keys = {VK_F3}, Type = {'KeyPressed'}}
     }
 }
 
@@ -1743,13 +1751,13 @@ local factionLocker = {
     Items = {
         [1] = {label = 'Deagle', index = 0, weapon = 24, price = nil},
         [2] = {label = 'Shotgun', index = 1, weapon = 25, price = nil, group = 3, priority = 1},
-        [3] = {label = 'SPAS-12', index = 2, weapon = 27, price = 3200, group = 3, priority = 2},
-        [4] = {label = 'MP5', index = 3, weapon = 29, price = 250},
-        [5] = {label = 'M4', index = 4, weapon = 31, price = 2100, group = 5, priority = 2},
-        [6] = {label = 'AK-47', index = 5, weapon = 30, price = 2100, group = 5, priority = 1},
+        [3] = {label = 'SPAS-12', index = 2, weapon = 27, price = 2250, group = 3, priority = 2}, -- ARES: 3200
+        [4] = {label = 'MP5', index = 3, weapon = 29, price = 150}, -- ARES: 250
+        [5] = {label = 'M4', index = 4, weapon = 31, price = 1400, group = 5, priority = 2}, -- ARES: 2100
+        [6] = {label = 'AK-47', index = 5, weapon = 30, price = 1400, group = 5, priority = 1}, -- ARES: 2100
         [7] = {label = 'Teargas', index = 6, weapon = 17, price = nil},
         [8] = {label = 'Camera', index = 7, weapon = 43, price = nil},
-        [9] = {label = 'Sniper', index = 8, weapon = 34, price = 5500},
+        [9] = {label = 'Sniper', index = 8, weapon = 34, price = 4550}, -- ARES: 5500
         [10] = {label = 'Armor', index = 9, weapon = nil, price = nil},
         [11] = {label = 'Health', index = 10, weapon = nil, price = nil},
         [12] = {label = 'Baton/Mace', index = 11, weapon = nil, price = nil}
@@ -1847,7 +1855,7 @@ end
 -- initialize Components
 function initializeComponents()
     if autobind.Settings.updateInProgress then
-        formattedAddChatMessage(string.format("You have successfully upgraded from Version: %s to %s", autobind.Settings.lastVersion, scriptVersion))
+        formattedAddChatMessage(("You have successfully upgraded from Version: %s to %s"):format(autobind.Settings.lastVersion, scriptVersion))
         autobind.Settings.updateInProgress = false
         saveConfigWithErrorHandling(Files.settings, autobind.Settings)
     end
@@ -2005,7 +2013,7 @@ function main()
         if result3 then
             if button3 == 1 then
                 if list3 ~= 12 then
-                    formattedAddChatMessage(string.format("You have selected radio station %d: %s - %s.", list3, radioStations[list3].name, radioStations[list3].desc))
+                    formattedAddChatMessage(("You have selected radio station %d: %s - %s."):format(list3, radioStations[list3].name, radioStations[list3].desc))
                     lua_thread.create(function()
                         if not autobind.Settings.noRadio then
                             autobind.Settings.noRadio = true
@@ -2052,7 +2060,9 @@ function main()
         cursorActive = sampIsCursorActive()
 
         -- Vehicle Storage
-        menu.vehiclestorage.window[0] = (--[[sampGetChatInputText():find("/v") and ]]sampIsChatInputActive()) and true or false
+        if autobind.Settings.vehicleStorageMenu then
+            menu.vehiclestorage.window[0] = (--[[sampGetChatInputText():find("/v") and ]]sampIsChatInputActive()) and true or false
+        end
 
         -- Start Functions Loop
         functionsLoop(function(started, failed)
@@ -2060,7 +2070,7 @@ function main()
             initializeComponents()
 
             -- Success Message
-            formattedAddChatMessage(string.format("%s has loaded successfully! {%06x}Type /%s help for more information.", scriptVersion, clr.GREY, shortName))
+            formattedAddChatMessage(("%s has loaded successfully! {%06x}Type /%s help for more information."):format(scriptVersion, clr.GREY, shortName))
         end)
     end
 end
@@ -4285,6 +4295,8 @@ local messageHandlers = {
                 saveConfigWithErrorHandling(Files.currentplayer, autobind.CurrentPlayer)
                 saveConfigWithErrorHandling(Files.vehiclestorage, autobind.VehicleStorage)
 
+                registerAutobindCommands()
+
                 return {clrRGBA["NEWS"], string.format("Welcome to Horizon Roleplay, %s.", name)}
             end
         end
@@ -4410,6 +4422,22 @@ local messageHandlers = {
                 if accepter.enable then
                     formattedAddChatMessage("Auto Accept is now disabled because you are now in Faction Mode.")
                     accepter.enable = false
+                end
+
+                if type == "ARES" then
+                    local aresPriceMapping = {
+                        ["SPAS-12"] = 3200,
+                        ["MP5"]    = 250,
+                        ["M4"]     = 2100,
+                        ["AK-47"]  = 2100,
+                        ["Sniper"] = 5500
+                    }
+
+                    for i, item in ipairs(factionLocker.Items) do
+                        if aresPriceMapping[item.label] then
+                            item.price = aresPriceMapping[item.label]
+                        end
+                    end
                 end
 
                 --[[local freqType, freq = motdMsg:match("[/|%s*]%s*([RL FREQ:|FREQ:].-)%s*(-?%d+)")
@@ -5041,7 +5069,7 @@ local messageHandlers = {
         color = clrRGBA["WHITE"],
         action = function(vehName)
             updateVehicleStorage("Stored", vehName)
-            return {clrRGBA["WHITE"], string.format("You have stored your %s. The vehicle has been despawned.", vehName)}
+            return {clrRGBA["WHITE"], string.format("* You have stored your %s. The vehicle has been despawned.", vehName)}
         end
     },
     -- "You have taken your (.-) out of storage%. The vehicle has been (.-) at the last parking location%."
@@ -5050,7 +5078,7 @@ local messageHandlers = {
         color = clrRGBA["WHITE"],
         action = function(vehName)
             updateVehicleStorage("Spawned", vehName)
-            return {clrRGBA["WHITE"], string.format("You have taken your %s out of storage. The vehicle has been spawned at the last parking location.", vehName)}
+            return {clrRGBA["WHITE"], string.format("* You have taken your %s out of storage. The vehicle has been spawned at the last parking location.", vehName)}
         end
     },
     -- Your (.-) has been sent to the location at which you last parked it.
@@ -5059,7 +5087,7 @@ local messageHandlers = {
         color = clrRGBA["GRAD1"],
         action = function(vehName)
             updateVehicleStorage("Respawned", vehName)
-            return {clrRGBA["GRAD1"], string.format("Your %s has been sent to the location at which you last parked it.", vehName)}
+            return {clrRGBA["GRAD1"], string.format("* Your %s has been sent to the location at which you last parked it.", vehName)}
         end
     },
     -- You cannot store this vehicle as someone is currently occupying it.
@@ -5068,7 +5096,7 @@ local messageHandlers = {
         color = clrRGBA["GREY"],
         action = function()
             updateVehicleStorage("Occupied", nil)
-            return {clrRGBA["GREY"], "You cannot store this vehicle as someone is currently occupying it."}
+            return {clrRGBA["GREY"], "* You cannot store this vehicle as someone is currently occupying it."}
         end
     },
     -- This vehicle is too damaged to be stored.
@@ -5077,7 +5105,7 @@ local messageHandlers = {
         color = clrRGBA["GREY"],
         action = function()
             updateVehicleStorage("Damaged", nil)
-            return {clrRGBA["GREY"], "This vehicle is too damaged to be stored."}
+            return {clrRGBA["GREY"], "* This vehicle is too damaged to be stored."}
         end
     },
     -- You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions).
@@ -5086,7 +5114,7 @@ local messageHandlers = {
         color = clrRGBA["WHITE"],
         action = function()
             updateVehicleStorage("Disabled", nil)
-            return {clrRGBA["WHITE"], "You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions)."}
+            return {clrRGBA["WHITE"], "* You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions)."}
         end
     },
     -- You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore.
@@ -5095,7 +5123,7 @@ local messageHandlers = {
         color = clrRGBA["WHITE"],
         action = function()
             updateVehicleStorage("Impounded", nil)
-            return {clrRGBA["WHITE"], "You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore."}
+            return {clrRGBA["WHITE"], "* You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore."}
         end
     },
     -- You have failed to pick the lock!
@@ -5896,6 +5924,11 @@ local buttons1 = {
             else
                 for _, command in pairs(cmds) do
                     sampUnregisterChatCommand(command.cmd)
+                    if command.alt then
+                        for _, altCommand in pairs(command.alt) do
+                            sampUnregisterChatCommand(altCommand)
+                        end
+                    end
                 end
             end
         end,
@@ -7099,11 +7132,17 @@ function updateScript()
     autobind.Settings.updateInProgress = true
     autobind.Settings.lastVersion = scriptVersion
 
-    downloadFilesFromURL({{url = Urls.script(autobind.Settings.fetchBeta), path = scriptPath, replace = true}}, false, function(success)
+    downloadFilesFromURL({{url = Urls.script(autobind.Settings.fetchBeta), path = Files.script, replace = true}}, false, function(success)
         if success then
             lua_thread.create(function()
-                formattedAddChatMessage("Update downloaded successfully! Validating correct version before reload.")
+                formattedAddChatMessage("Update downloaded successfully! Validating correct version before you can reload.")
                 wait(2500)
+
+                local success, err = os.rename(Files.script, scriptPath)
+                if not success then
+                    print("Error moving file: " .. err)
+                    return
+                end
 
                 local file = io.open(scriptPath, "r")
                 if file then
@@ -7111,11 +7150,11 @@ function updateScript()
                     file:close()
 
                     if content:find(currentContent.version) then
-                        formattedAddChatMessage("Update has been validated! Please type '/ab reload' to finish the update.")
-
                         if autoReboot then
                             script.load(workingDir .. "\\AutoReboot.lua")
                         end
+
+                        formattedAddChatMessage("Update has been validated! Please type '/ab reload' to finish the update.")
                     else
                         formattedAddChatMessage("Update was not validated! Please try again later.")
                     end
@@ -7322,7 +7361,7 @@ function keyEditor(title, index, description, callback)
                 end
             end)
         end
-        imgui.CustomTooltip(string.format("Press to change, Key: %d", i))
+        imgui.CustomTooltip(("Press to change, Key: %d"):format(i))
 
         -- Combo box for key type selection
         imgui.SameLine()
@@ -7455,7 +7494,7 @@ function toggleAutoCapture()
 	if not checkAdminDuty() then
 		autocap = not autocap
 
-		formattedAddChatMessage(autocap and string.format("Starting capture attempt... {%06x}(type /%s to toggle)", clr.YELLOW, cmds.autocap.cmd) or "Auto Capture ended.")
+		formattedAddChatMessage(autocap and  ("Starting capture attempt... {%06x}(type /%s to toggle)"):format(clr.YELLOW, cmds.autocap.cmd) or "Auto Capture ended.")
 	end
 end
 
@@ -7463,14 +7502,14 @@ end
 function toggleBind(name, bool)
     bool = not bool
     local color = bool and clr.REALGREEN or clr.RED
-    formattedAddChatMessage(string.format("%s: {%06x}%s", name, color, bool and 'on' or 'off'))
+    formattedAddChatMessage(("%s: {%06x}%s"):format(name, color, bool and 'on' or 'off'))
     return bool
 end
 
 -- Create Farmer Dialog
 function createFarmerDialog()
     local dialogText = "You have arrived at your designated farming spot.\nAuto-Typing /harvest to harvest some crops.\n\nWarning: Pressing disable will turn off auto farming."
-    sampShowDialog(farmer.dialogId, string.format("[%s] Auto Farming", shortName:upper()), dialogText, "Close", "Disable", 0)
+    sampShowDialog(farmer.dialogId, ("[%s] Auto Farming"):format(shortName:upper()), dialogText, "Close", "Disable", 0)
 end
 
 -- Update Vehicle Storage
@@ -7821,12 +7860,12 @@ function formatTime(seconds)
 
     local timeString = ""
     if hours > 0 then
-        timeString = timeString .. string.format("%d hour%s, ", hours, hours > 1 and "s" or "")
+        timeString = timeString .. ("%d hour%s, "):format(hours, hours > 1 and "s" or "")
     end
     if minutes > 0 then
-        timeString = timeString .. string.format("%d minute%s, ", minutes, minutes > 1 and "s" or "")
+        timeString = timeString .. ("%d minute%s, "):format(minutes, minutes > 1 and "s" or "")
     end
-    timeString = timeString .. string.format("%.1f second%s", seconds, seconds ~= 1 and "s" or "")
+    timeString = timeString .. ("%.1f second%s"):format(seconds, seconds ~= 1 and "s" or "")
 
     return timeString
 end
@@ -7854,12 +7893,6 @@ end
 -- Function to remove color codes from text
 function removeHexBrackets(text)
     return string.gsub(text, "{%x+}", "")
-end
-
--- Formatted Add Chat Message
-function formattedAddChatMessage(message, color)
-    color = color or clr.WHITE
-    sampAddChatMessage(string.format("[%s] {%06x}%s", shortName:upper(), color, message), clr.LIGHTBLUE)
 end
 
 -- Format Number
@@ -8149,7 +8182,7 @@ if scriptError then
 end
 
 if mainScript then
-    print(string.format("%s %s loaded successfully.", scriptName, scriptVersion))
+    print(("%s %s loaded successfully."):format(scriptName, scriptVersion))
 else
-    print(string.format("%s %s failed to load.", scriptName, scriptVersion))
+    print(("%s %s failed to load."):format(scriptName, scriptVersion))
 end
