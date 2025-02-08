@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.24b3")
+script_version("1.8.24b2")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -7136,24 +7136,33 @@ function updateScript()
         if success then
             lua_thread.create(function()
                 formattedAddChatMessage("Update downloaded successfully! Validating correct version before you can reload.")
-                wait(2500)
 
-                local success, err = os.rename(Files.script, scriptPath)
-                if not success then
-                    print("Error moving file: " .. err)
+                wait(1000)
+
+                local remove, error = pcall(os.remove, scriptPath)
+                if not remove then
+                    print("Error removing file: " .. error)
                     return
                 end
+
+                local move, error = os.rename(Files.script, scriptPath)
+                if not move then
+                    print("Error moving file: " .. error)
+                    return
+                end
+
+                wait(1000)
 
                 local file = io.open(scriptPath, "r")
                 if file then
                     local content = file:read("*a")
                     file:close()
 
-                    if content:find(currentContent.version) then
-                        if autoReboot then
-                            script.load(workingDir .. "\\AutoReboot.lua")
-                        end
+                    if autoReboot then
+                        script.load(workingDir .. "\\AutoReboot.lua")
+                    end
 
+                    if content:find(currentContent.version) then
                         formattedAddChatMessage("Update has been validated! Please type '/ab reload' to finish the update.")
                     else
                         formattedAddChatMessage("Update was not validated! Please try again later.")
