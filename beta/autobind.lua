@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.24b2")
+script_version("1.8.24b3")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -247,6 +247,26 @@ local function checkAndDownloadDependencies(callback)
     end
 end
 
+-- List to Set
+function listToSet(list)
+    local set = {}
+    for _, value in pairs(list) do
+        set[value] = true
+    end
+    return set
+end
+
+-- Set to List
+function setToList(set)
+    local list = {}
+    for key, value in pairs(set) do
+        if value then
+            table.insert(list, key)
+        end
+    end
+    return list
+end
+
 -- Color Table
 local clr = {
     GRAD1 = 0xB4B5B7, -- #B4B5B7
@@ -292,7 +312,6 @@ local clr = {
     TEAM_AZTECAS_COLOR = 0x01FCFF, -- #01FCFF
     TEAM_TAXI_COLOR = 0xF2FF00, -- #F2FF00
     DEPTRADIO = 0xFFD700, -- #FFD700
-    RADIO = 0x8D8DFF, -- #8D8DFF
     TEAM_BLUE_COLOR = 0x2641FE, -- #2641FE
     TEAM_FBI_COLOR = 0x8D8DFF, -- #8D8DFF
     TEAM_MED_COLOR = 0xFF8282, -- #FF8282
@@ -307,13 +326,16 @@ local clr = {
     WANTED_COLOR = 0xFF0000, -- #FF0000
     MONEY = 0x2F5A26, -- #2F5A26
     MONEY_NEGATIVE = 0x9C1619, -- #9C1619
-	GOV = 0xE8E79B, -- #E8E79B
     BETA = 0x5D8AA8, -- #5D8AA8
     DEV = 0xC27C0E, -- #C27C0E
     ARES = 0x1C77B3, -- #1C77B3
     DARKGREY = 0x1A1A1A, -- #1A1A1A
     ALTRED = 0x661F1F, -- #661F1F
-    BLUE = 0xB7D1EB -- #B7D1EB
+    BLUE = 0xB7D1EB, -- #B7D1EB
+    DD = 0x8ABFF5, -- #8ABFF5
+    OOC = 0x6F570E, -- #6F570E
+    GOV = 0xBEBEBE, -- #BEBEBE
+    SASD = 0xCC9933, -- #CC9933
 }
 
 -- Formatted Add Chat Message
@@ -1032,6 +1054,21 @@ function joinARGB(a, r, g, b, normalized)
     return color
 end
 
+-- Change Alpha
+function changeAlpha(color, newAlpha)
+    -- Clamp the newAlpha value between 0 and 255
+    newAlpha = math.max(0, math.min(255, newAlpha))
+    -- Remove the current alpha by keeping only the lower 24 bits (RGB)
+    local rgb = bit.band(color, 0x00FFFFFF)
+    -- Combine the new alpha (shifted left 24 bits) with the RGB
+    return bit.bor(bit.lshift(newAlpha, 24), rgb)
+end
+
+-- Unsigned Color
+function toUnsignedColor(color)
+    return color % (2^32)
+end
+
 -- Convert normalized RGB to HSV
 function RGBtoHSV(r, g, b)
     local max = math.max(r, g, b)
@@ -1336,6 +1373,21 @@ local autobind_defaultSettings = {
         align = "left",
         colors = {text = clr.REALRED, value = clr.WHITE}
     },
+    FactionBadge = {
+        enable = true,
+        Pos = {x = resX / 6.0, y = resY / 2 + 150},
+        font = "Arial",
+        size = 9,
+        flags = {
+            BOLD = true,
+            ITALICS = false,
+            BORDER = true,
+            SHADOW = true,
+            UNDERLINE = false,
+            STRIKEOUT = false
+        },
+        align = "left"
+    },
     CurrentPlayer = {
         name = "",
         id = -1
@@ -1413,7 +1465,7 @@ local hzrpHealth = 5000000
 local timers = {
 	Vest = {timer = 13.0, last = 0, sentTime = 0, timeOut = 3.0},
 	Accept = {timer = 0.5, last = 0},
-	Heal = {timer = 12.0, last = 0},
+	Heal = {timer = 13.0, last = 0},
 	Find = {timer = 20.0, last = 0, sentTime = 0, timeOut = 5.0},
 	Muted = {timer = 13.0, last = 0},
 	Binds = {timer = 0.5, last = {}},
@@ -1498,39 +1550,124 @@ local family = {
     skins = {}
 }
 
--- Factions
-local factions = {
-	skins = {
-		[61] = true, [71] = true, [73] = true, [163] = true, [164] = true, [165] = true, [166] = true, [179] = true, [191] = true, [206] = true, [287] = true, -- ARES
-        [120] = true, [141] = true, [253] = true, [286] = true, [294] = true, -- FBI
-        [265] = true, [266] = true, [267] = true, [280] = true, [281] = true, [282] = true, [283] = true, [284] = true, [285] = true, [288] = true, [300] = true, [301] = true, [302] = true, [306] = true, [307] = true, [309] = true, [310] = true, [311] = true, -- SASD/LSPD
-	},
-	colors = {
-		[0x2641FE] = true, [0x8D8DFF] = true, [0xBEBEBE] = true, [0xCC9933] = true, [0x1C77B3] = true, -- No Alpha (LSPD, FBI, GOV, SASD, ARES) [Badge]
-        [0x8C2641FE] = true, [0x8C8D8DFF] = true, [0x8CBEBEBE] = true, [0x8CCC9933] = true, [0x8C1C77B3] = true -- With Alpha (LSPD, FBI, GOV, SASD, ARES) [Turf]
-	},
-    names = {"LSPD", "SASD", "FBI", "ARES", "GOV"},
-    ranks = {
-        LSPD = {
-            "Cadet",
-            "Officer",
-            "Corporal",
-            "Sergeant",
-            "Lieutenant",
-            "Captain",
-            "Chief",
+-- #8C0000FF
+
+-- Faction Data
+local factionData = {
+    LSPD = {
+        skins = {
+            256, 266, 267, 280, 281, 282, 283, 284, 285, 288, 300, 301, 302, 306, 307, 309, 310, 311
         },
-        ARES = {
-            "Recruit",
-            "Operative",
-            "Specialist",
-            "Staff Sergeant",
-            "Major",
-            "Vice Commander",
-            "Commander"
+        color = clr.TEAM_BLUE_COLOR,
+        ranks = {
+            [1] = "Cadet",
+            [2] = "Officer",
+            [3] = "Corporal",
+            [4] = "Sergeant",
+            [5] = "Lieutenant",
+            [6] = "Captain",
+            [7] = "Chief"
+        }
+    },
+    ARES = {
+        skins = {
+            61, 71, 73, 163, 164, 165, 166, 179, 191, 206, 287
+        },
+        color = clr.ARES,
+        ranks = {
+            [1] = "Recruit",
+            [2] = "Operative",
+            [3] = "Specialist",
+            [4] = "Staff Sergeant",
+            [5] = "Major",
+            [6] = "Vice Commander",
+            [7] = "Commander"
+        },
+    },
+    FBI = {
+        skins = {
+            120, 141, 253, 286, 294
+        },
+        color = clr.TEAM_FBI_COLOR,
+        ranks = {
+            [1] = "Intern",
+            [2] = "Agent",
+            [3] = "Special Agent",
+            [4] = "Senior Agent",
+            [5] = "Supervisory Agent",
+            [6] = "Chief of Staff",
+            [7] = "Director"
+        }
+    },
+    GOV = {
+        skins = {
+            --120, 141, 253, 286, 294
+        },
+        color = clr.GOV,
+        ranks = {
+            [1] = "Chief Justice",
+            [2] = "Staff",
+            [3] = "Senior Staff",
+            [4] = "Supervisor",
+            [5] = "Judge",
+            [6] = "Commissioner",
+            [7] = "Senator"
+        }
+    },
+    SASD = {
+        skins = {
+            --265, 266, 267, 280, 281, 282, 283, 284, 285, 288, 300, 301, 302, 306, 307, 309, 310, 311
+        },
+        color = clr.SASD,
+        ranks = {
+            [1] = "Trainee",
+            [2] = "Trooper",
+            [3] = "Deputy",
+            [4] = "Senior Deputy",
+            [5] = "Chief Deputy",
+            [6] = "Undersheriff",
+            [7] = "Sheriff"
         }
     }
 }
+
+-- Factions
+local factions = {
+    colors = {},
+    skins = {},
+    names = {},
+    ranks = {},
+    badges = {}
+}
+
+-- Extra Badges
+local extraBadges = {
+    [clr.WHITE] = "No Badge",
+    [clr.TEAM_MED_COLOR] = "LSFMD",
+    [clr.TEAM_NEWS_COLOR] = "SANEWS",
+    [clr.DD] = "DD",
+    [clr.YELLOW] = "PB",
+    [clr.TWRED] = "MW",
+    [clr.ORANGE] = "Prisoner"
+}
+
+-- Add Extra Badges
+for color, name in pairs(extraBadges) do
+    factions.badges[color] = name
+end
+
+-- Setup Factions
+for name, faction in pairs(factionData) do
+    factions.colors[faction.color] = true
+
+    for _, skinId in pairs(faction.skins) do
+        factions.skins[skinId] = true
+    end
+
+    table.insert(factions.names, name)
+    factions.ranks[name] = faction.ranks
+    factions.badges[faction.color] = name
+end
 
 -- Menu Variables
 local menu = {
@@ -1566,7 +1703,7 @@ local menu = {
 	fonts = {
         title = "Font Settings",
 		window = new.bool(false),
-        size = {x = 473, y = 288},
+        size = {x = 570, y = 185},
         pivot = {x = 0.5, y = 0.5},
         dragging = new.bool(true)
 	},
@@ -1702,77 +1839,81 @@ local invalidAnimsSet = {
 -- Max Kits
 local maxKits = 6
 
--- Black Market
-local blackMarket = {
-    maxSelections = 6,
-    getItemFrom = 0,
-    gettingItem = false,
-    isProcessing = false,
-    currentKey = nil,
-    obtainedItems = {},
-    Items = {
-        [1] = {label = 'Health/Armor', index = 2, weapon = nil, price = 350},
-        [2] = {label = 'Silenced', index = 6, weapon = 23, price = 150, group = 2, priority = 1},
-        [3] = {label = '9mm', index = 7, weapon = 22, price = 200, group = 2, priority = 2},
-        [4] = {label = 'Deagle', index = 13, weapon = 24, price = 1000, group = 2, priority = 3},
-        [5] = {label = 'Shotgun', index = 8, weapon = 25, price = 400, group = 3, priority = 1},
-        [6] = {label = 'Spas-12', index = 16, weapon = 27, price = 2250, group = 3, priority = 2},
-        [7] = {label = 'MP5', index = 9, weapon = 29, price = 550, group = 4, priority = 3},
-        [8] = {label = 'UZI', index = 10, weapon = 28, price = 700, group = 4, priority = 2},
-        [9] = {label = 'Tec-9', index = 11, weapon = 32, price = 700, group = 4, priority = 1},
-        [10] = {label = 'Country Rifle', index = 12, weapon = 33, price = 850, group = 6, priority = 1},
-        [11] = {label = 'Sniper Rifle', index = 17, weapon = 34, price = 3850, group = 6, priority = 2},
-        [12] = {label = 'AK-47', index = 14, weapon = 30, price = 1400, group = 5, priority = 1},
-        [13] = {label = 'M4', index = 15, weapon = 31, price = 1400, group = 5, priority = 2}
+local lockers = {
+    blackmarket = {
+        isBindActive = false,
+        isProcessing = false,
+        maxSelections = 6,
+        getItemFrom = 0,
+        gettingItem = false,
+        currentKey = nil,
+        obtainedItems = {},
+        thread = nil,
+        Items = {
+            [1] = {label = 'Health/Armor', index = 2, weapon = nil, price = 350},
+            [2] = {label = 'Silenced', index = 6, weapon = 23, price = 150, group = 2, priority = 1},
+            [3] = {label = '9mm', index = 7, weapon = 22, price = 200, group = 2, priority = 2},
+            [4] = {label = 'Deagle', index = 13, weapon = 24, price = 1000, group = 2, priority = 3},
+            [5] = {label = 'Shotgun', index = 8, weapon = 25, price = 400, group = 3, priority = 1},
+            [6] = {label = 'Spas-12', index = 16, weapon = 27, price = 2250, group = 3, priority = 2},
+            [7] = {label = 'MP5', index = 9, weapon = 29, price = 550, group = 4, priority = 3},
+            [8] = {label = 'UZI', index = 10, weapon = 28, price = 700, group = 4, priority = 2},
+            [9] = {label = 'Tec-9', index = 11, weapon = 32, price = 700, group = 4, priority = 1},
+            [10] = {label = 'Country Rifle', index = 12, weapon = 33, price = 850, group = 6, priority = 1},
+            [11] = {label = 'Sniper Rifle', index = 17, weapon = 34, price = 3850, group = 6, priority = 2},
+            [12] = {label = 'AK-47', index = 14, weapon = 30, price = 1400, group = 5, priority = 1},
+            [13] = {label = 'M4', index = 15, weapon = 31, price = 1400, group = 5, priority = 2}
+        },
+        ExclusiveGroups = {
+            [1] = {2, 3, 4},  -- Handguns: Silenced, 9mm, Deagle
+            [2] = {5, 6},    -- Shotguns: Shotgun, Spas-12
+            [3] = {7, 8, 9},  -- SMGs: MP5, UZI, Tec-9
+            [4] = {10, 11},    -- Rifles: Country Rifle, Sniper Rifle
+            [5] = {12, 13}    -- Assault Rifles: AK-47, M4
+        },
+        combineGroups = {
+            {2, 3, 4},
+            {5, 6},
+            {7, 8, 9},
+            {10, 11},
+            {12, 13}
+        }
     },
-    ExclusiveGroups = {
-        [1] = {2, 3, 4},  -- Handguns: Silenced, 9mm, Deagle
-        [2] = {5, 6},    -- Shotguns: Shotgun, Spas-12
-        [3] = {7, 8, 9},  -- SMGs: MP5, UZI, Tec-9
-        [4] = {10, 11},    -- Rifles: Country Rifle, Sniper Rifle
-        [5] = {12, 13}    -- Assault Rifles: AK-47, M4
-    },
-    combineGroups = {
-        {2, 3, 4},
-        {5, 6},
-        {7, 8, 9},
-        {10, 11},
-        {12, 13}
-    }
-}
-
-local factionLocker = {
-    maxSelections = 6,
-    getItemFrom = 0,
-    gettingItem = false,
-    isProcessing = false,
-    currentKey = nil,
-    obtainedItems = {},  -- To collect items obtained
-    Items = {
-        [1] = {label = 'Deagle', index = 0, weapon = 24, price = nil},
-        [2] = {label = 'Shotgun', index = 1, weapon = 25, price = nil, group = 3, priority = 1},
-        [3] = {label = 'SPAS-12', index = 2, weapon = 27, price = 2250, group = 3, priority = 2}, -- ARES: 3200
-        [4] = {label = 'MP5', index = 3, weapon = 29, price = 150}, -- ARES: 250
-        [5] = {label = 'M4', index = 4, weapon = 31, price = 1400, group = 5, priority = 2}, -- ARES: 2100
-        [6] = {label = 'AK-47', index = 5, weapon = 30, price = 1400, group = 5, priority = 1}, -- ARES: 2100
-        [7] = {label = 'Teargas', index = 6, weapon = 17, price = nil},
-        [8] = {label = 'Camera', index = 7, weapon = 43, price = nil},
-        [9] = {label = 'Sniper', index = 8, weapon = 34, price = 4550}, -- ARES: 5500
-        [10] = {label = 'Armor', index = 9, weapon = nil, price = nil},
-        [11] = {label = 'Health', index = 10, weapon = nil, price = nil},
-        [12] = {label = 'Baton/Mace', index = 11, weapon = nil, price = nil}
-    },
-    ExclusiveGroups = {
-        [1] = {2, 3},  -- Group 1: Shotgun, SPAS-12
-        [2] = {5, 6},  -- Group 2: M4, AK-47
-        [3] = {8, 12} -- Group 3: Camera, Baton/Mace
-    },
-    combineGroups = {
-        {1, 4, 9}, -- Deagle, MP5, Sniper
-        {2, 3}, -- Shotgun, SPAS-12
-        {5, 6}, -- M4, AK-47
-        {10, 11}, -- Health, Armor
-        {7, 8} -- Teargas, Camera
+    factionlocker = {
+        isBindActive = false,
+        isProcessing = false,
+        maxSelections = 6,
+        getItemFrom = 0,
+        gettingItem = false,
+        currentKey = nil,
+        obtainedItems = {},
+        thread = nil,
+        Items = {
+            [1] = {label = 'Deagle', index = 0, weapon = 24, price = nil},
+            [2] = {label = 'Shotgun', index = 1, weapon = 25, price = nil, group = 3, priority = 1},
+            [3] = {label = 'SPAS-12', index = 2, weapon = 27, price = 2250, group = 3, priority = 2}, -- ARES: 3200
+            [4] = {label = 'MP5', index = 3, weapon = 29, price = 150}, -- ARES: 250
+            [5] = {label = 'M4', index = 4, weapon = 31, price = 1400, group = 5, priority = 2}, -- ARES: 2100
+            [6] = {label = 'AK-47', index = 5, weapon = 30, price = 1400, group = 5, priority = 1}, -- ARES: 2100
+            [7] = {label = 'Teargas', index = 6, weapon = 17, price = nil},
+            [8] = {label = 'Camera', index = 7, weapon = 43, price = nil},
+            [9] = {label = 'Sniper', index = 8, weapon = 34, price = 4550}, -- ARES: 5500
+            [10] = {label = 'Armor', index = 9, weapon = nil, price = nil},
+            [11] = {label = 'Health', index = 10, weapon = nil, price = nil},
+            [12] = {label = 'Baton/Mace', index = 11, weapon = nil, price = nil}
+        },
+        ExclusiveGroups = {
+            [1] = {2, 3},  -- Group 1: Shotgun, SPAS-12
+            [2] = {5, 6},  -- Group 2: M4, AK-47
+            [3] = {8, 12} -- Group 3: Camera, Baton/Mace
+        },
+        combineGroups = {
+            {1, 4, 9}, -- Deagle, MP5, Sniper
+            {2, 3}, -- Shotgun, SPAS-12
+            {5, 6}, -- M4, AK-47
+            {10, 11}, -- Health, Armor
+            {7, 8} -- Teargas, Camera
+        }
     }
 }
 
@@ -2040,16 +2181,14 @@ function main()
             end
         end
 
-        if factionLocker.isProcessing then
-            if not isPlayerInLocation(autobind.FactionLocker.Locations) then
-                factionLocker.isProcessing = false
-            end
+        if lockers.factionlocker.isProcessing and not isPlayerInLocation(autobind.FactionLocker.Locations) then
+            lockers.factionlocker.isProcessing = false
+            lockers.factionlocker.isBindActive = false
         end
 
-        if blackMarket.isProcessing then
-            if not isPlayerInLocation(autobind.BlackMarket.Locations) then
-                blackMarket.isProcessing = false
-            end
+        if lockers.blackmarket.isProcessing and not isPlayerInLocation(autobind.BlackMarket.Locations) then
+            lockers.blackmarket.isProcessing = false
+            lockers.blackmarket.isBindActive = false
         end
 
         if isCharInAnyCar(ped) then
@@ -2118,7 +2257,7 @@ local function vestModeConditions(playerId, skinId)
         return family.skins[skinId] ~= nil
     elseif mode == "Faction" then
         local playerColor = sampGetPlayerColor(playerId)
-        return factions.colors[playerColor] and (not autobind.AutoVest.useSkins or factions.skins[skinId]) ~= nil
+        return factions.colors[changeAlpha(playerColor, 0)] and (not autobind.AutoVest.useSkins or factions.skins[skinId]) ~= nil
     end
 
     return false
@@ -2302,36 +2441,49 @@ function canObtainItem(item, items)
 end
 
 -- Reset Locker
-function resetLocker(locker)
-    locker.getItemFrom = 0
-    locker.gettingItem = false
-    locker.currentKey = nil
+function resetLocker(name)
+    lockers[name].getItemFrom = 0
+    lockers[name].gettingItem = false
+    lockers[name].currentKey = nil
+    lockers[name].obtainedItems = {}
 end
 
-function handleLocker(kitNumber, locker, name, command)
+function handleLocker(kitNumber, name, command)
     local fullName = name:gsub(" ", "")
+    local lowerName = fullName:lower()
+
+    if lockers[lowerName].isBindActive then
+        print("isBindActive")
+        return
+    end
+
+    lockers[lowerName].isBindActive = true
 
     -- Check if locker is already processing
-    if locker.isProcessing then
+    if lockers[lowerName].isProcessing then
         formattedAddChatMessage(("You are already getting items from %s, please wait."):format(name), clr.YELLOW)
+        lockers[lowerName].isBindActive = false
         return
     end
     
     -- Check if player is muted
     if checkMuted() then
         formattedAddChatMessage("You have been muted for spamming, please wait.", clr.YELLOW)
+        lockers[lowerName].isBindActive = false
         return
     end
 
     -- Make sure player is in the correct location
     if not isPlayerInLocation(autobind[fullName].Locations) then
         formattedAddChatMessage(("You are not at the %s!"):format(name), clr.GREY)
+        lockers[lowerName].isBindActive = false
         return
     end
 
     -- Prevent item retrieval when frozen
     if not isPlayerControlOn(h) then
         formattedAddChatMessage("You cannot get items while frozen, please wait.", clr.YELLOW)
+        lockers[lowerName].isBindActive = false
         return
     end
 
@@ -2339,36 +2491,41 @@ function handleLocker(kitNumber, locker, name, command)
     if checkHeal() then
         local timeLeft = math.ceil(timers.Heal.timer - (localClock() - timers.Heal.last))
         formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
+        lockers[lowerName].isBindActive = false
         return
     end
 
     -- Check if the player can afford the kit
     local money = getPlayerMoney()
-    local totalPrice = calculateTotalPrice(autobind[fullName]["Kit" .. kitNumber], locker.Items)
+    local totalPrice = calculateTotalPrice(autobind[fullName]["Kit" .. kitNumber], lockers[lowerName].Items)
     if totalPrice and money < totalPrice and totalPrice ~= 0 then
         formattedAddChatMessage(("You do not have enough money to buy this kit, you need $%s more. Total price: $%s."):format(
             formatNumber(totalPrice - money), 
             formatNumber(totalPrice)), 
         clr.YELLOW)
+        lockers[lowerName].isBindActive = false
         return
     end
 
+    -- Start processing and reset bind
+    lockers[lowerName].isProcessing = true
+    lockers[lowerName].isBindActive = false
+
     -- Start fresh
-    resetLocker(locker)
-    locker.getItemFrom = kitNumber
-    locker.obtainedItems = {}
-    locker.isProcessing = true
-    
+    resetLocker(lowerName)
+    lockers[lowerName].getItemFrom = kitNumber
+    lockers[lowerName].thread = nil
+
     -- Create a new thread to avoid blocking the main script
-    lua_thread.create(function()
+    lockers[lowerName].thread = lua_thread.create(function()
         local kitItems = autobind[fullName]["Kit" .. kitNumber]
 
         local neededItems = {}
         local skippedItems = {}
         for _, itemIndex in ipairs(kitItems) do
-            local item = locker.Items[itemIndex]
+            local item = lockers[lowerName].Items[itemIndex]
             if item then
-                if canObtainItem(item, locker.Items) then
+                if canObtainItem(item, lockers[lowerName].Items) then
                     table.insert(neededItems, item)
                 else
                     -- We skip this item (because the player already has it, or can't get it)
@@ -2378,15 +2535,20 @@ function handleLocker(kitNumber, locker, name, command)
         end
 
         for i, item in ipairs(neededItems) do
-            locker.currentKey = item.index
-            locker.gettingItem = true
+            if not lockers[lowerName].isProcessing --[[or lockers[lowerName].isBindActive]] then
+                print("not processing")
+                return
+            end
+
+            lockers[lowerName].currentKey = item.index
+            lockers[lowerName].gettingItem = true
             sampSendChat(command)
             
             -- Wait until the script marks the key retrieval as "done"
-            repeat wait(0) until not locker.gettingItem
+            repeat wait(0) until not lockers[lowerName].gettingItem
             
             -- Insert this item label into the "obtained" array
-            table.insert(locker.obtainedItems, item.label)
+            table.insert(lockers[lowerName].obtainedItems, item.label)
 
             if (i % 3 == 0) and (i < #neededItems) then
                 local waitTime = math.random(1500, 1750)
@@ -2408,11 +2570,12 @@ function handleLocker(kitNumber, locker, name, command)
                 
                 wait(waitTime)
             end
+            wait(200)
         end
 
         -- Check if items were obtained
-        if #locker.obtainedItems > 0 then
-            formattedAddChatMessage(string.format("Obtained items: {%06x}%s.", clr.WHITE, table.concat(locker.obtainedItems, ", ")), clr.YELLOW)
+        if #lockers[lowerName].obtainedItems > 0 then
+            formattedAddChatMessage(string.format("Obtained items: {%06x}%s.", clr.WHITE, table.concat(lockers[lowerName].obtainedItems, ", ")), clr.YELLOW)
         end
         
         -- Check if items were skipped
@@ -2425,7 +2588,7 @@ function handleLocker(kitNumber, locker, name, command)
         -- FINAL CHECK: Verify items are actually in the player's possession now
         local notObtained = {}
         for _, item in ipairs(neededItems) do
-            if canObtainItem(item, locker.Items) then
+            if canObtainItem(item, lockers[lowerName].Items) then
                 table.insert(notObtained, item.label)
             end
         end
@@ -2439,8 +2602,8 @@ function handleLocker(kitNumber, locker, name, command)
         end
         
         -- Cleanup
-        resetLocker(locker)
-        locker.isProcessing = false
+        lockers[lowerName].isProcessing = false
+        resetLocker(lowerName)
     end)
 end
 
@@ -2552,18 +2715,22 @@ local keyFunctions = {
 
 -- Initialize Key Functions (Black Market)
 function InitializeBlackMarketKeyFunctions()
-    for i = 1, autobind.Settings.currentBlackMarketKits do
-        if keyFunctions["BlackMarket" .. i] == nil then
-            keyFunctions["BlackMarket" .. i] = function() handleLocker(i, blackMarket, "Black Market", "/bm") end
+    for kitId = 1, autobind.Settings.currentBlackMarketKits do
+        if keyFunctions["BlackMarket" .. kitId] == nil then
+            keyFunctions["BlackMarket" .. kitId] = function()
+                handleLocker(kitId, "Black Market", "/bm")
+            end
         end
     end
 end
 
 -- Initialize Key Functions (Faction Locker)
 function InitializeFactionLockerKeyFunctions()
-    for i = 1, autobind.Settings.currentFactionLockerKits do
-        if keyFunctions["FactionLocker" .. i] == nil then
-            keyFunctions["FactionLocker" .. i] = function() handleLocker(i, factionLocker, "Faction Locker", "/locker") end
+    for kitId = 1, autobind.Settings.currentFactionLockerKits do
+        if keyFunctions["FactionLocker" .. kitId] == nil then
+            keyFunctions["FactionLocker" .. kitId] = function() 
+                handleLocker(kitId, "Faction Locker", "/locker")
+            end
         end
     end
 end
@@ -2588,6 +2755,14 @@ function createKeybinds()
             keys = value.Keys,
             type = value.Type
         }
+
+        if key:find("FactionLocker") and lockers.factionlocker.isProcessing then
+            return
+        end
+
+        if key:find("BlackMarket") and lockers.blackmarket.isProcessing then
+            return
+        end
 
         if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
             if activeCheck(true, true, true, true, true) and not menu.settings.window[0] then
@@ -4328,7 +4503,7 @@ local messageHandlers = {
     -- ARES Radio
     {
         pattern = "^%*%*%s*(.-):%s*(.-)%s*%*%*$",
-        color = clrRGBA["RADIO"],
+        color = clrRGBA["TEAM_FBI_COLOR"],
         action = function(header, message)
             -- Check if settings and faction modifications are enabled
             if not (autobind.Settings and autobind.Settings.Faction and autobind.Settings.Faction.modifyRadioChat) then
@@ -4375,7 +4550,7 @@ local messageHandlers = {
                 local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
                 local divOrRank = skipDiv and rank or string.format("%s %s", div, rank)
                 return {
-                    clrRGBA["RADIO"],
+                    clrRGBA["TEAM_FBI_COLOR"],
                     string.format("** %s %s (%d): {%06x}%s", divOrRank, playerName, playerId, clr.GREY, message)
                 }
             end
@@ -4433,7 +4608,7 @@ local messageHandlers = {
                         ["Sniper"] = 5500
                     }
 
-                    for i, item in ipairs(factionLocker.Items) do
+                    for i, item in ipairs(lockers.factionlocker.Items) do
                         if aresPriceMapping[item.label] then
                             item.price = aresPriceMapping[item.label]
                         end
@@ -4488,7 +4663,8 @@ local messageHandlers = {
         action = function(freq, playerName, message)
             local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
             if playerId then
-                return {clrRGBA["PUBLICRADIO_COLOR"], string.format("** %s Radio ** {%06x}%s (%d){%06x}: %s", autobind.Settings.mode, sampGetPlayerColor(playerId), playerName, playerId, clr.PUBLICRADIO_COLOR, message)}
+                local playerColor = sampGetPlayerColor(playerId)
+                return {clrRGBA["PUBLICRADIO_COLOR"], string.format("** %s Radio ** {%06x}%s (%d){%06x}: %s", autobind.Settings.mode, changeAlpha(playerColor, 0), playerName, playerId, clr.PUBLICRADIO_COLOR, message)}
             end
         end
     },
@@ -4734,7 +4910,9 @@ local messageHandlers = {
             formattedAddChatMessage("You can't use your lockers if you were recently shot. Timer extended by 5 seconds.")
             setTimer(5, timers.Heal)
 
-            factionLocker.isProcessing = false
+            lockers.factionlocker.isProcessing = false
+            lockers.factionlocker.thread = nil
+            resetLocker("factionlocker")
             return false
         end
     },
@@ -4762,9 +4940,9 @@ local messageHandlers = {
         pattern = "^You are not a Sapphire or Diamond Donator%!",
         color = clrRGBA["GREY"],
         action = function()
-            if blackMarket.getItemFrom > 0 then
-                blackMarket.getItemFrom = 0
-                blackMarket.gettingItem = false
+            if lockers.blackmarket.getItemFrom > 0 then
+                lockers.blackmarket.getItemFrom = 0
+                lockers.blackmarket.gettingItem = false
             end
         end
     },
@@ -4773,9 +4951,9 @@ local messageHandlers = {
         pattern = "^%s*You are not at the black market%!",
         color = clrRGBA["GRAD2"],
         action = function()
-            if blackMarket.getItemFrom > 0 then
-                blackMarket.getItemFrom = 0
-                blackMarket.gettingItem = false
+            if lockers.blackmarket.getItemFrom > 0 then
+                lockers.blackmarket.getItemFrom = 0
+                lockers.blackmarket.gettingItem = false
             end
         end
     },
@@ -4929,11 +5107,13 @@ local messageHandlers = {
     },
     -- Requesting immediate backup
     {
-        pattern = "^(.+) is requesting immediate backup at (.+).$",
+        pattern = "^(.+) is requesting immediate backup at%s*(.-)%.$",
         color = clrRGBA["TEAM_BLUE_COLOR"],
         action = function(nickname, location)
+            local cleanLocation = location:match("^%s*(.-)%s*$") or ""
             local playerId = sampGetPlayerIdByNickname(nickname:gsub("%s+", "_"))
-            if playerId and location then
+            local playerColor = sampGetPlayerColor(playerId)
+            if playerId and cleanLocation then
                 local _, localPlayerId = sampGetPlayerIdByCharHandle(ped)
                 if localPlayerId == playerId then
                     backup.enable = true
@@ -4942,7 +5122,7 @@ local messageHandlers = {
                     backup.playerId = playerId
                     backup.location = location
                 end
-                return {clrRGBA["TEAM_BLUE_COLOR"], string.format("%s (%d) is requesting immediate backup at %s.", nickname, playerId, location)}
+                return {clrRGBA["WHITE"], string.format("{%06x}%s (%d) {FFFFFF}is requesting immediate backup %s.", changeAlpha(playerColor, 0), nickname, playerId, (cleanLocation == "" and "out of the map or no location was provided" or string.format("at {%06x}%s", clr.YELLOW, cleanLocation)))}
             end
         end
     },
@@ -5308,7 +5488,7 @@ local messageHandlers = {
         pattern = "^DIAMOND DONATOR: You have purchased an? (.-) for %$([%d,]+)%.$",
         color = clrRGBA["BLUE"],
         action = function(item, price)
-            if blackMarket.isProcessing then
+            if lockers.blackmarket.isProcessing then
                 return false
             end
         end
@@ -5318,7 +5498,7 @@ local messageHandlers = {
         pattern = "^DIAMOND DONATOR: You have purchased full health and armor for %$350%.$",
         color = clrRGBA["BLUE"],
         action = function()
-            if blackMarket.isProcessing then
+            if lockers.blackmarket.isProcessing then
                 return false
             end
         end
@@ -5328,7 +5508,7 @@ local messageHandlers = {
         pattern = "^You have purchased an? (.-) for %$([%d,]+)%.$",
         color = clrRGBA["WHITE"],
         action = function(item, price)
-            if factionLocker.isProcessing then
+            if lockers.factionlocker.isProcessing then
                 return false
             end
         end
@@ -5498,33 +5678,33 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
     end
     
     -- Black Market
-    if blackMarket.getItemFrom > 0 then
+    if lockers.blackmarket.getItemFrom > 0 then
         if not title:find("Black Market") then 
-            blackMarket.getItemFrom = 0 
-            blackMarket.gettingItem = false
-            blackMarket.currentKey = nil
+            lockers.blackmarket.getItemFrom = 0 
+            lockers.blackmarket.gettingItem = false
+            lockers.blackmarket.currentKey = nil
             return false 
         end
-        sampSendDialogResponse(id, 1, blackMarket.currentKey, nil)
-        blackMarket.gettingItem = false
+        sampSendDialogResponse(id, 1, lockers.blackmarket.currentKey, nil)
+        lockers.blackmarket.gettingItem = false
         return false
     end
 
     -- Faction Locker
-    if factionLocker.getItemFrom > 0 then
+    if lockers.factionlocker.getItemFrom > 0 then
         if title:find('[LSPD|FBI|ARES] Menu') then
             sampSendDialogResponse(id, 1, 1, nil)
             return false
         end
 
         if not title:find("[LSPD|FBI|ARES] Equipment") then 
-            factionLocker.getItemFrom = 0 
-            factionLocker.gettingItem = false
-            factionLocker.currentKey = nil
+            lockers.factionlocker.getItemFrom = 0 
+            lockers.factionlocker.gettingItem = false
+            lockers.factionlocker.currentKey = nil
             return false
         end
-        sampSendDialogResponse(id, 1, factionLocker.currentKey, nil)
-        factionLocker.gettingItem = false
+        sampSendDialogResponse(id, 1, lockers.factionlocker.currentKey, nil)
+        lockers.factionlocker.gettingItem = false
         return false
     end
 end
@@ -5698,6 +5878,31 @@ local elements = {
         end,
         isVisible = function()
             return (backup.playerName and backup.playerName ~= "" and backup.playerId and backup.playerId ~= -1) or menu.fonts.window[0]
+        end,
+    },
+    FactionBadge = {
+        enable = function() return autobind.FactionBadge.enable end,
+        pos = function() return autobind.FactionBadge.Pos end,
+        colors = function()
+            local _, playerId = sampGetPlayerIdByCharHandle(ped)
+            local playerColor = sampGetPlayerColor(playerId)
+            return {text = changeAlpha(playerColor, 0)}
+        end,
+        align = function() return autobind.FactionBadge.align end,
+        fontName = function() return autobind.FactionBadge.font end,
+        fontSize = function() return autobind.FactionBadge.size end,
+        flags = function() return autobind.FactionBadge.flags end,
+        textFunc = function(self)
+            if factions.badges[self.colors().text] then
+                local faction = factions.badges[self.colors().text]
+                if faction then
+                    return string.format("{%06x}%s", self.colors().text, faction)
+                end
+            end
+            return ""
+        end,
+        isVisible = function()
+            return true
         end,
     }
 }
@@ -6280,6 +6485,22 @@ function(self)
             handleAutosaveCheckbox()
 
             imgui.SameLine()
+            if imgui.Button(fa.ICON_FA_KEYBOARD .. " Keybinds") then
+                local keybinds = menu.keybinds
+                keybinds.window[0] = not keybinds.window[0]
+            end
+            imgui.CustomTooltip("Opens keybinds settings.")
+            imgui.CustomTooltip(string.format("You can also use {%06x}'/%s keybinds'{FFFFFF} to open this menu.", clr.GREY, shortName))
+
+            imgui.SameLine()
+            if imgui.Button(fa.ICON_FA_FONT .. " Fonts") then
+                local fonts = menu.fonts
+                fonts.window[0] = not fonts.window[0]
+            end
+            imgui.CustomTooltip("Opens fonts settings.")
+            imgui.CustomTooltip(string.format("You can also use {%06x}'/%s fonts'{FFFFFF} to open this menu.", clr.GREY, shortName))
+
+            imgui.SameLine()
             if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " BMS") then
                 local blackmarket = menu.blackmarket
                 blackmarket.window[0] = not blackmarket.window[0]
@@ -6295,6 +6516,14 @@ function(self)
                 end
                 imgui.CustomTooltip("Opens faction locker settings.")
                 imgui.CustomTooltip(string.format("You can also use {%06x}'/%s locker'{FFFFFF} to open this menu.", clr.GREY, shortName))
+            elseif autobind.Settings.mode == "Family" then
+                imgui.SameLine()
+                if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " Skins") then
+                    local skins = menu.skins
+                    skins.window[0] = not skins.window[0]
+                end
+                imgui.CustomTooltip("Opens family skins settings.")
+                imgui.CustomTooltip(string.format("You can also use {%06x}'/%s skins'{FFFFFF} to open this menu.", clr.GREY, shortName))
             end
             imgui.EndChild()
             imgui.PopFont()
@@ -6503,16 +6732,17 @@ function(self)
         setupWindowDraggingAndSize("Fonts")
 
         local fontElements = {
-            {label = "OfferedTo", value = autobind.AutoVest.offeredTo},
-            {label = "OfferedFrom", value = autobind.AutoVest.offeredFrom},
-            {label = "PedsCount", value = autobind.PedsCount},
-            {label = "AutoFind", value = autobind.AutoFind},
-            {label = "LastBackup", value = autobind.LastBackup}
+            {name = "OfferedTo", label = "Vest To", value = autobind.AutoVest.offeredTo, disableColor = false},
+            {name = "OfferedFrom", label = "Vest From", value = autobind.AutoVest.offeredFrom, disableColor = false},
+            {name = "PedsCount", label = "Peds", value = autobind.PedsCount, disableColor = false},
+            {name = "AutoFind", label = "Auto Find", value = autobind.AutoFind, disableColor = false},
+            {name = "LastBackup", label = "Last Backup", value = autobind.LastBackup, disableColor = false},
+            {name = "FactionBadge", label = "Badge", value = autobind.FactionBadge, disableColor = true}
         }        
 
         if imgui.Begin(menu.fonts.title, menu.fonts.window, imgui_flags) then
             for index, value in pairs(fontElements) do
-                createFontMenuElement(value.label, value.value)
+                createFontMenuElement(value.name, value.label, value.value, value.disableColor)
                 if index ~= #fontElements then
                     imgui.Separator()
                 end
@@ -6554,11 +6784,11 @@ function(self)
     end
 
     if menu.blackmarket.window[0] then
-        renderLockerWindow("Black Market", "BlackMarket", blackMarket)
+        renderLockerWindow("Black Market", "BlackMarket")
     end
 
     if menu.factionlocker.window[0] then
-        renderLockerWindow("Faction Locker", "FactionLocker", factionLocker)
+        renderLockerWindow("Faction Locker", "FactionLocker")
     end
 
     if menu.changelog.window[0] then
@@ -6632,7 +6862,7 @@ end
 -- Define a global boolean variable
 local hasRunForThirdKey = false
 
-function renderLockerWindow(label, name, locker)
+function renderLockerWindow(label, name)
     local lowerName = name:lower()
     local pageId = menu[lowerName].pageId
     local currentKits = "current" .. name .. "Kits"
@@ -6648,7 +6878,7 @@ function renderLockerWindow(label, name, locker)
     setupWindowDraggingAndSize(name, false)
 
     -- Calculate total price
-    local totalPrice = calculateTotalPrice(autobind[name]["Kit" .. pageId], locker.Items)
+    local totalPrice = calculateTotalPrice(autobind[name]["Kit" .. pageId], lockers[lowerName].Items)
 
     -- Define a table to map kitId to key and menu data
     local kits = {}
@@ -6705,10 +6935,10 @@ function renderLockerWindow(label, name, locker)
                 end
                 imgui.EndGroup()
 
-                local selectionTitle = string.format("Selection: [%d/%d]", #autobind[name]["Kit" .. pageId], locker.maxSelections)
+                local selectionTitle = string.format("Selection: [%d/%d]", #autobind[name]["Kit" .. pageId], lockers[lowerName].maxSelections)
 
                 -- Create selection menu
-                createMenu(selectionTitle, locker.Items, kit.menu, locker.ExclusiveGroups, locker.maxSelections, {combineGroups = locker.combineGroups})
+                createMenu(selectionTitle, lockers[lowerName].Items, kit.menu, lockers[lowerName].ExclusiveGroups, lockers[lowerName].maxSelections, {combineGroups = lockers[lowerName].combineGroups})
             end
         end
     end
@@ -6878,6 +7108,31 @@ function renderSkins()
             if imgui.Checkbox("Use Skins", new.bool(autobind.AutoVest.useSkins)) then
                 autobind.AutoVest.useSkins = not autobind.AutoVest.useSkins
             end
+            imgui.CustomTooltip("Checks if the player has the skins listed below, otherwise it relies on color.")
+
+            -- Build a list of unique RGB colors from factions.colors:
+            imgui.SameLine()
+
+            local uniqueColors = {}
+            local seenRGB = {}
+            for color, _ in pairs(factions.colors) do
+                -- Mask out the alpha; only keep the RGB value.
+                local rgb = bit.band(color, 0xFFFFFF)
+                if not seenRGB[rgb] then
+                    seenRGB[rgb] = true
+                    table.insert(uniqueColors, rgb)
+                end
+            end
+
+            -- Now, print all unique colors in one line using imgui.TextColoredRGB.
+            -- The function call below uses string.format to output the hex code in "{%06x}Hello!" format.
+            for i, color in ipairs(uniqueColors) do
+                imgui.TextColoredRGB(string.format("{%06x}Hello!", color))
+                if i < #uniqueColors then
+                    imgui.SameLine()
+                end
+                imgui.CustomTooltip(string.format("Factions: %06X", color))
+            end
 
             local startPos = imgui.GetCursorPos()
             drawSkinImages(factions.skins, columns, imageSize, spacing, startPos)
@@ -6962,112 +7217,130 @@ function renderNames()
     imgui.EndChild()
 end
 
--- Function to create ImGui font menu for elements
-function createFontMenuElement(title, element)
+-- Function to create ImGui font menu for elements using columns
+function createFontMenuElement(name, title, element, disableColor)
     -- Check if the element exists
     if element.enable == nil then
         return
     end
 
-    -- Title
-    imgui.AlignTextToFramePadding()
-    imgui.Text(title..":")
+    -- First row: Use 6 columns for Title, Toggle, Alignment, Flags, Font Name, and Font Size
+    imgui.Columns(8, title .. "_columns_row1", false)
+    
+    -- Set column widths for the first row (adjust these as needed)
+    imgui.SetColumnWidth(0, 70) -- Title
+    imgui.SetColumnWidth(1, 45)  -- Toggle checkbox
+    imgui.SetColumnWidth(2, 80)  -- Alignment options
+    imgui.SetColumnWidth(3, 85) -- Font flags options
+    imgui.SetColumnWidth(4, 90) -- Font name input
+    imgui.SetColumnWidth(5, 60)  -- Font size adjustment
+    imgui.SetColumnWidth(6, 60) -- Text color picker
+    imgui.SetColumnWidth(7, 100) -- Value color picker
 
-    imgui.SameLine()
-    if imgui.Checkbox(string.format("%s##%s", element.enable and "Enabled" or "Disabled", title), new.bool(element.enable)) then
+    imgui.PushFont(fontData.font)
+
+    -- Column 1: Title
+    imgui.AlignTextToFramePadding()
+    imgui.Text(title .. ":")
+    imgui.NextColumn()
+
+    -- Column 2: Toggle Checkbox
+    if imgui.Checkbox(string.format("%s##%s_toggle", element.enable and "On" or "Off", title), new.bool(element.enable)) then
         element.enable = not element.enable
     end
+    imgui.NextColumn()
 
-    imgui.SameLine()
-    -- Position adjustment
-    imgui.PushItemWidth(170)
-    local pos = new.float[2](element.Pos.x, element.Pos.y)
-    if imgui.DragFloat2('##position_' .. title, pos, 0.1, 0, 2000, "%.1f") then
-        element.Pos.x, element.Pos.y = pos[0], pos[1]
-    end
-    imgui.PopItemWidth()
-
-    imgui.SameLine()
-    -- Text color picker
-    imgui.BeginGroup()
-    imgui.PushItemWidth(95)
-    local clrText = convertColor(element.colors.text, true, false, false)
-    local clrEdit1 = new.float[3](clrText.r, clrText.g, clrText.b)
-    if imgui.ColorEdit3('##text_color_' .. title, clrEdit1, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then
-        element.colors.text = joinARGB(0, clrEdit1[0], clrEdit1[1], clrEdit1[2], true)
-    end
-    imgui.PopItemWidth()
-    imgui.SameLine(25)
-    imgui.Text('Text')
-    imgui.EndGroup()
-
-    imgui.SameLine()
-    -- Value color picker
-    imgui.BeginGroup()
-    imgui.PushItemWidth(95)
-    local clrValue = convertColor(element.colors.value, true, false, false)
-    local clrEdit2 = new.float[3](clrValue.r, clrValue.g, clrValue.b)
-    if imgui.ColorEdit3('##value_color_' .. title, clrEdit2, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then
-        element.colors.value = joinARGB(0, clrEdit2[0], clrEdit2[1], clrEdit2[2], true)
-    end
-    imgui.PopItemWidth()
-    imgui.SameLine(25)
-    imgui.Text('Value')
-    imgui.EndGroup()
-
-    -- Alignment options
-    local alignments = {'Left', 'Center', 'Right'}
+    -- Column 3: Alignment Options
     imgui.PushItemWidth(68)
-    local currentAlignment = element.align == 'left' and 1 or element.align == 'center' and 2 or 3
+    local alignments = {"Left", "Center", "Right"}
+    local currentAlignment = element.align == "left" and 1 or element.align == "center" and 2 or 3
     if imgui.BeginCombo("##align_" .. title, alignments[currentAlignment]) then
         for i = 1, #alignments do
             if imgui.Selectable(alignments[i], currentAlignment == i) then
-                currentAlignment = i
                 element.align = alignments[i]:lower()
             end
         end
         imgui.EndCombo()
     end
     imgui.PopItemWidth()
+    imgui.NextColumn()
 
-    imgui.SameLine()
-    -- Font flags options
-    local flagNames = {'BOLD', 'ITALICS', 'BORDER', 'SHADOW', 'UNDERLINE', 'STRIKEOUT'}
+    -- Column 4: Font Flags Options
     imgui.PushItemWidth(75)
-    if imgui.BeginCombo("##flags_" .. title, 'Flags') then
+    if imgui.BeginCombo("##flags_" .. title, "Flags") then
+        local flagNames = {'BOLD', 'ITALICS', 'BORDER', 'SHADOW', 'UNDERLINE', 'STRIKEOUT'}
         for _, flagName in ipairs(flagNames) do
             local flagValue = element.flags[flagName]
             if imgui.Checkbox(flagName:lower():upperFirst(), new.bool(flagValue)) then
                 element.flags[flagName] = not flagValue
                 -- Recreate the font with new flags if necessary
-                createFont(title, element)
+                createFont(name, element)
             end
         end
         imgui.EndCombo()
     end
     imgui.PopItemWidth()
+    imgui.NextColumn()
 
-    imgui.SameLine()
-    -- Font name input
-    imgui.PushItemWidth(95)
+    -- Column 5: Font Name Input
+    imgui.PushItemWidth(80)
     local fontName = new.char[30](element.font)
     if imgui.InputText("##font_" .. title, fontName, sizeof(fontName), imgui.InputTextFlags.EnterReturnsTrue) then
         element.font = ffi.string(fontName)
-        createFont(title, element)
+        createFont(name, element)
     end
     imgui.PopItemWidth()
+    imgui.NextColumn()
 
-    imgui.SameLine()
-    -- Font size adjustment
-    imgui.PushItemWidth(75)
-    local fontSize = new.int(element.size)
-    if imgui.InputInt("##size_" .. title, fontSize, 1, 1, imgui.InputTextFlags.EnterReturnsTrue) then
-        if fontSize[0] >= 1 and fontSize[0] <= 72 then
-            element.size = fontSize[0]
-            createFont(title, element)
+    -- Column 6: Font Size Adjustment
+    imgui.PushItemWidth(50)
+    if imgui.BeginCombo("##size_" .. title, tostring(element.size)) then
+        for i = 1, 72 do
+            if imgui.Selectable(tostring(i), element.size == i) then
+                element.size = i
+                createFont(name, element)
+            end
         end
+        imgui.EndCombo()
     end
     imgui.PopItemWidth()
+    imgui.NextColumn()
+
+    if not disableColor then
+        -- Column 1: Text Color Picker
+        imgui.BeginGroup()
+        imgui.PushItemWidth(95)
+        local clrText = convertColor(element.colors.text, true, false, false)
+        local clrEdit1 = new.float[3](clrText.r, clrText.g, clrText.b)
+        if imgui.ColorEdit3("##text_color_" .. title, clrEdit1, 
+                            imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then
+            element.colors.text = joinARGB(0, clrEdit1[0], clrEdit1[1], clrEdit1[2], true)
+        end
+        imgui.PopItemWidth()
+        imgui.SameLine(25)
+        imgui.Text("Text")
+        imgui.EndGroup()
+        imgui.NextColumn()
+
+        -- Column 2: Value Color Picker
+        imgui.BeginGroup()
+        imgui.PushItemWidth(95)
+        local clrValue = convertColor(element.colors.value, true, false, false)
+        local clrEdit2 = new.float[3](clrValue.r, clrValue.g, clrValue.b)
+        if imgui.ColorEdit3("##value_color_" .. title, clrEdit2, 
+                            imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel) then
+            element.colors.value = joinARGB(0, clrEdit2[0], clrEdit2[1], clrEdit2[2], true)
+        end
+        imgui.PopItemWidth()
+        imgui.SameLine(25)
+        imgui.Text("Value")
+        imgui.EndGroup()
+
+        -- End second row columns
+        imgui.Columns(1)
+    end
+
+    imgui.PopFont()
 end
 
 -- Function to Download Files From URL
@@ -7877,26 +8150,6 @@ function formatTime(seconds)
     timeString = timeString .. ("%.1f second%s"):format(seconds, seconds ~= 1 and "s" or "")
 
     return timeString
-end
-
--- List to Set
-function listToSet(list)
-    local set = {}
-    for _, value in pairs(list) do
-        set[value] = true
-    end
-    return set
-end
-
--- Set to List
-function setToList(set)
-    local list = {}
-    for key, value in pairs(set) do
-        if value then
-            table.insert(list, key)
-        end
-    end
-    return list
 end
 
 -- Function to remove color codes from text
