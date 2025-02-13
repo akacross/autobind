@@ -4,44 +4,35 @@ script_version("1.8.24b3")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
--- Short Name
 local shortName = "ab"
 
--- Script Information
 local scriptPath = thisScript().path
 local scriptName = thisScript().name
 local scriptVersion = thisScript().version
 
--- Working Directory
 local workingDir = getWorkingDirectory()
 
--- Paths Table
 local Paths = {
     libraries = workingDir .. '\\lib\\',
     config = workingDir .. '\\config\\',
     resource = workingDir .. '\\resource\\'
 }
 
--- Settings Path
 Paths.settings = Paths.config .. scriptName .. '\\'
-
--- Skin Icons Path
 Paths.skins = Paths.resource .. 'skins\\'
+Paths.fonts = Paths.resource .. 'fonts\\'
 
--- Files Table
 local Files = {
     script = Paths.settings .. scriptName .. '.lua',
-    fawesome5 = Paths.resource .. 'fonts\\fa-solid-900.ttf',
+    fawesome5 = Paths.fonts .. 'fa-solid-900.ttf',
     trebucbd = getFolderPath(0x14) .. '\\trebucbd.ttf'
 }
 
--- Helper Function to Construct Base URL
 local function getBaseUrl(beta, scriptname)
     local branch = beta and "beta/" or ""
     return "https://raw.githubusercontent.com/akacross/" .. scriptname .. "/main/" .. branch
 end
 
--- URLs Table
 local Urls = {
     libraries = getBaseUrl(false, "libraries") .. "lib/",
     resource = getBaseUrl(false, "libraries") .. "resource/",
@@ -58,13 +49,11 @@ local Urls = {
     betatesters = getBaseUrl(true, scriptName) .. "betatesters.json"
 }
 
--- Use your safeRequire function
 local function safeRequire(moduleName)
     local ok, result = pcall(require, moduleName)
     return ok and result or nil, result
 end
 
--- Dependency definitions
 local dependencies = {
     {name = 'ltn12', var = 'ltn12', localFile = "ltn12.lua"},
     {name = 'ssl.https', var = 'https', 
@@ -142,21 +131,17 @@ local dependencies = {
     }
 }
 
--- File Download Function
 local function downloadFiles(table, onCompleteCallback)
     local downloadsInProgress = 0
     local downloadsStarted = false
     local callbackCalled = false
 
-    -- Download Files
     for _, file in ipairs(table) do
-        -- Extract folder path from file.path (everything before the last path separator)
         local folderPath = file.path:match("^(.*)[\\/].+$")
         if folderPath and #folderPath > 0 then
             createDirectory(folderPath)
         end
 
-        -- Update Progress
         downloadsInProgress = downloadsInProgress + 1
         downloadsStarted = true
         downloadUrlToFile(file.url, file.path, function(id, status, p1, p2)
@@ -171,24 +156,19 @@ local function downloadFiles(table, onCompleteCallback)
         end)
     end
 
-    -- Call Callback
     if not downloadsStarted and onCompleteCallback and not callbackCalled then
         callbackCalled = true
         onCompleteCallback(downloadsStarted)
     end
 end
 
--- Missing Files
 local missingFiles = {}
 
--- Check and Download Dependencies
 local function checkAndDownloadDependencies(callback)
     for _, dep in ipairs(dependencies) do
         local filesMissing = false
 
-        -- Check for a single file (localFile) or multiple files (localFiles)
         if dep.localFiles then
-            -- For dependencies with multiple required files.
             for _, file in ipairs(dep.localFiles) do
                 local fullPath = Paths.libraries .. file:gsub("/", "\\")
                 if not doesFileExist(fullPath) then
@@ -200,7 +180,6 @@ local function checkAndDownloadDependencies(callback)
                 end
             end
         elseif dep.localFile then
-            -- For dependencies with a single file.
             local fullPath = Paths.libraries .. dep.localFile:gsub("/", "\\")
             if not doesFileExist(fullPath) then
                 filesMissing = true
@@ -222,7 +201,6 @@ local function checkAndDownloadDependencies(callback)
             end
         end
 
-        -- Attempt to require the module only if files are not missing.
         if not filesMissing then
             local mod = safeRequire(dep.name)
             if not mod then
@@ -243,12 +221,11 @@ local function checkAndDownloadDependencies(callback)
             end
         end)
     else
-        callback()  -- All files as required are already present.
+        callback()
     end
 end
 
--- List to Set
-function listToSet(list)
+function table.listToSet(list)
     local set = {}
     for _, value in pairs(list) do
         set[value] = true
@@ -256,8 +233,7 @@ function listToSet(list)
     return set
 end
 
--- Set to List
-function setToList(set)
+function table.setToList(set)
     local list = {}
     for key, value in pairs(set) do
         if value then
@@ -267,7 +243,6 @@ function setToList(set)
     return list
 end
 
--- Color Table
 local clr = {
     GRAD1 = 0xB4B5B7, -- #B4B5B7
     GRAD2 = 0xBFC0C2, -- #BFC0C2
@@ -338,17 +313,14 @@ local clr = {
     SASD = 0xCC9933, -- #CC9933
 }
 
--- Formatted Add Chat Message
 local function formattedAddChatMessage(message, color)
     color = color or clr.WHITE
     sampAddChatMessage(("[%s] {%06x}%s"):format(shortName:upper(), color, message), clr.LIGHTBLUE)
 end
 
 function main()
-    -- Wait for SAMP
     while not isSampAvailable() do wait(100) end
 
-    -- Check for missing files
     if #missingFiles > 0 then
         local missingFileText = #missingFiles == 1 and "file" or "files"
         formattedAddChatMessage(("Some dependencies are missing, downloading now... (Missing: %d %s)"):format(#missingFiles, missingFileText))
@@ -364,7 +336,6 @@ local mainScript, scriptError = xpcall(checkAndDownloadDependencies, debug.trace
 local loadedModules = {}
 local statusMessages = {success = {}, failed = {}}
 
--- Load dependencies
 for _, dep in ipairs(dependencies) do
     local mod, err = safeRequire(dep.name)
     if mod and dep.callback then
@@ -393,7 +364,6 @@ for _, dep in ipairs(dependencies) do
     end
 end
 
--- Print status messages
 print("Loaded modules: " .. table.concat(statusMessages.success, ", "))
 if #statusMessages.failed > 0 then
     print("Failed to load modules: " .. table.concat(statusMessages.failed, ", "))
@@ -402,16 +372,12 @@ end
 -- Dynamically set script dependencies if needed.
 script_dependencies(table.unpack(statusMessages.success))
 
--- Encoding
 encoding.default = 'CP1251'
 local u8 = encoding.UTF8
 
--- Ensure Global `lanes.download_manager` Exists with `lane` and `linda`
 if not _G['lanes.download_manager'] then
-    -- Create a new linda for communication
     local linda = lanes.linda()
 
-    -- Define the lane generator for handling downloads and data fetching
     local download_lane_gen = lanes.gen('*', {
         package = {
             path = package.path,
@@ -565,7 +531,6 @@ if not _G['lanes.download_manager'] then
         end
     end)
 
-    -- Define the main lane generator for handling requests
     local main_lane_gen = lanes.gen('*', {
         package = {
             path = package.path,
@@ -574,7 +539,6 @@ if not _G['lanes.download_manager'] then
     },
     function(linda)
         while true do
-            -- Wait for a 'request' with a timeout of 10 ms
             local key, val = linda:receive(0, 'request')
             if key == 'request' and val then
                 local taskType = val.taskType
@@ -582,7 +546,6 @@ if not _G['lanes.download_manager'] then
                 local filePath = val.filePath
                 local identifier = val.identifier
 
-                -- Start a new lane for the task
                 local success, laneOrErr = pcall(download_lane_gen, linda, taskType, fileUrl, filePath, identifier)
                 if not success then
                     linda:send('error_' .. identifier, { error = "Failed to start lane: " .. tostring(laneOrErr) })
@@ -591,17 +554,14 @@ if not _G['lanes.download_manager'] then
         end
     end)
 
-    -- Start the main lane, passing `linda` as an argument
     local success, laneOrErr = pcall(main_lane_gen, linda)
     if success then
-        -- Assign the lane and linda to the global table
         _G['lanes.download_manager'] = { lane = laneOrErr, linda = linda }
     else
-        print("Failed to start main lane:", laneOrErr)  -- Print the error message
+        print("Failed to start main lane:", laneOrErr)
     end
 end
  
--- DownloadManager Class
 local DownloadManager = {}
 DownloadManager.__index = DownloadManager
 
@@ -623,13 +583,12 @@ function DownloadManager:new(maxConcurrentDownloads)
         lanesHttp = _G['lanes.download_manager'].linda,
         hasCompleted = false,
         pendingBatches = {},
-        pendingFetchBatches = {},  -- Queue for pending fetch batches
+        pendingFetchBatches = {},
     }
     setmetatable(manager, self)
     return manager
 end
 
--- Queue Downloads
 function DownloadManager:queueDownloads(fileTable, onComplete, onProgress)
     table.insert(self.pendingBatches, {files = fileTable, onComplete = onComplete, onProgress = onProgress})
 
@@ -638,7 +597,6 @@ function DownloadManager:queueDownloads(fileTable, onComplete, onProgress)
     end
 end
 
--- Process the next batch of downloads
 function DownloadManager:processNextBatch()
     if #self.pendingBatches == 0 then
         return
@@ -648,7 +606,7 @@ function DownloadManager:processNextBatch()
     self.onCompleteCallback = batch.onComplete
     self.onProgressCallback = batch.onProgress
 
-    self.hasCompleted = false  -- Reset for the new batch
+    self.hasCompleted = false
     self.totalFiles = 0
     self.completedFiles = 0
     self.downloadQueue = {}
@@ -667,17 +625,15 @@ function DownloadManager:processNextBatch()
         self.isDownloading = true
         self:processQueue()
     else
-        -- Do not set self.hasCompleted here
-        self:completeBatch()  -- This will set self.hasCompleted
+        self:completeBatch()
     end
 end
 
--- Complete the current batch and start the next one
 function DownloadManager:completeBatch()
     if self.hasCompleted then
-        return  -- Prevent multiple calls
+        return
     end
-    self.hasCompleted = true  -- Set it here
+    self.hasCompleted = true
     self.isDownloading = false
     if self.onCompleteCallback then
         self.onCompleteCallback(self.completedFiles > 0)
@@ -685,7 +641,6 @@ function DownloadManager:completeBatch()
     self:processNextBatch()
 end
 
--- Process Queue
 function DownloadManager:processQueue()
     while self.activeDownloads < self.maxConcurrentDownloads and #self.downloadQueue > 0 do
         local file = table.remove(self.downloadQueue, 1)
@@ -694,12 +649,10 @@ function DownloadManager:processQueue()
     end
 end
 
--- Download File
 function DownloadManager:downloadFile(file)
     local identifier = file.index or tostring(file.url)
     local linda = self.lanesHttp
 
-    -- Send the download request to the lane
     linda:send('request', {
         taskType = "download",
         url = file.url,
@@ -707,11 +660,9 @@ function DownloadManager:downloadFile(file)
         identifier = identifier
     })
 
-    -- Add to downloadsInProgress
     self.downloadsInProgress[identifier] = file
 end
 
--- Queue Fetches
 function DownloadManager:queueFetches(fetchTable, onComplete)
     table.insert(self.pendingFetchBatches, {fetches = fetchTable, onComplete = onComplete})
 
@@ -720,7 +671,6 @@ function DownloadManager:queueFetches(fetchTable, onComplete)
     end
 end
 
--- Process the next batch of fetches
 function DownloadManager:processNextFetchBatch()
     if #self.pendingFetchBatches == 0 then
         self.isFetching = false
@@ -728,10 +678,10 @@ function DownloadManager:processNextFetchBatch()
     end
 
     local batch = table.remove(self.pendingFetchBatches, 1)
-    self.currentFetchOnCompleteCallback = batch.onComplete  -- Store onComplete per batch
+    self.currentFetchOnCompleteCallback = batch.onComplete
 
     self.isFetching = true
-    self.hasCompletedFetch = false  -- Reset for the new batch
+    self.hasCompletedFetch = false
     self.activeFetches = 0
     self.fetchQueue = {}
     self.fetchesInProgress = {}
@@ -744,30 +694,24 @@ function DownloadManager:processNextFetchBatch()
     if #self.fetchQueue > 0 then
         self:processFetchQueue()
     else
-        -- Do not set self.hasCompletedFetch here
-        self:completeFetchBatch()  -- This will set self.hasCompletedFetch
+        self:completeFetchBatch() 
     end
 end
 
--- Process Fetch Queue
 function DownloadManager:processFetchQueue()
     while self.activeFetches < self.maxConcurrentDownloads and #self.fetchQueue > 0 do
         local fetch = table.remove(self.fetchQueue, 1)
         self.activeFetches = self.activeFetches + 1
         self:fetchData(fetch, function(decodedData)
-            -- Handle the completion of a fetch
             if fetch.callback then
                 fetch.callback(decodedData)
             end
 
-            -- Decrement active fetches
             self.activeFetches = self.activeFetches - 1
 
-            -- Check if more fetches can be processed
             if #self.fetchQueue > 0 then
                 self:processFetchQueue()
             else
-                -- Complete the current fetch batch if all fetches are done
                 if self.activeFetches == 0 then
                     self:completeFetchBatch()
                 end
@@ -776,44 +720,37 @@ function DownloadManager:processFetchQueue()
     end
 end
 
--- Complete the current fetch batch and start the next one
 function DownloadManager:completeFetchBatch()
     if self.hasCompletedFetch then
-        return  -- Prevent multiple calls
+        return
     end
-    self.hasCompletedFetch = true  -- Set it here
+    self.hasCompletedFetch = true
     if self.currentFetchOnCompleteCallback then
         self.currentFetchOnCompleteCallback()
     end
     self:processNextFetchBatch()
 end
 
--- Fetch Data
 function DownloadManager:fetchData(fetch, onComplete)
     local identifier = fetch.identifier or tostring(fetch.url)
     local linda = self.lanesHttp
 
-    -- Send the fetch request to the lane
     linda:send('request', {
         taskType = "fetch",
         url = fetch.url,
         identifier = identifier
     })
 
-    -- Add to fetchesInProgress
     self.fetchesInProgress[identifier] = fetch
 
-    -- Store the onComplete callback
     fetch.onComplete = onComplete
 end
 
--- Update Downloads and Fetches
 function DownloadManager:updateDownloads()
     local linda = self.lanesHttp
     local downloadsToRemove = {}
     local fetchesToRemove = {}
 
-    -- Process downloads
     for identifier, file in pairs(self.downloadsInProgress) do
         local progressKey = 'progress_' .. identifier
         local completedKey = 'completed_' .. identifier
@@ -827,13 +764,11 @@ function DownloadManager:updateDownloads()
                 downloadsToRemove[identifier] = true
                 self:processQueue()
             elseif key == errorKey then
-                -- Handle error
                 self.completedFiles = self.completedFiles + 1
                 self.activeDownloads = self.activeDownloads - 1
                 downloadsToRemove[identifier] = true
                 self:processQueue()
             elseif key == progressKey then
-                -- Update progress
                 local fileProgress = 0
                 if val.total > 0 then
                     fileProgress = (val.downloaded / val.total) * 100
@@ -841,7 +776,6 @@ function DownloadManager:updateDownloads()
                     fileProgress = 0
                 end
 
-                -- Calculate overall progress
                 local overallProgress = ((self.completedFiles + (val.downloaded / val.total)) / self.totalFiles) * 100
 
                 if self.onProgressCallback then
@@ -857,7 +791,6 @@ function DownloadManager:updateDownloads()
         end
     end
 
-    -- Process fetches
     for identifier, fetch in pairs(self.fetchesInProgress) do
         local completedKey = 'completed_' .. identifier
         local errorKey = 'error_' .. identifier
@@ -868,7 +801,7 @@ function DownloadManager:updateDownloads()
                 local content = val.content
                 local success, decoded = pcall(decodeJson, content)
                 if success then
-                    fetch.onComplete(decoded)  -- Use fetch.onComplete instead of fetch.callback
+                    fetch.onComplete(decoded)
                 else
                     print("Failed to decode JSON:", decoded)
                 end
@@ -880,31 +813,25 @@ function DownloadManager:updateDownloads()
         end
     end
 
-    -- Remove completed downloads
     for identifier in pairs(downloadsToRemove) do
         self.downloadsInProgress[identifier] = nil
     end
 
-    -- Remove completed fetches
     for identifier in pairs(fetchesToRemove) do
         self.fetchesInProgress[identifier] = nil
     end
 
-    -- Check if all downloads are complete
     if self.activeDownloads == 0 and #self.downloadQueue == 0 and not self.hasCompleted then
         self:completeBatch()
     end
 
-    -- Check if all fetches are complete
     if self.activeFetches == 0 and #self.fetchQueue == 0 and not self.isFetching then
         self.isFetching = false
     end
 end
 
--- Initialize the DownloadManager instance at the top level
-local downloadManager = DownloadManager:new(10)  -- max 10 concurrent downloads
+local downloadManager = DownloadManager:new(10)
 
--- Global Variables to Store Download Progress
 local downloadProgress = {
     currentFile = "",
     fileProgress = 0,
@@ -915,7 +842,6 @@ local downloadProgress = {
     completedFiles = 0
 }
 
--- Radio Stations
 local radioStations = {
     [0] = {name = "Playback FM", desc = "Classic East Coast Hip Hop"},
     [1] = {name = "K-Rose", desc = "Classic Country"},
@@ -933,7 +859,10 @@ local radioStations = {
     [24] = {name = "User Track", desc = "Personal Audio Files"},
 }
 
--- Function to get the name of the time based on the 24-hour clock
+function toggleRadio(bool)
+	mem.write(0x4EB9A0, bool and 0x8BE98B55 or 0x8B0004C2, 4, false)
+end
+
 function getTimeName(hour)
     local timeNames = {
         [0] = "Midnight",
@@ -965,7 +894,6 @@ function getTimeName(hour)
     return timeNames[hour] or "Invalid hour"
 end
 
--- Weather Names
 local function getWeatherName(weatherId)
     local weatherNames = {
         [0] = "Extra Sunny",
@@ -996,12 +924,22 @@ local function getWeatherName(weatherId)
     return weatherNames[weatherId] or "Unknown"
 end
 
--- Helper function for rounding to the nearest integer
+local bikeIds = {[481] = true, [509] = true, [510] = true}
+local motoIds = {
+	[448] = true, [461] = true, [462] = true, [463] = true, [468] = true, [471] = true, 
+	[521] = true, [522] = true, [523] = true, [581] = true, [586] = true
+}
+
+local invalidAnimsSet = {
+    [1158] = true, [1159] = true, [1160] = true, [1161] = true, [1162] = true,
+    [1163] = true, [1164] = true, [1165] = true, [1166] = true, [1167] = true,
+    [1069] = true, [1070] = true, [746] = true
+}
+
 local function round(value)
     return math.floor(value + 0.5)
 end
 
--- Convert Color with optional HSVA output
 function convertColor(color, normalize, includeAlpha, outputHSVA)
     if type(color) ~= "number" then
         error("Invalid color value. Expected a number.")
@@ -1032,7 +970,6 @@ function convertColor(color, normalize, includeAlpha, outputHSVA)
     end
 end
 
--- Join ARGB with proper rounding
 function joinARGB(a, r, g, b, normalized)
     if normalized then
         a, r, g, b = round(a * 255), round(r * 255), round(g * 255), round(b * 255)
@@ -1054,17 +991,12 @@ function joinARGB(a, r, g, b, normalized)
     return color
 end
 
--- Change Alpha
 function changeAlpha(color, newAlpha)
-    -- Clamp the newAlpha value between 0 and 255
     newAlpha = math.max(0, math.min(255, newAlpha))
-    -- Remove the current alpha by keeping only the lower 24 bits (RGB)
     local rgb = bit.band(color, 0x00FFFFFF)
-    -- Combine the new alpha (shifted left 24 bits) with the RGB
     return bit.bor(bit.lshift(newAlpha, 24), rgb)
 end
 
--- Unsigned Color
 function toUnsignedColor(color)
     return color % (2^32)
 end
@@ -1155,7 +1087,6 @@ for name, color in pairs(clr) do
     clrRGBA[name] = joinARGB(clrs.r, clrs.g, clrs.b, clrs.a, false)
 end
 
--- imgui color table
 local imguiRGBA = {}
 for name, color in pairs(clr) do
     -- Extract color components using ABGR format
@@ -1175,57 +1106,36 @@ for name, color in pairs(clr) do
     imguiRGBA[name] = imgui.ImVec4(clrs.r, clrs.g, clrs.b, clrs.a)
 end
 
--- Capitalize First Letter
 function string:upperFirst()
     return (self:gsub("^%l", string.upper))
 end
 
--- Trim String
 function string:trim()
     return self:match("^%s*(.-)%s*$")
 end
+
 
 -- Global Variables
 local new, str, sizeof = imgui.new, ffi.string, ffi.sizeof
 local ped, h = playerPed, playerHandle
 
--- AutoReboot
 local autoReboot = false
 
--- Key Press Type
 local PressType = {KeyDown = isKeyDown, KeyPressed = wasKeyPressed}
 
--- Changelog
 local changelog = nil
-
--- Betatesters
 local betatesters = nil
 
--- Function Status Table
 local funcsLoop = {
     callbackCalled = false
 }
 
--- Screen Resolution
 local resX, resY = getScreenResolution()
 
--- Cursor Active
 local cursorActive = false
-
--- Player Paused
 local isPlayerPaused = false
-
--- AFK
 local isPlayerAFK = false
 
--- Update Status
-local updateStatus = "up_to_date"
-local currentContent = nil
-
--- Radio Variables
-local currentRadio = 0
-
--- Function to deep copy a table
 local function deepCopy(original)
     local copy = {}
     for k, v in pairs(original) do
@@ -1238,7 +1148,6 @@ local function deepCopy(original)
     return copy
 end
 
--- Default Settings
 local autobind_defaultSettings = {
 	Settings = {
 		enable = true,
@@ -1247,39 +1156,35 @@ local autobind_defaultSettings = {
         lastVersion = "",
         fetchBeta = false,
 		autoSave = true,
+        autoReconnect = true,
         autoRepair = true,
         autoPicklockOnFail = false,
         autoPicklockOnSuccess = false,
         autoFarm = false,
         noRadio = false,
         favoriteRadio = 6,
-        currentBlackMarketKits = 3,
-        currentFactionLockerKits = 3,
         callSecondaryBackup = false,
         notifySkins = false,
 		mode = "Family",
         HZRadio = true,
-        LoginAudio = true,
-        vehicleStorageMenu = false,
-        Frisk = {
-            mustTarget = false,
-            mustAim = true
-        },
-        Family = {
-            frequency = 0,
-            turf = false,
-            point = false,
-            disableAfterCapturing = true
-        },
-        Faction = {
-            type = "",
-            frequency = 0,
-            turf = true,
-            modifyRadioChat = false,
-            autoBadge = true
-        }
+        LoginMusic = true,
+        mustTargetToFrisk = false,
+        mustAimToFrisk = true
 	},
-	AutoVest = {
+    Family = {
+        frequency = 0,
+        turf = false,
+        point = false,
+        disableAfterCapturing = true
+    },
+    Faction = {
+        type = "",
+        frequency = 0,
+        turf = true,
+        modifyRadioChat = false,
+        autoBadge = true
+    },
+    AutoVest = {
 		enable = true,
         price = 200,
 		everyone = false,
@@ -1290,20 +1195,15 @@ local autobind_defaultSettings = {
 		skins = {123},
 		names = {"Cross_Lynch", "Allen_Lynch"},
 		skinsUrl = Urls.skins,
-		namesUrl = Urls.names,
+		namesUrl = Urls.names
+	},
+    Elements = {
         offeredTo = {
             enable = true,
             Pos = {x = resX / 6.0, y = resY / 2 + 25},
             font = "Arial",
             size = 9,
-            flags = {
-                BOLD = true,
-                ITALICS = false,
-                BORDER = true,
-                SHADOW = true,
-                UNDERLINE = false,
-                STRIKEOUT = false
-            },
+            flags = {BOLD = true, ITALICS = false, BORDER = true, SHADOW = true, UNDERLINE = false, STRIKEOUT = false},
             align = "left",
             colors = {text = clr.WHITE, value = clr.LIGHTBLUE}
         },
@@ -1312,81 +1212,45 @@ local autobind_defaultSettings = {
             Pos = {x = resX / 6.0, y = resY / 2 + 50},
             font = "Arial",
             size = 9,
-            flags = {
-                BOLD = true,
-                ITALICS = false,
-                BORDER = true,
-                SHADOW = true,
-                UNDERLINE = false,
-                STRIKEOUT = false
-
-            },
+            flags = {BOLD = true, ITALICS = false, BORDER = true, SHADOW = true, UNDERLINE = false, STRIKEOUT = false},
             align = "left",
             colors = {text = clr.WHITE, value = clr.LIGHTBLUE}
+        },
+        PedsCount = {
+            enable = true,
+            Pos = {x = resX / 6.0, y = resY / 2 + 75},
+            font = "Arial",
+            size = 9,
+            flags = {BOLD = true, ITALICS = false, BORDER = true, SHADOW = true, UNDERLINE = false, STRIKEOUT = false},
+            align = "left",
+            colors = {text = clr.REALRED, value = clr.WHITE}
+        },
+        AutoFind = {
+            enable = true,
+            Pos = {x = resX / 6.0, y = resY / 2 + 100},
+            font = "Arial",
+            size = 9,
+            flags = {BOLD = true, ITALICS = false, BORDER = true, SHADOW = true, UNDERLINE = false, STRIKEOUT = false},
+            align = "left",
+            colors = {text = clr.REALRED, value = clr.WHITE}
+        },
+        LastBackup = {
+            enable = true,
+            Pos = {x = resX / 6.0, y = resY / 2 + 125},
+            font = "Arial",
+            size = 9,
+            flags = {BOLD = true, ITALICS = false, BORDER = true, SHADOW = true, UNDERLINE = false, STRIKEOUT = false},
+            align = "left",
+            colors = {text = clr.REALRED, value = clr.WHITE}
+        },
+        FactionBadge = {
+            enable = true,
+            Pos = {x = resX / 6.0, y = resY / 2 + 150},
+            font = "Arial",
+            size = 9,
+            flags = {BOLD = true, ITALICS = false, BORDER = true, SHADOW = true, UNDERLINE = false, STRIKEOUT = false},
+            align = "left"
         }
-	},
-    PedsCount = {
-        enable = true,
-        Pos = {x = resX / 6.0, y = resY / 2 + 75},
-        font = "Arial",
-        size = 9,
-        flags = {
-            BOLD = true,
-            ITALICS = false,
-            BORDER = true,
-            SHADOW = true,
-            UNDERLINE = false,
-            STRIKEOUT = false
-        },
-        align = "left",
-        colors = {text = clr.REALRED, value = clr.WHITE}
-    },
-    AutoFind = {
-        enable = true,
-        Pos = {x = resX / 6.0, y = resY / 2 + 100},
-        font = "Arial",
-        size = 9,
-        flags = {
-            BOLD = true,
-            ITALICS = false,
-            BORDER = true,
-            SHADOW = true,
-            UNDERLINE = false,
-            STRIKEOUT = false
-        },
-        align = "left",
-        colors = {text = clr.REALRED, value = clr.WHITE}
-    },
-    LastBackup = {
-        enable = true,
-        Pos = {x = resX / 6.0, y = resY / 2 + 125},
-        font = "Arial",
-        size = 9,
-        flags = {
-            BOLD = true,
-            ITALICS = false,
-            BORDER = true,
-            SHADOW = true,
-            UNDERLINE = false,
-            STRIKEOUT = false
-        },
-        align = "left",
-        colors = {text = clr.REALRED, value = clr.WHITE}
-    },
-    FactionBadge = {
-        enable = true,
-        Pos = {x = resX / 6.0, y = resY / 2 + 150},
-        font = "Arial",
-        size = 9,
-        flags = {
-            BOLD = true,
-            ITALICS = false,
-            BORDER = true,
-            SHADOW = true,
-            UNDERLINE = false,
-            STRIKEOUT = false
-        },
-        align = "left"
     },
     CurrentPlayer = {
         name = "",
@@ -1406,23 +1270,19 @@ local autobind_defaultSettings = {
         Kit1 = {1, 4, 11},
         Kit2 = {1, 4, 13},
         Kit3 = {1, 4, 12},
+        maxKits = 3,
 		Locations = {}
     },
     FactionLocker = {
 		Kit1 = {1, 2, 10, 11},
         Kit2 = {1, 2, 10, 11},
         Kit3 = {1, 2, 10, 11},
+        maxKits = 3,
 		Locations = {}
 	},
     VehicleStorage = {
-        Vehicles = {}
-    },
-    Reconnect = {
-        serverList = {
-            {id = 1, nickname = "Horizon Gaming", ip = "samp.hzgaming.net", port = 7777},
-            {id = 2, nickname = "Horizon Gaming Beta", ip = "samp.hzgaming.net", port = 7778, password = ""}
-        },
-        autoReconnect = true,
+        Vehicles = {},
+        enable = false
     },
     TimeAndWeather = {
         hour = 12,
@@ -1455,13 +1315,11 @@ local autobind_defaultSettings = {
     }
 }
 
--- Autobind Config
 local autobind = deepCopy(autobind_defaultSettings)
 
--- HZRP Variables
+-- Horizon Server Health
 local hzrpHealth = 5000000
 
--- Timers
 local timers = {
 	Vest = {timer = 13.0, last = 0, sentTime = 0, timeOut = 3.0},
 	Accept = {timer = 0.5, last = 0},
@@ -1475,11 +1333,9 @@ local timers = {
     AFK = {timer = 45.0, last = 0, sentTime = 0, timeOut = 5.0}
 }
 
--- Guard
 local guardTime = 13.0
 local ddguardTime = 6.5
 
--- Accept Bodyguard
 local accepter = {
 	enable = false,
 	received = false,
@@ -1489,7 +1345,6 @@ local accepter = {
     thread = nil
 }
 
--- Offer Bodyguard
 local bodyguard = {
     enable = true,
 	received = false,
@@ -1498,7 +1353,6 @@ local bodyguard = {
     price = 0
 }
 
--- Auto Find
 local autofind ={
 	enable = false,
     received = false,
@@ -1508,7 +1362,6 @@ local autofind ={
     location = ""
 }
 
--- Backup
 local backup = {
     enable = false,
     playerName = "",
@@ -1516,7 +1369,6 @@ local backup = {
     location = ""
 }
 
--- Farmer
 local farmer = {
     dialogId = 22272,
     dialogId2 = 22273,
@@ -1525,34 +1377,54 @@ local farmer = {
     harvestingCount = 0
 }
 
--- Radio
 local radio = {
-    dialogId = 22274
+    dialogId = 22274,
+    current = 0
 }
 
--- Sprunk
+local vehicles = {
+    populating = false,
+    spawning = false,
+    currentIndex = -1,
+    initialFetch = false
+}
+
+local statusVehicleColors = {
+    Stored = clr.REALRED,
+    Spawned = clr.REALGREEN,
+    Respawned = clr.REALGREEN,
+    Occupied = clr.YELLOW,
+    Damaged = clr.ORANGE,
+    Disabled = clr.REALRED,
+    Impounded = clr.REALRED
+}
+
+local myFonts = {}
+local dragState = {}
+local flagValues = {
+    BOLD = 0x1, 
+    ITALICS = 0x2,
+    BORDER = 0x4, 
+    SHADOW = 0x8,
+    UNDERLINE = 0x10,
+    STRIKEOUT = 0x20
+}
+
 local usingSprunk = false
 
--- Auto Capture
 local autocap = false
 
--- Point Data
 local gzData = nil
 local enteredPoint = false
 local preventHeal = false
 
--- Names List
 local names = {}
 
--- Family
 local family = {
     turfColor = 0x8C0000FF, -- Active Turf Color (Flashing)
     skins = {}
 }
 
--- #8C0000FF
-
--- Faction Data
 local factionData = {
     LSPD = {
         skins = {
@@ -1616,7 +1488,7 @@ local factionData = {
     },
     SASD = {
         skins = {
-            --265, 266, 267, 280, 281, 282, 283, 284, 285, 288, 300, 301, 302, 306, 307, 309, 310, 311
+            265, 266, 267, 280, 281, 282, 283, 284, 285, 288, 300, 301, 302, 306, 307, 309, 310, 311
         },
         color = clr.SASD,
         ranks = {
@@ -1631,7 +1503,6 @@ local factionData = {
     }
 }
 
--- Factions
 local factions = {
     colors = {},
     skins = {},
@@ -1640,7 +1511,6 @@ local factions = {
     badges = {}
 }
 
--- Extra Badges
 local extraBadges = {
     [clr.WHITE] = "No Badge",
     [clr.TEAM_MED_COLOR] = "LSFMD",
@@ -1651,12 +1521,12 @@ local extraBadges = {
     [clr.ORANGE] = "Prisoner"
 }
 
--- Add Extra Badges
+-- Add Extra Badges to Factions Table
 for color, name in pairs(extraBadges) do
     factions.badges[color] = name
 end
 
--- Setup Factions
+-- Build Factions Table
 for name, faction in pairs(factionData) do
     factions.colors[faction.color] = true
 
@@ -1669,177 +1539,8 @@ for name, faction in pairs(factionData) do
     factions.badges[faction.color] = name
 end
 
--- Menu Variables
-local menu = {
-    initialized = new.bool(false),
-    confirm = {
-        window = new.bool(false),
-        size = {x = 300, y = 100},
-        pivot = {x = 0.5, y = 0.5},
-        update = new.bool(false)
-    },
-	settings = {
-        title = ("%s %s - v%s"):format(fa.ICON_FA_SHIELD_ALT, scriptName:upperFirst(), scriptVersion),
-		window = new.bool(false),
-        size = {x = 588, y = 420},
-        pivot = {x = 0.5, y = 0.5},
-		pageId = 1,
-        dragging = new.bool(true)
-	},
-    vehiclestorage = {
-        title = "Vehicle Storage:",
-		window = new.bool(false),
-        size = {x = 338, y = 165},
-        pivot = {x = 0.5, y = 0.5},
-        dragging = new.bool(false)
-    },
-    keybinds = {
-        title = "Keybind Settings",
-		window = new.bool(false),
-        size = {x = 350, y = 400},
-        pivot = {x = 0.5, y = 0.5},
-        dragging = new.bool(true)
-    },
-	fonts = {
-        title = "Font Settings",
-		window = new.bool(false),
-        size = {x = 570, y = 185},
-        pivot = {x = 0.5, y = 0.5},
-        dragging = new.bool(true)
-	},
-	skins = {
-        title = "Family Skin Selection",
-		window = new.bool(false),
-        size = {x = 545, y = 420},
-        pivot = {x = 0.5, y = 0.5},
-		selected = -1,
-        dragging = new.bool(true)
-	},
-	blackmarket = {
-		window = new.bool(false),
-        size = {x = 226, y = 290},
-        pivot = {x = 0.5, y = 0.5},
-        pageId = 1,
-        dragging = new.bool(true)
-	},
-	factionlocker = {
-		window = new.bool(false),
-        size = {x = 226, y = 290},
-        pivot = {x = 0.5, y = 0.5},
-        pageId = 1,
-        dragging = new.bool(true)
-	},
-	changelog = {
-		window = new.bool(false),
-        size = {x = 650, y = 400},
-        pivot = {x = 0.5, y = 0.5},
-        dragging = new.bool(true)
-	}
-}
-
--- Font Data
-local fontData = {
-	fontSize = 12,
-	font = nil,
-	fontSmallSize = 8.0,
-	fontSmall = nil
-}
-
--- Menu States
-local menuStates = {
-    settings = menu.settings.window,
-    keybinds = menu.keybinds.window,
-    fonts = menu.fonts.window,
-    skins = menu.skins.window,
-    blackmarket = menu.blackmarket.window,
-    factionlocker = menu.factionlocker.window,
-    vehiclestorage = menu.vehiclestorage.window,
-    confirm = menu.confirm.window,
-    changelog = menu.changelog.window
-}
-
--- Previous Menu States
-local previousMenuStates = {
-    settings = false,
-    keybinds = false,
-    fonts = false,
-    skins = false,
-    blackmarket = false,
-    factionlocker = false,
-    vehiclestorage = false,
-    confirm = false,
-    changelog = false
-}
-
--- Escape Key Pressed
-local escapePressed = false
-
--- Update Tooltip Hovered
-local isUpdateHovered = false
-
--- Vehicle Storage Status Colors
-local statusColors = {
-    Stored = clr.REALRED,
-    Spawned = clr.REALGREEN,
-    Respawned = clr.REALGREEN,
-    Occupied = clr.YELLOW,
-    Damaged = clr.ORANGE,
-    Disabled = clr.REALRED,
-    Impounded = clr.REALRED
-}
-
--- IMGUI Flags
-local imgui_flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove
-
--- Temp Offset
-local tempOffset = {x = 0, y = 0}
-
--- Currently Dragging
-local currentlyDragging = nil
-
--- Change Key
-local changeKey = {}
-
--- Define the key editor table
-local keyEditors = {
-    {label = "Accept", key = "Accept", description = "Accepts a vest from someone. (Options are to the left)"},
-    {label = "Offer", key = "Offer", description = "Offers a vest to someone. (Options are to the left)"},
-    {label = "Take-Pills", key = "TakePills", description = "Types /takepills."},
-    {label = "Accept-Death", key = "AcceptDeath", description = "Types /acceptdeath."},
-    {label = "Frisk", key = "Frisk", description = "Frisks a player. (Options are to the left)"},
-    {label = "Bike-Bind", key = "BikeBind", description = "Makes bikes/motorcycles/quads faster by holding the bind key while riding."},
-    {label = "Sprint-Bind", key = "SprintBind", description = "Makes you sprint faster by holding the bind key while sprinting. (This is only the toggle)"},
-    {label = "Request Backup", key = "RequestBackup", description = "Types the backup command depending on what mode is detected"},
-    {label = "Use Crack", key = "UseCrack", description = "Types /usecrack."},
-    {label = "Use Pot", key = "UsePot", description = "Types /usepot."}
-}
-
--- Skin Editor
-local skinTexture = {}
-
--- Skins URLs
-local skinsUrls = {}
-
--- Bike
-local bikeIds = {[481] = true, [509] = true, [510] = true}
-
--- Moto
-local motoIds = {
-	[448] = true, [461] = true, [462] = true, [463] = true, [468] = true, [471] = true, 
-	[521] = true, [522] = true, [523] = true, [581] = true, [586] = true
-}
-
--- Invalid Animations
-local invalidAnimsSet = {
-    [1158] = true, [1159] = true, [1160] = true, [1161] = true, [1162] = true,
-    [1163] = true, [1164] = true, [1165] = true, [1166] = true, [1167] = true,
-    [1069] = true, [1070] = true, [746] = true
-}
-
--- Max Kits
-local maxKits = 6
-
 local lockers = {
+    maxKits = 6,
     blackmarket = {
         isBindActive = false,
         isProcessing = false,
@@ -1917,11 +1618,138 @@ local lockers = {
     }
 }
 
-local vehicles = {
-    populating = false,
-    spawning = false,
-    currentIndex = -1,
-    initialFetch = false
+local menu = {
+    initialized = new.bool(false),
+    confirm = {
+        window = new.bool(false),
+        size = {x = 300, y = 100},
+        pivot = {x = 0.5, y = 0.5},
+        update = new.bool(false)
+    },
+	settings = {
+        title = ("%s %s - v%s"):format(fa.ICON_FA_SHIELD_ALT, scriptName:upperFirst(), scriptVersion),
+		window = new.bool(false),
+        size = {x = 588, y = 420},
+        pivot = {x = 0.5, y = 0.5},
+		pageId = 1,
+        dragging = new.bool(true)
+	},
+    vehiclestorage = {
+        title = "Vehicle Storage:",
+		window = new.bool(false),
+        size = {x = 338, y = 165},
+        pivot = {x = 0.5, y = 0.5},
+        dragging = new.bool(false)
+    },
+    keybinds = {
+        title = "Keybind Settings",
+		window = new.bool(false),
+        size = {x = 350, y = 400},
+        pivot = {x = 0.5, y = 0.5},
+        dragging = new.bool(true)
+    },
+	fonts = {
+        title = "Font Settings",
+		window = new.bool(false),
+        size = {x = 570, y = 185},
+        pivot = {x = 0.5, y = 0.5},
+        dragging = new.bool(true)
+	},
+	skins = {
+        title = "Family Skin Selection",
+		window = new.bool(false),
+        size = {x = 545, y = 420},
+        pivot = {x = 0.5, y = 0.5},
+		selected = -1,
+        dragging = new.bool(true)
+	},
+	blackmarket = {
+		window = new.bool(false),
+        size = {x = 226, y = 290},
+        pivot = {x = 0.5, y = 0.5},
+        pageId = 1,
+        dragging = new.bool(true)
+	},
+	factionlocker = {
+		window = new.bool(false),
+        size = {x = 226, y = 290},
+        pivot = {x = 0.5, y = 0.5},
+        pageId = 1,
+        dragging = new.bool(true)
+	},
+	changelog = {
+		window = new.bool(false),
+        size = {x = 650, y = 400},
+        pivot = {x = 0.5, y = 0.5},
+        dragging = new.bool(true)
+	}
+}
+
+local imgui_flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove
+
+local fontData = {
+    large = {
+        size = 14.0,
+        font = nil
+    },
+    medium = {
+        size = 12.0,
+        font = nil
+    },
+    small = {
+        size = 8.0,
+        font = nil
+    }
+}
+
+local menuStates = {
+    settings = menu.settings.window,
+    keybinds = menu.keybinds.window,
+    fonts = menu.fonts.window,
+    skins = menu.skins.window,
+    blackmarket = menu.blackmarket.window,
+    factionlocker = menu.factionlocker.window,
+    vehiclestorage = menu.vehiclestorage.window,
+    confirm = menu.confirm.window,
+    changelog = menu.changelog.window
+}
+
+local previousMenuStates = {
+    settings = false,
+    keybinds = false,
+    fonts = false,
+    skins = false,
+    blackmarket = false,
+    factionlocker = false,
+    vehiclestorage = false,
+    confirm = false,
+    changelog = false
+}
+
+local tempOffset = {x = 0, y = 0}
+local currentlyDragging = nil
+
+local escapePressed = false
+
+local skinTextures = {}
+local skinsUrls = {}
+
+local updateStatus = "up_to_date"
+local currentContent = nil
+local isUpdateHovered = false
+
+local changeKey = {}
+local keyEditors = {
+    {label = "Accept", key = "Accept", description = "Accepts a vest from someone. (Options are to the left)"},
+    {label = "Offer", key = "Offer", description = "Offers a vest to someone. (Options are to the left)"},
+    {label = "Take-Pills", key = "TakePills", description = "Types /takepills."},
+    {label = "Accept-Death", key = "AcceptDeath", description = "Types /acceptdeath."},
+    {label = "Frisk", key = "Frisk", description = "Frisks a player. (Options are to the left)"},
+    {label = "Bike-Bind", key = "BikeBind", description = "Makes bikes/motorcycles/quads faster by holding the bind key while riding."},
+    {label = "Sprint-Bind", key = "SprintBind", description = "Makes you sprint faster by holding the bind key while sprinting. (This is only the toggle)"},
+    {label = "Request Backup", key = "RequestBackup", description = "Types the backup command depending on what mode is detected"},
+    {label = "Use Crack", key = "UseCrack", description = "Types /usecrack."},
+    {label = "Use Pot", key = "UsePot", description = "Types /usepot."}
 }
 
 -- C Definitions
@@ -1939,38 +1767,34 @@ ffi.cdef[[
 	};
 ]]
 
-local sections = {}
-for section, _ in pairs(autobind) do
-    table.insert(sections, section)
-end
-
--- Define ignore keys for each section
+-- Dynamically add ignore keys for BlackMarket and FactionLocker
 local ignoreKeysMap = {
     AutoVest = {"skins", "names"},
     Keybinds = {"BikeBind", "SprintBind", "Frisk", "TakePills", "Accept", "Offer", "AcceptDeath", "RequestBackup", "UseCrack", "UsePot"},
     BlackMarket = {"Locations"},
     FactionLocker = {"Locations"},
-    VehicleStorage = {"Vehicles"},
-    Reconnect = {"serverList"}
+    VehicleStorage = {"Vehicles"}
 }
 
--- Add dynamic keys for BlackMarket and FactionLocker
-for i = 1, maxKits do
-    table.insert(ignoreKeysMap.Keybinds, "BlackMarket" .. i)
-    table.insert(ignoreKeysMap.BlackMarket, "Kit" .. i)
-    table.insert(ignoreKeysMap.Keybinds, "FactionLocker" .. i)
-    table.insert(ignoreKeysMap.FactionLocker, "Kit" .. i)
+for kitId = 1, lockers.maxKits do
+    table.insert(ignoreKeysMap.Keybinds, "BlackMarket" .. kitId)
+    table.insert(ignoreKeysMap.BlackMarket, "Kit" .. kitId)
+    table.insert(ignoreKeysMap.Keybinds, "FactionLocker" .. kitId)
+    table.insert(ignoreKeysMap.FactionLocker, "Kit" .. kitId)
 end
 
--- create the files table
+-- Dynamically create config paths
+local sections = {}
+for section, _ in pairs(autobind) do
+    table.insert(sections, section)
+end
+
 for _, section in pairs(sections) do
     local name = section:lower()
     Files[name] = Paths.settings .. name .. '.json'
 end
 
--- Load Configs
 function loadAllConfigs()
-    -- Load each section
     for _, section in ipairs(sections) do
         local ignoreKeys = ignoreKeysMap[section] or {}
         local success, config, err = handleConfigFile(Files[section:lower()], autobind_defaultSettings[section], autobind[section], ignoreKeys)
@@ -1982,9 +1806,7 @@ function loadAllConfigs()
     end
 end
 
--- Save All Configs
 function saveAllConfigs()
-    -- Save each section
     for _, section in ipairs(sections) do
         local success, err = saveConfigWithErrorHandling(Files[section:lower()], autobind[section])
         if not success then
@@ -1993,53 +1815,52 @@ function saveAllConfigs()
     end
 end
 
--- initialize Components
 function initializeComponents()
+    -- Check if update is in progress and check update status
     if autobind.Settings.updateInProgress then
         formattedAddChatMessage(("You have successfully upgraded from Version: %s to %s"):format(autobind.Settings.lastVersion, scriptVersion))
         autobind.Settings.updateInProgress = false
         saveConfigWithErrorHandling(Files.settings, autobind.Settings)
     end
 
-    -- Update Check
     updateCheck()
 
-    -- Set Vest Timer
-    timers.Vest.timer =  autobind.AutoVest.Donor and ddguardTime or guardTime
-        
-    -- Fetch Skins
+    -- Set autovest timer based on donor status
+    timers.Vest.timer = autobind.AutoVest.Donor and ddguardTime or guardTime
+
+    -- Fetch Skins and Names
     if autobind.AutoVest.autoFetchSkins then
-        fetchDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
+        fetchJsonDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
             if decodedData then
                 autobind.AutoVest.skins = decodedData
-                family.skins = listToSet(autobind.AutoVest.skins)
+                family.skins = table.listToSet(autobind.AutoVest.skins)
             end
         end)
     else
-        family.skins = listToSet(autobind.AutoVest.skins)
+        family.skins = table.listToSet(autobind.AutoVest.skins)
     end
 
-    -- Fetch Names
     if autobind.AutoVest.autoFetchNames then
-        fetchDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
+        fetchJsonDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
             if decodedData then
                 autobind.AutoVest.names = decodedData
-                names = listToSet(autobind.AutoVest.names)
+                names = table.listToSet(autobind.AutoVest.names)
             end
         end)
     else
-        names = listToSet(autobind.AutoVest.names)
+        names = table.listToSet(autobind.AutoVest.names)
     end
 
-    fetchDataDirectlyFromURL(Urls.betatesters, function(decodedData)
+    -- Fetch Betatesters and Changelog
+    fetchJsonDataDirectlyFromURL(Urls.betatesters, function(decodedData)
         betatesters = decodedData or nil
     end)
 
-    fetchDataDirectlyFromURL(Urls.changelog, function(decodedData)
+    fetchJsonDataDirectlyFromURL(Urls.changelog, function(decodedData)
         changelog = decodedData or nil
     end)
 
-    -- Initialize Timers
+    -- Startup Timers
     for name, timer in pairs(timers) do
         if type(timer.last) == "number" and name ~= "AFK" then
             timer.last = localClock() - timer.timer
@@ -2049,19 +1870,15 @@ function initializeComponents()
         end
     end
 
-    -- Generate Skins URLs
+    -- Setup Skins
     skinsUrls = generateSkinsUrls()
-
-    -- Download Skins
     downloadSkins(skinsUrls)
 
-    -- Initialize Key Functions (Black Market)
-    InitializeBlackMarketKeyFunctions()
+    -- Setup Locker Keybinds
+    InitializeLockerKeyFunctions(autobind.BlackMarket.maxKits, "Black Market", "/bm")
+    InitializeLockerKeyFunctions(autobind.FactionLocker.maxKits, "Faction Locker", "/locker")
 
-    -- Initialize Key Functions (Faction Locker)
-    InitializeFactionLockerKeyFunctions()
-
-    -- Toggle Radio
+    -- Turn radio on/off and set favorite radio
     lua_thread.create(function()
         if isCharInAnyCar(ped) and not autobind.Settings.noRadio then
             setRadioChannel(12)
@@ -2076,32 +1893,27 @@ function initializeComponents()
         end
     end)
 
+    -- Initialize Menu
     menu.initialized[0] = true
 end
 
--- Initialize
 function main()
-	-- Check if SAMP/SAMPFUNCS is loaded
 	if not isSampLoaded() or not isSampfuncsLoaded() then return end
 
-	-- Create Directories
-    for _, path in pairs({Paths.config, Paths.resource, Paths.settings, Paths.skins}) do
+	-- Create Directories and load all configs
+    for _, path in pairs({Paths.libraries, Paths.config, Paths.resource, Paths.settings, Paths.skins, Paths.fonts}) do
         createDirectory(path)
     end
 
-	-- Load Configs
 	loadAllConfigs()
 
-	-- Wait for SAMP
     while not isSampAvailable() do wait(100) end
 
-    -- Create Chat Commands
-    createAutobindCommands()
-
-    -- Create Fonts
+    -- Create Chat Commands and Fonts
+    registerAutobindCommands()
+    registerClientCommands()
     createFonts()
 
-    -- Main Loop
     while true do wait(0)
         -- Check if not connected to the server
         if sampGetGamestate() ~= 3 then
@@ -2163,7 +1975,9 @@ function main()
                         end
 
                         -- Fix user tracks
-                        if list3 == 11 then list3 = 24 end
+                        if list3 == 11 then 
+                            list3 = 24
+                        end
 
                         setRadioChannel(list3)
                     end)
@@ -2181,42 +1995,42 @@ function main()
             end
         end
 
-        if lockers.factionlocker.isProcessing and not isPlayerInLocation(autobind.FactionLocker.Locations) then
-            lockers.factionlocker.isProcessing = false
-            lockers.factionlocker.isBindActive = false
-        end
+        -- Reset Locker Processing if player is not in location
+        resetLockerProcessing("factionlocker", autobind.FactionLocker.Locations)
+        resetLockerProcessing("blackmarket", autobind.BlackMarket.Locations)
 
-        if lockers.blackmarket.isProcessing and not isPlayerInLocation(autobind.BlackMarket.Locations) then
-            lockers.blackmarket.isProcessing = false
-            lockers.blackmarket.isBindActive = false
-        end
-
+        -- Get Radio Channel if player is in a vehicle
         if isCharInAnyCar(ped) then
-            currentRadio = getRadioChannel()
+            radio.current = getRadioChannel()
         end
 
-        -- Cursor Active
+        -- Get the status of samps cursor
         cursorActive = sampIsCursorActive()
 
         -- Vehicle Storage
-        if autobind.Settings.vehicleStorageMenu then
+        if autobind.VehicleStorage.enable then
             menu.vehiclestorage.window[0] = (--[[sampGetChatInputText():find("/v") and ]]sampIsChatInputActive()) and true or false
         end
 
-        -- Start Functions Loop
+        -- Initialize Components and send success message
         functionsLoop(function(started, failed)
-            -- Initialize Components
             initializeComponents()
 
-            -- Success Message
             formattedAddChatMessage(("%s has loaded successfully! {%06x}Type /%s help for more information."):format(scriptVersion, clr.GREY, shortName))
         end)
     end
 end
 
--- Reset Accepter and Bodyguard
+function resetLockerProcessing(name, locations)
+    if lockers[name].isProcessing and not isPlayerInLocation(locations) then
+        lockers[name].isProcessing = false
+        lockers[name].isBindActive = false
+        lockers[name].thread = nil
+        formattedAddChatMessage("You left the locker room area while getting items. Please retrieve items again.")
+    end
+end
+
 function resetAccepterAndBodyguard()
-    -- Reset accepter and bodyguard if not in game
     if accepter.playerName ~= "" and accepter.playerId ~= -1 then
         accepter.playerName = ""
         accepter.playerId = -1
@@ -2227,19 +2041,16 @@ function resetAccepterAndBodyguard()
     end
 end
 
--- Auto Vest
 local function checkBodyguardCondition()
     return bodyguard.enable or autobind.AutoVest.donor
 end
 
--- Check Animation
 local function checkAnimationCondition(playerId)
     local pAnimId = sampGetPlayerAnimationId(select(2, sampGetPlayerIdByCharHandle(ped)))
     local pAnimId2 = sampGetPlayerAnimationId(playerId)
     return not (invalidAnimsSet[pAnimId] or pAnimId2 == 746 or isButtonPressed(h, gkeys.player.LOCKTARGET))
 end
 
--- Vest Mode Conditions
 local function vestModeConditions(playerId, skinId)
     -- Check if vesting is allowed for everyone
     if autobind.AutoVest.everyone then
@@ -2263,42 +2074,32 @@ local function vestModeConditions(playerId, skinId)
     return false
 end
 
--- Check and send vest
 function checkAndSendVest(skipArmorCheck)
-    -- Current Time
     local currentTime = localClock()
-    
-    -- Check if autobind and AutoVest are enabled, and not in admin duty
     if not autobind.AutoVest.enable and not skipArmorCheck then
         return
     end
 
-    -- Check if player is AFK
     if isPlayerAFK then
         return "You cannot send a vest while AFK, move your character."
     end
 
-    -- Check if admin duty is active
     if checkAdminDuty() then
         return "You are on admin duty, you cannot send a vest."
     end
 
-    -- Check if the player is frozen
     if not isPlayerControlOn(h) then
         return "You cannot send a vest while frozen, please wait."
     end
 
-    -- Verify bodyguard condition
     if not checkBodyguardCondition() then
         return "You cannot send a vest while not a bodyguard."
     end
 
-    -- Check if the user is muted
     if checkMuted() then
         return "You cannot send a vest while muted, please wait."
     end
 
-    -- Reset bodyguard.received if timeout has elapsed
     if bodyguard.received then
         if currentTime - timers.Vest.sentTime > timers.Vest.timeOut then
             bodyguard.received = false
@@ -2307,13 +2108,11 @@ function checkAndSendVest(skipArmorCheck)
         end
     end
 
-    -- Check if under vest cooldown
     if (currentTime - timers.Vest.last) < timers.Vest.timer then
         local timeLeft = math.ceil(timers.Vest.timer - (currentTime - timers.Vest.last))
         return string.format("You must wait %d seconds before sending vest.", timeLeft > 1 and timeLeft or 1)
     end
 
-    -- Proceed to send vest if not received
     if not bodyguard.received then
         for _, player in ipairs(getVisiblePlayers(7, skipArmorCheck and "all" or "armor")) do
             if checkAnimationCondition(player.playerId) and vestModeConditions(player.playerId, player.skinId) then
@@ -2327,32 +2126,24 @@ function checkAndSendVest(skipArmorCheck)
     end
 end
 
--- Check and accept vest
 function checkAndAcceptVest(autoaccept)
-    -- Current Time
 	local currentTime = localClock()
-
-    -- Check if under vest cooldown
 	if currentTime - timers.Accept.last < timers.Accept.timer then
 		return
 	end
 
-    -- Check if player is AFK
     if isPlayerAFK then
         return "You cannot accept a vest while AFK, move your character."
     end
-    
-    -- Check if admin duty is active
+
     if checkAdminDuty() then
         return "You are on admin duty, you cannot accept a vest."
     end
 
-    -- Check if the user is muted
 	if checkMuted() then
 		return "You cannot accept a vest while muted, please wait."
 	end
 
-    -- Check if the user can heal
 	if checkHeal() then
 		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
 		return string.format("You must wait %d seconds before accepting a vest.", timeLeft > 1 and timeLeft or 1)
@@ -2380,11 +2171,10 @@ function checkAndAcceptVest(autoaccept)
 	end
 end
 
--- Check if player is in location
 function isPlayerInLocation(locations)
     -- Adjustable Z axis limits
-    local zTopLimit = 0.7  -- Top limit of the Z axis
-    local zBottomLimit = -0.7  -- Bottom limit of the Z axis
+    local zTopLimit = 0.7 
+    local zBottomLimit = -0.7 
 
     -- Get player coordinates
     local playerX, playerY, playerZ = getCharCoordinates(ped)
@@ -2400,7 +2190,6 @@ function isPlayerInLocation(locations)
     return false
 end
 
--- Check if player has item
 function playerHasItem(item)
     if item.weapon then -- Check if item is a weapon
         return hasCharGotWeapon(ped, item.weapon)
@@ -2418,7 +2207,6 @@ function playerHasItem(item)
     return false
 end
 
--- Check if player can obtain item
 function canObtainItem(item, items)
     -- Check if player already has item
     if playerHasItem(item) then
@@ -2436,11 +2224,9 @@ function canObtainItem(item, items)
         end
     end
 
-    -- Obtain item
     return true
 end
 
--- Reset Locker
 function resetLocker(name)
     lockers[name].getItemFrom = 0
     lockers[name].gettingItem = false
@@ -2459,35 +2245,30 @@ function handleLocker(kitNumber, name, command)
 
     lockers[lowerName].isBindActive = true
 
-    -- Check if locker is already processing
     if lockers[lowerName].isProcessing then
         formattedAddChatMessage(("You are already getting items from %s, please wait."):format(name), clr.YELLOW)
         lockers[lowerName].isBindActive = false
         return
     end
-    
-    -- Check if player is muted
+
     if checkMuted() then
         formattedAddChatMessage("You have been muted for spamming, please wait.", clr.YELLOW)
         lockers[lowerName].isBindActive = false
         return
     end
 
-    -- Make sure player is in the correct location
     if not isPlayerInLocation(autobind[fullName].Locations) then
         formattedAddChatMessage(("You are not at the %s!"):format(name), clr.GREY)
         lockers[lowerName].isBindActive = false
         return
     end
 
-    -- Prevent item retrieval when frozen
     if not isPlayerControlOn(h) then
         formattedAddChatMessage("You cannot get items while frozen, please wait.", clr.YELLOW)
         lockers[lowerName].isBindActive = false
         return
     end
 
-    -- Example "cooldown" check (heal/damage timers etc.)
     if checkHeal() then
         local timeLeft = math.ceil(timers.Heal.timer - (localClock() - timers.Heal.last))
         formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
@@ -2516,10 +2297,10 @@ function handleLocker(kitNumber, name, command)
     lockers[lowerName].getItemFrom = kitNumber
     lockers[lowerName].thread = nil
 
-    -- Create a new thread to avoid blocking the main script
     lockers[lowerName].thread = lua_thread.create(function()
         local kitItems = autobind[fullName]["Kit" .. kitNumber]
 
+        -- Check for what items are needed
         local neededItems = {}
         local skippedItems = {}
         for _, itemIndex in ipairs(kitItems) do
@@ -2528,15 +2309,14 @@ function handleLocker(kitNumber, name, command)
                 if canObtainItem(item, lockers[lowerName].Items) then
                     table.insert(neededItems, item)
                 else
-                    -- We skip this item (because the player already has it, or can't get it)
                     table.insert(skippedItems, item.label)
                 end
             end
         end
 
+        -- Start getting items
         for i, item in ipairs(neededItems) do
             if not lockers[lowerName].isProcessing --[[or lockers[lowerName].isBindActive]] then
-                print("not processing")
                 return
             end
 
@@ -2544,16 +2324,13 @@ function handleLocker(kitNumber, name, command)
             lockers[lowerName].gettingItem = true
             sampSendChat(command)
             
-            -- Wait until the script marks the key retrieval as "done"
             repeat wait(0) until not lockers[lowerName].gettingItem
             
-            -- Insert this item label into the "obtained" array
             table.insert(lockers[lowerName].obtainedItems, item.label)
 
             if (i % 3 == 0) and (i < #neededItems) then
                 local waitTime = math.random(1500, 1750)
                 
-                -- Gather the remaining items' labels
                 local stillNeeded = {}
                 for j = i + 1, #neededItems do
                     table.insert(stillNeeded, neededItems[j].label)
@@ -2585,7 +2362,7 @@ function handleLocker(kitNumber, name, command)
 
         wait(1500)
 
-        -- FINAL CHECK: Verify items are actually in the player's possession now
+        -- Verify items are actually in the player's possession now
         local notObtained = {}
         for _, item in ipairs(neededItems) do
             if canObtainItem(item, lockers[lowerName].Items) then
@@ -2601,13 +2378,12 @@ function handleLocker(kitNumber, name, command)
             ), clr.YELLOW)
         end
         
-        -- Cleanup
+        -- Reset processing and locker
         lockers[lowerName].isProcessing = false
         resetLocker(lowerName)
     end)
 end
 
--- Key Functions
 local keyFunctions = {
     Accept = function()
         local message = checkAndAcceptVest(true)
@@ -2652,11 +2428,10 @@ local keyFunctions = {
             return
         end
 
-        local frisk = autobind.Settings.Frisk
         local targeting = getCharPlayerIsTargeting(h)
         for _, player in ipairs(getVisiblePlayers(5, "all")) do
-            if (isButtonPressed(h, gkeys.player.LOCKTARGET) and frisk.mustAim) or not frisk.mustAim then
-                if (targeting and frisk.mustTarget) or not frisk.mustTarget then
+            if (isButtonPressed(h, gkeys.player.LOCKTARGET) and autobind.Settings.mustAimToFrisk) or not autobind.Settings.mustAimToFrisk then
+                if (targeting and autobind.Settings.mustTargetToFrisk) or not autobind.Settings.mustTargetToFrisk then
                     sampSendChat(string.format("/frisk %d", player.playerId))
                     break
                 end
@@ -2713,41 +2488,28 @@ local keyFunctions = {
     end
 }
 
--- Initialize Key Functions (Black Market)
-function InitializeBlackMarketKeyFunctions()
-    for kitId = 1, autobind.Settings.currentBlackMarketKits do
-        if keyFunctions["BlackMarket" .. kitId] == nil then
-            keyFunctions["BlackMarket" .. kitId] = function()
-                handleLocker(kitId, "Black Market", "/bm")
+function InitializeLockerKeyFunctions(maxKits, name, command)
+    local fullName = name:gsub(" ", "")
+
+    for kitId = 1, maxKits do
+        if keyFunctions[fullName .. kitId] == nil then
+            keyFunctions[fullName .. kitId] = function()
+                handleLocker(kitId, name, command)
             end
         end
     end
 end
 
--- Initialize Key Functions (Faction Locker)
-function InitializeFactionLockerKeyFunctions()
-    for kitId = 1, autobind.Settings.currentFactionLockerKits do
-        if keyFunctions["FactionLocker" .. kitId] == nil then
-            keyFunctions["FactionLocker" .. kitId] = function() 
-                handleLocker(kitId, "Faction Locker", "/locker")
-            end
-        end
-    end
-end
-
--- Reset Key Functions
 function resetLockersKeyFunctions()
-    for i = 1, maxKits do
-        keyFunctions["BlackMarket" .. i] = nil
-        keyFunctions["FactionLocker" .. i] = nil
+    for kitId = 1, lockers.maxKits do
+        keyFunctions["BlackMarket" .. kitId] = nil
+        keyFunctions["FactionLocker" .. kitId] = nil
     end
 
-    -- Reset Max Kits
-    autobind.Settings.currentBlackMarketKits = 3
-    autobind.Settings.currentFactionLockerKits = 3
+    autobind.BlackMarket.maxKits = 3
+    autobind.FactionLocker.maxKits = 3
 end
 
--- Keybinds
 function createKeybinds()
     local currentTime = localClock()
     for key, value in pairs(autobind.Keybinds) do
@@ -2756,11 +2518,8 @@ function createKeybinds()
             type = value.Type
         }
 
-        if key:find("FactionLocker") and lockers.factionlocker.isProcessing then
-            return
-        end
-
-        if key:find("BlackMarket") and lockers.blackmarket.isProcessing then
+        -- Check if the player is processing a locker and return if so
+        if (key:find("FactionLocker") and lockers.factionlocker.isProcessing) or (key:find("BlackMarket") and lockers.blackmarket.isProcessing) then
             return
         end
 
@@ -2792,7 +2551,6 @@ function getSubZoneName(x, y, z)
     return subZones[getNameOfInfoZone(x, y, z)] or nil
 end
  
--- Auto Capture
 function createAutoCapture()
     if not autocap or checkMuted() or checkAdminDuty() then
         return
@@ -2805,26 +2563,22 @@ function createAutoCapture()
 	end
 end
 
--- Pointbounds
 function createPointBounds()
-    -- Check if the game is in the correct state
+    -- Reset data if you are not connected to a server
     if sampGetGamestate() ~= 3 then
         gzData = nil
         return
     end
 
-    -- Get Gangzone Pool
     if not gzData then
         gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
         return
     end
 
-    -- Check if the mode is Family
     if autobind.Settings.mode ~= "Family" then
         return
     end
 
-    -- Loop through all gangzones
     for i = 0, 1023 do
         if gzData.iIsListed[i] ~= 0 and gzData.pGangzone[i] ~= nil then
             local pos = gzData.pGangzone[i].fPosition
@@ -3140,11 +2894,9 @@ function functionsLoop(onFunctionsStatus)
     end
 end
 
--- Function Manager uses the status field directly from functionsToRun.
 local functionManager = {}
 functionManager.__index = functionManager
 
--- Start a function by name (enables the function)
 function functionManager.start(name, callback)
     for _, item in ipairs(functionsToRun) do
         if item.name:lower() == name:lower() then
@@ -3170,7 +2922,6 @@ function functionManager.start(name, callback)
     print("Function " .. name .. " not found.")
 end
 
--- Stop a function by name (disables the function)
 function functionManager.stop(name, callback)
     for _, item in ipairs(functionsToRun) do
         if item.name:lower() == name:lower() then
@@ -3192,7 +2943,6 @@ function functionManager.stop(name, callback)
     print("Function " .. name .. " not found.")
 end
 
--- Restart a function by name: reset its error count, update last run & enable it
 function functionManager.restart(name, callback)
     for _, item in ipairs(functionsToRun) do
         if item.name:lower() == name:lower() then
@@ -3212,8 +2962,7 @@ function functionManager.restart(name, callback)
     print("Function " .. name .. " not found.")
 end
 
--- Commands
-local cmds = {
+local clientCommands = {
 	vestnear = {
         cmd = "vestnear",
         desc = "Sends a vest offer to the nearest player",
@@ -3319,7 +3068,7 @@ local cmds = {
         id = 7,
         func = function(cmd)
             local mode = autobind.Settings.mode or "Family"
-            autobind.Settings[mode].turf = toggleBind("Capture at Signcheck", autobind.Settings[mode].turf)
+            autobind[mode].turf = toggleBind("Capture at Signcheck", autobind[mode].turf)
         end
     },
 	autovest = {
@@ -3549,7 +3298,7 @@ local cmds = {
         desc = "Types /badge when you spawn",
         id = 17,
         func = function(cmd)
-            autobind.Settings.Faction.autoBadge = toggleBind("Auto Badge", autobind.Settings.Faction.autoBadge)
+            autobind.Faction.autoBadge = toggleBind("Auto Badge", autobind.Faction.autoBadge)
         end
     },
     reconnect = {
@@ -3566,7 +3315,7 @@ local cmds = {
         desc = "Auto reconnects on rejection, closure, ban, or disconnection",
         id = 19,
         func = function(cmd)
-            autobind.Reconnect.autoReconnect = toggleBind("Auto Reconnect", autobind.Reconnect.autoReconnect)
+            autobind.Settings.autoReconnect = toggleBind("Auto Reconnect", autobind.Settings.autoReconnect)
         end
     },
     name = {
@@ -3585,7 +3334,7 @@ local cmds = {
             end
 
             sampSetLocalPlayerName(params)
-            formattedAddChatMessage(string.format("Your name has been changed to {%06x}%s{FFFFFF}.", clr.GREY, params))
+            formattedAddChatMessage(string.format("Your name has been changed to {%06x}%s.", clr.GREY, params))
             GameModeRestart()
             sampSetGamestate(1)
         end
@@ -3597,13 +3346,13 @@ local cmds = {
         id = 21,
         func = function(cmd, params)
             if #params < 1 then
-                formattedAddChatMessage(string.format("Current Mode: {%06x}%s{FFFFFF}.", clr.GREY, autobind.Settings.mode or "N/A"))
+                formattedAddChatMessage(string.format("Current Mode: {%06x}%s.", clr.GREY, autobind.Settings.mode or "N/A"))
                 formattedAddChatMessage(string.format("USAGE: /%s [faction|family]", cmd))
             elseif params:match("^faction$") then
-                formattedAddChatMessage(string.format("You have changed the mode to {%06x}Faction{FFFFFF}.", clr.GREY))
+                formattedAddChatMessage(string.format("You have changed the mode to {%06x}Faction.", clr.GREY))
                 autobind.Settings.mode = "Faction"
             elseif params:match("^family$") then
-                formattedAddChatMessage(string.format("You have changed the mode to {%06x}Family{FFFFFF}.", clr.GREY))
+                formattedAddChatMessage(string.format("You have changed the mode to {%06x}Family.", clr.GREY))
                 autobind.Settings.mode = "Family"
             else
                 formattedAddChatMessage(string.format("USAGE: /%s [faction|family]", cmd))
@@ -3618,20 +3367,21 @@ local cmds = {
         func = function(cmd, params)
             if #params < 1 then
                 formattedAddChatMessage(string.format(
-                    "Status: {%06x}%s{FFFFFF}, Current Weather: {%06x}%s (%d){FFFFFF}.", 
+                    "Status: {%06x}%s{%06x}, Current Weather: {%06x}%s (%d).",
                     autobind.TimeAndWeather.modifyWeather and clr.REALGREEN or clr.REALRED, 
-                    autobind.TimeAndWeather.modifyWeather and "Enabled" or "Disabled", 
+                    autobind.TimeAndWeather.modifyWeather and "Enabled" or "Disabled",
+                    clr.WHITE,
                     clr.LIGHTBLUE, 
                     getWeatherName(autobind.TimeAndWeather.weather),
                     autobind.TimeAndWeather.weather
                 ))
-                formattedAddChatMessage(string.format("Server Weather: {%06x}%s (%d){FFFFFF}.", clr.LIGHTBLUE, getWeatherName(autobind.TimeAndWeather.serverWeather), autobind.TimeAndWeather.serverWeather))
-                formattedAddChatMessage(string.format("USAGE: /%s [help|toggle|reset|weatherId]", cmd))
+                formattedAddChatMessage(string.format("Server Weather: {%06x}%s (%d).", clr.LIGHTBLUE, getWeatherName(autobind.TimeAndWeather.serverWeather), autobind.TimeAndWeather.serverWeather))
+                formattedAddChatMessage(string.format("USAGE: /%s [weatherId|help|toggle|reset]", cmd))
                 return
             end
 
             if params:match("^help$") then
-                formattedAddChatMessage(string.format("USAGE: /%s [toggle|reset|weatherId]", cmd))
+                formattedAddChatMessage(string.format("USAGE: /%s [weatherId|toggle|reset]", cmd))
                 formattedAddChatMessage(string.format("Toggle: {%06x}Toggles weather on or off.", clr.GREY))
                 formattedAddChatMessage(string.format("Reset: {%06x}Resets weather to default.", clr.GREY))
                 formattedAddChatMessage(string.format("WeatherId: {%06x}Sets the weather to the specified ID.", clr.GREY))
@@ -3653,13 +3403,13 @@ local cmds = {
                 local weatherId = tonumber(params)
                 if weatherId and weatherId >= 0 and weatherId <= 50 then
                     autobind.TimeAndWeather.weather = weatherId
-                    formattedAddChatMessage(string.format("Weather has been set to {%06x}%s (%d){FFFFFF}.", clr.LIGHTBLUE, getWeatherName(weatherId), weatherId))
+                    formattedAddChatMessage(string.format("Weather has been set to {%06x}%s (%d).", clr.LIGHTBLUE, getWeatherName(weatherId), weatherId))
 
                     if autobind.TimeAndWeather.modifyWeather then
                         setWeather(weatherId)
                     end
                 else
-                    formattedAddChatMessage("Invalid parameter. Please use a number between 0 and 50.")
+                    formattedAddChatMessage(string.format("USAGE: /%s [weatherId|help|toggle|reset]", cmd))
                 end
             end
         end
@@ -3671,14 +3421,14 @@ local cmds = {
         id = 23,
         func = function(cmd, params)
             if #params < 1 then
-                formattedAddChatMessage(string.format("Status: {%06x}%s{FFFFFF}, Current Time: {%06x}%s (%02d:%02d){FFFFFF}.", autobind.TimeAndWeather.modifyTime and clr.REALGREEN or clr.REALRED, autobind.TimeAndWeather.modifyTime and "Enabled" or "Disabled", clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.hour), autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute))
-                formattedAddChatMessage(string.format("Server Time: {%06x}%s (%02d:%02d){FFFFFF}.", clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.serverHour), autobind.TimeAndWeather.serverHour, autobind.TimeAndWeather.serverMinute))
-                formattedAddChatMessage(string.format("USAGE: /%s [help|toggle|reset|hour (minute)]", cmd))
+                formattedAddChatMessage(string.format("Status: {%06x}%s{%06x}, Current Time: {%06x}%s (%02d:%02d).", autobind.TimeAndWeather.modifyTime and clr.REALGREEN or clr.REALRED, autobind.TimeAndWeather.modifyTime and "Enabled" or "Disabled", clr.WHITE, clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.hour), autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute))
+                formattedAddChatMessage(string.format("Server Time: {%06x}%s (%02d:%02d).", clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.serverHour), autobind.TimeAndWeather.serverHour, autobind.TimeAndWeather.serverMinute))
+                formattedAddChatMessage(string.format("USAGE: /%s [hour (minute)|help|toggle|reset]", cmd))
                 return
             end
     
             if params:match("^help$") then
-                formattedAddChatMessage(string.format("USAGE: /%s [toggle|reset|hour (minute)]", cmd))
+                formattedAddChatMessage(string.format("USAGE: /%s [hour (minute)|help|toggle|reset]", cmd))
                 formattedAddChatMessage(string.format("Toggle: {%06x}Toggles time on or off.", clr.GREY))
                 formattedAddChatMessage(string.format("Reset: {%06x}Resets time to default.", clr.GREY))
                 formattedAddChatMessage(string.format("Hour: {%06x}Sets the time to the specified hour.", clr.GREY))
@@ -3705,13 +3455,13 @@ local cmds = {
                 if hour and hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59 then
                     autobind.TimeAndWeather.hour = hour
                     autobind.TimeAndWeather.minute = minute
-                    formattedAddChatMessage(string.format("Time has been set to {%06x}%s (%02d:%02d){FFFFFF}.", clr.LIGHTBLUE, getTimeName(hour), hour, minute))
+                    formattedAddChatMessage(string.format("Time has been set to {%06x}%s (%02d:%02d).", clr.LIGHTBLUE, getTimeName(hour), hour, minute))
     
                     if autobind.TimeAndWeather.modifyTime then
                         setTime(hour, minute)
                     end
                 else
-                    formattedAddChatMessage("Invalid parameter. Please use an hour between 0 and 23 and a minute between 0 and 59.")
+                    formattedAddChatMessage(string.format("USAGE: /%s [hour (minute)|help|toggle|reset]", cmd))
                 end
             end
         end
@@ -3732,19 +3482,20 @@ local cmds = {
             end
 
             if #params < 1 then
-                local radioInfo = radioStations[currentRadio]
+                local radioInfo = radioStations[radio.current]
                 if not radioInfo then
                     radioInfo = radioStations[12]
                 end
 
                 formattedAddChatMessage(string.format(
-                    "Status: {%06x}%s{FFFFFF}, Current Radio: {%06x}%s{FFFFFF}.", 
+                    "Status: {%06x}%s{%06x}, Current Radio: {%06x}%s.", 
                     autobind.Settings.noRadio and clr.GREEN or clr.RED, 
-                    autobind.Settings.noRadio and "On" or "Off", 
+                    autobind.Settings.noRadio and "On" or "Off",
+                    clr.WHITE,
                     clr.LIGHTBLUE, 
                     autobind.Settings.noRadio and radioInfo.name or "Radio Off"
                 ))
-                formattedAddChatMessage(string.format("USAGE: /%s [toggle|fav|list|channel number]", cmd))
+                formattedAddChatMessage(string.format("USAGE: /%s [channel number|toggle|fav|list]", cmd))
                 return
             end
 
@@ -3762,7 +3513,7 @@ local cmds = {
                     if autobind.Settings.noRadio then
                         wait(500)
                         setRadioChannel(autobind.Settings.favoriteRadio)
-                        formattedAddChatMessage(string.format("Radio has been turned on, favorite channel set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio].name))
+                        formattedAddChatMessage(string.format("Radio has been turned on, favorite channel set to {%06x}%s.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio].name))
                         return
                     end
                 end)
@@ -3770,11 +3521,11 @@ local cmds = {
                 local newParams = params:match("^fav%s*(%d*)")
                 if #newParams < 1 then
                     setRadioChannel(autobind.Settings.favoriteRadio)
-                    formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio].name))
+                    formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s.", clr.LIGHTBLUE, radioStations[autobind.Settings.favoriteRadio].name))
                 else
                     local channel = tonumber(newParams)
                     if channel and channel >= 0 and channel <= 11 then
-                        formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[channel].name))
+                        formattedAddChatMessage(string.format("Favorite radio channel has been set to {%06x}%s.", clr.LIGHTBLUE, radioStations[channel].name))
 
                         -- Fix user tracks
                         if channel == 11 then channel = 24 end
@@ -3783,13 +3534,13 @@ local cmds = {
 
                         setRadioChannel(channel)
                     else
-                        formattedAddChatMessage("Invalid parameter. Please use a number between 0 and 11.")
+                        formattedAddChatMessage(string.format("USAGE: /%s [channel number|toggle|fav|list]", cmd))
                     end
                 end
             elseif params:match("^list$") then
                 local messages = ""
                 for i = 0, 12 do
-                    messages = messages .. string.format("%d: {%06x}%s{FFFFFF} - {%06x}%s\n", i, clr.LIGHTBLUE, radioStations[i].name, clr.GREY, radioStations[i].desc)
+                    messages = messages .. string.format("%d: {%06x}%s{%06x} - {%06x}%s\n", i, clr.LIGHTBLUE, radioStations[i].name, clr.WHITE, clr.GREY, radioStations[i].desc)
                 end
 
                 local title = string.format("[%s] Radio List", shortName:upper())
@@ -3797,7 +3548,7 @@ local cmds = {
             else
                 local channel = tonumber(params)
                 if channel and channel >= 0 and channel <= 11 then
-                    formattedAddChatMessage(string.format("Radio channel has been set to {%06x}%s{FFFFFF}.", clr.LIGHTBLUE, radioStations[channel].name))
+                    formattedAddChatMessage(string.format("Radio channel has been set to {%06x}%s.", clr.LIGHTBLUE, radioStations[channel].name))
                     lua_thread.create(function()
                         if not autobind.Settings.noRadio then
                             autobind.Settings.noRadio = true
@@ -3811,7 +3562,7 @@ local cmds = {
                         setRadioChannel(channel)
                     end)
                 else
-                    formattedAddChatMessage("Invalid parameter. Please use a number between 0 and 11.")
+                    formattedAddChatMessage(string.format("USAGE: /%s [channel number|toggle|fav|list]", cmd))
                 end
             end
         end
@@ -3824,36 +3575,404 @@ local cmds = {
         func = function(cmd)
             autobind.Settings.callSecondaryBackup = toggleBind("Secondary Backup", autobind.Settings.callSecondaryBackup)
         end
+    },
+    hzradio = {
+        cmd = "hzradio",
+        desc = "Toggles Hz Radio on or off",
+        id = 26,
+        func = function(cmd)
+            autobind.Settings.HZRadio = toggleBind("Horizon Radio", autobind.Settings.HZRadio)
+        end
+    },
+    loginmusic = {
+        cmd = "loginmusic",
+        desc = "Toggles login music on or off",
+        id = 27,
+        func = function(cmd)
+            autobind.Settings.LoginMusic = toggleBind("Login Music", autobind.Settings.LoginMusic)
+        end
     }
 }
 
-function toggleRadio(bool)
-	mem.write(0x4EB9A0, bool and 0x8BE98B55 or 0x8B0004C2, 4, false)
-end
+local autobindCommands = {
+    [""] = function()
+        menu.settings.pageId = 1
+        menu.settings.window[0] = not menu.settings.window[0]
+    end,
+    ["help"] = function(newParams, cmd, alias)
+        if #newParams < 1 then
+            formattedAddChatMessage(string.format("%s {%06x}| Type '/%s %s desc' to display the description of all commands.", cmd:upperFirst(), clr.WHITE, alias, cmd), clr.REALGREEN)
+            formattedAddChatMessage(string.format("/%s {%06x}cmds, showkeys, getskin, status, funcs, reload", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s {%06x}fonts, keybinds, skins, bms, locker", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s {%06x}changelog, betatesters", alias, clr.GREY))
+        elseif newParams:match("^desc$") then
+            formattedAddChatMessage(string.format("/%s {%06x}- Opens the autobind settings menu.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s cmds {%06x}- Lists all commands.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s fonts {%06x}- Opens the font menu for customization.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s keybinds {%06x}- Opens the keybinds menu for customization.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s showkeys {%06x}- Lists all keys for keybinds.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s skins {%06x}- Opens the skins menu for customization.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s getskin [playerid/partofname] {%06x}- Gets the skin ID of a player.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s bms {%06x}- Opens the black market menu.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s locker {%06x}- Opens the faction locker menu.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s status {%06x}- Displays the status of all scripts and the autobind menu.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s reload {%06x}- Reloads the script.", alias, clr.GREY))
+        else
+            formattedAddChatMessage(string.format("USAGE: '/%s %s desc' for more information.", alias, cmd))
+        end
+    end,
+    ["cmds"] = function(newParams, cmd, alias)
+        if #newParams < 1 then
+            formattedAddChatMessage(string.format("Commands{%06x} | Type '/%s %s [desc|alts]' to display the description of all commands.", clr.WHITE, alias, cmd), clr.REALGREEN)
+            local commandsList = {}
+            local commandCount = 0
+            for _, command in pairs(clientCommands) do
+                table.insert(commandsList, string.format("/%s", command.cmd))
+                commandCount = commandCount + 1
+            end
+            table.sort(commandsList)
 
--- Create Chat Commands
-function createAutobindCommands()
+            -- Set your maximum length (in characters) for each line.
+            local maxLineLength = 80
 
-    if sampIsChatCommandDefined(scriptName) then
-        sampUnregisterChatCommand(scriptName)
+            local currentLine = {}
+            local currentLength = 0
+
+            for i, cmd in ipairs(commandsList) do
+                local cmdLength = #cmd
+                local sepLength = (#currentLine > 0) and 2 or 0  -- ", " separator length if needed
+
+                if currentLength + sepLength + cmdLength > maxLineLength then
+                    formattedAddChatMessage(table.concat(currentLine, ", "))
+                    currentLine = { cmd }
+                    currentLength = cmdLength
+                else
+                    table.insert(currentLine, cmd)
+                    currentLength = currentLength + sepLength + cmdLength
+                end
+            end
+
+            -- Print any remaining commands.
+            if #currentLine > 0 then
+                formattedAddChatMessage(table.concat(currentLine, ", "))
+            end
+
+            formattedAddChatMessage(string.format("%d commands available.", commandCount), clr.GREY)
+        elseif newParams:match("^desc$") then
+            local sortedCommands = {}
+            for _, command in pairs(clientCommands) do
+                table.insert(sortedCommands, command)
+            end
+            table.sort(sortedCommands, function(a, b) return a.id < b.id end)
+
+            for _, command in pairs(sortedCommands) do
+                formattedAddChatMessage(string.format("/%s {%06x}- %s. ID: %d", command.cmd, clr.GREY, command.desc, command.id))
+            end
+        elseif newParams:match("^alts$") then
+            local sortedCommands = {}
+            for _, command in pairs(clientCommands) do
+                table.insert(sortedCommands, command)
+            end
+            table.sort(sortedCommands, function(a, b) return a.id < b.id end)
+
+            for _, command in pairs(sortedCommands) do
+                if command.alt then
+                    local altList = {}
+                    for _, alt in ipairs(command.alt) do
+                        table.insert(altList, "/" .. alt)
+                    end
+                    formattedAddChatMessage(string.format("/%s {%06x}- %s.", command.cmd, clr.GREY, table.concat(altList, ", ")))
+                end
+            end
+        else
+            formattedAddChatMessage(string.format("USAGE: '/%s %s [desc|alts]' for more information.", alias, cmd))
+        end
+    end,
+    ["showkeys"] = function()
+        local keybindsList = {}
+        for bind, _ in pairs(autobind.Keybinds) do
+            table.insert(keybindsList, bind)
+        end
+        table.sort(keybindsList)
+        for _, bind in ipairs(keybindsList) do
+            local newName = bind
+            if bind:find("BlackMarket") then
+                newName = bind:gsub("BlackMarket", "BM")
+            elseif bind:find("FactionLocker") then
+                newName = bind:gsub("FactionLocker", "FLocker")
+            end
+            local keybindMessage = string.format(
+                "Keybind: {%06x}%s{%06x}, Enabled: {%06x}%s{%06x}, Keys: {%06x}%s.",
+                clr.YELLOW, 
+                newName,
+                clr.WHITE,
+                autobind.Keybinds[bind].Toggle and clr.GREEN or clr.RED, 
+                autobind.Keybinds[bind].Toggle and "Yes" or "No",
+                clr.WHITE,
+                clr.LIGHTBLUE, 
+                getKeybindKeys(bind)
+            )
+            formattedAddChatMessage(keybindMessage)
+        end
+    end,
+    ["getskin"] = function(newParams, cmd, alias)
+        if #newParams < 1 then
+            formattedAddChatMessage(string.format("USAGE: '/%s %s [playerid/partofname]'", alias, cmd))
+            return
+        end
+
+        local result, playerId, name = findPlayer(newParams, true)
+        if not result then
+            formattedAddChatMessage("Invalid player specified.")
+            return
+        end
+
+        local result, peds = sampGetCharHandleBySampPlayerId(playerId)
+        local _, sampPlayerId = sampGetPlayerIdByCharHandle(ped)
+        if sampPlayerId == playerId then
+            peds = ped
+            result = true
+        end
+
+        formattedAddChatMessage(result and string.format("Skin ID: %d", getCharModel(peds)) or "Player is not in your view.")
+    end,
+    ["status"] = function(newParams, cmd, alias)
+        if #newParams < 1 then
+            formattedAddChatMessage(string.format("%s {%06x}| Type '/%s %s timers' there are more options below.", cmd:upperFirst(), clr.WHITE, alias, cmd), clr.REALGREEN)
+            formattedAddChatMessage("timers, bodyguard, accepter, autofind", clr.GREY)
+            formattedAddChatMessage("backup, farmer, misc", clr.GREY)
+        elseif newParams:match("^timers$") then
+            displayTimers()
+        elseif newParams:match("^bodyguard$") then
+            local bodyguardId = bodyguard.playerId ~= -1 and bodyguard.playerId or ""
+            local bodyguardName = bodyguard.playerName ~= "" and string.format("%s (%s)", bodyguard.playerName, bodyguard.playerId) or "N/A"
+            local bodyguardEnableStatus = bodyguard.enable and "Yes" or "No"
+            local bodyguardReceivedStatus = bodyguard.received and "Yes" or "No"
+
+            formattedAddChatMessage(string.format(
+                "Bodyguard: %s, Enabled: %s, Received: %s, Price: $%d.",
+                bodyguardName,
+                bodyguardEnableStatus,
+                bodyguardReceivedStatus,
+                bodyguard.price
+            ))
+        elseif newParams:match("^accepter$") then
+            local accepterId = accepter.playerId ~= -1 and accepter.playerId or ""
+            local accepterName = accepter.playerName ~= "" and string.format("%s (%s)", accepter.playerName, accepterId) or "N/A"
+            local accepterEnableStatus = accepter.enable and "Yes" or "No"
+            local accepterReceivedStatus = accepter.received and "Yes" or "No"
+            local accepterThreadStatus = accepter.thread ~= nil and "On" or "Off"
+
+            formattedAddChatMessage(string.format(
+                "Accepter: %s, Enabled: %s, Received: %s, Price: $%d, Thread: %s.",
+                accepterName,
+                accepterEnableStatus,
+                accepterReceivedStatus,
+                accepter.price,
+                accepterThreadStatus
+            ))
+        elseif newParams:match("^autofind$") then
+            local autofindId = autofind.playerId ~= -1 and autofind.playerId or ""
+            local autofindName = autofind.playerName ~= "" and string.format("%s (%s)", autofind.playerName, autofindId) or "N/A"
+            local autofindEnableStatus = autofind.enable and "Yes" or "No"
+
+            formattedAddChatMessage(string.format(
+                "Autofind: {%06x}%s{%06x}, Enabled: {%06x}%s{%06x}, Counter: {%06x}%d.",
+                autofind.playerName ~= "" and clr.REALGREEN or clr.RED, 
+                autofindName,
+                clr.WHITE,
+                autofind.enable and clr.GREEN or clr.RED, 
+                autofindEnableStatus,
+                clr.WHITE,
+                clr.LIGHTBLUE, 
+                autofind.counter
+            ))
+        elseif newParams:match("^backup$") then
+            local backupId = backup.playerId ~= -1 and backup.playerId or ""
+            local backupName = backup.playerName ~= "" and string.format("%s (%s)", backup.playerName, backupId) or "N/A"
+            local backupLocation = backup.location ~= "" and backup.location or "N/A"
+            local backupEnableStatus = backup.enable and "Yes" or "No"
+
+            formattedAddChatMessage(string.format(
+                "Backup: {%06x}%s{%06x}, Location: {%06x}%s{%06x}, Enabled: {%06x}%s {%06x}(Self).",
+                backup.playerName ~= "" and clr.TEAM_BLUE_COLOR or clr.RED, 
+                backupName,
+                clr.WHITE,
+                backup.location ~= "" and clr.GREEN or clr.RED, 
+                backupLocation,
+                clr.WHITE,
+                backup.enable and clr.GREEN or clr.RED, 
+                backupEnableStatus,
+                clr.WHITE
+            ))
+        elseif newParams:match("^farmer$") then
+            local farmerEnableStatus = farmer.farming and "Yes" or "No"
+            local farmerHarvestingStatus = farmer.harvesting and "Yes" or "No"
+
+            formattedAddChatMessage(string.format(
+                "Farming: {%06x}%s{%06x}, Harvesting: {%06x}%s{%06x}, Counter: {%06x}%d.",
+                farmer.farming and clr.GREEN or clr.RED, 
+                farmerEnableStatus,
+                clr.WHITE,
+                farmer.harvesting and clr.GREEN or clr.RED, 
+                farmerHarvestingStatus,
+                clr.WHITE,
+                clr.LIGHTBLUE, 
+                farmer.harvestingCount
+            ))
+        elseif newParams:match("^misc$") then
+            local mode = autobind.Settings.mode or "N/A"
+            local factionType = mode == "Faction" and autobind.Faction.type or "N/A"
+            local autocapStatus = autocap and "Yes" or "No"
+            local sprunkStatus = usingSprunk and "Yes" or "No"
+            local pointStatus = enteredPoint and "Yes" or "No"
+            local preventHealStatus = preventHeal and "Yes" or "No"
+
+            formattedAddChatMessage(string.format("Mode: %s, Type: %s, Auto Capture: %s, Using Sprunk: %s.", mode, factionType, autocapStatus, sprunkStatus))
+            formattedAddChatMessage(string.format("Point Bounds: %s, Prevent Heal Timer: %s.", pointStatus, preventHealStatus))
+        else
+            formattedAddChatMessage(string.format("USAGE: '/%s %s [bodyguard|accepter|autofind|backup|farmer|functions|timers]' for more information.", alias, cmd))
+        end
+    end,
+    ["funcs"] = function(newParams, cmd, alias)
+        local action, target = newParams:match("^(%S+)%s*(.*)$")
+        action = action and action:lower() or ""
+        target = target and target:trim() or ""
+
+        if action == "" then
+            formattedAddChatMessage(string.format("USAGE: '/%s %s [start|stop|restart] [function_name]'", alias, cmd), clr.GREY)
+
+            table.sort(functionsToRun, function(a, b) return a.id < b.id end)
+
+            for _, item in ipairs(functionsToRun) do
+                local status = item.status or "unknown"
+                local state = item.enabled and "enabled" or "disabled"
+
+                local statusColor
+                if status == "running" then
+                    statusColor = clr.GREEN
+                elseif status == "idle" then
+                    statusColor = clr.NEWS
+                elseif status == "restarted" then
+                    statusColor = clr.YELLOW
+                elseif status == "failed" then
+                    statusColor = clr.RED
+                elseif status == "disabled" or state == "disabled" then
+                    statusColor = clr.RED
+                else
+                    statusColor = clr.GREY
+                end
+                formattedAddChatMessage(string.format("%s - Status: {%06x}%s{%06x} (%s)", item.name, statusColor, status, clr.WHITE, state))
+            end
+            return
+        elseif action == "start" then
+            if target == "" then
+                formattedAddChatMessage(string.format("USAGE: '/%s %s start [function_name]'", alias, cmd), clr.GREY)
+            else
+                functionManager.start(target, function(name, status)
+                    if status == "started" then
+                        formattedAddChatMessage(string.format("Started function: {%06x}%s", clr.GREEN, name))
+                    else
+                        formattedAddChatMessage(string.format("Function %s is already started", name), clr.REALRED)
+                    end
+                end)
+            end
+            return
+        elseif action == "stop" then
+            if target == "" then
+                formattedAddChatMessage(string.format("USAGE: '/%s %s stop [function_name]'", alias, cmd), clr.GREY)
+            else
+                functionManager.stop(target, function(name, status)
+                    if status == "stopped" then
+                        formattedAddChatMessage(string.format("Stopped function: {%06x}%s", clr.RED, name))
+                    else
+                        formattedAddChatMessage(string.format("Function %s is already stopped", name), clr.REALRED)
+                    end
+                end)
+            end
+            return
+        elseif action == "restart" then
+            if target == "" then
+                formattedAddChatMessage(string.format("USAGE: '/%s %s restart [function_name]'", alias, cmd), clr.GREY)
+            else
+                functionManager.restart(target, function(name, status)
+                    formattedAddChatMessage(string.format("Restarted function: {%06x}%s", clr.YELLOW, name))
+                end)
+            end
+            return
+        else
+            formattedAddChatMessage(string.format("USAGE: '/%s %s [start|stop|restart] [function_name]'", alias, cmd), clr.GREY)
+            return
+        end
+    end,
+    ["fonts"] = function()
+        menu.fonts.window[0] = not menu.fonts.window[0]
+    end,
+    ["keybinds"] = function()
+        menu.keybinds.window[0] = not menu.keybinds.window[0]
+    end,
+    ["skins"] = function()
+        menu.skins.window[0] = not menu.skins.window[0]
+    end,
+    ["bms"] = function()
+        menu.blackmarket.pageId = 1
+        menu.blackmarket.window[0] = not menu.blackmarket.window[0]
+    end,
+    ["locker"] = function()
+        menu.factionlocker.pageId = 1
+        menu.factionlocker.window[0] = not menu.factionlocker.window[0]
+    end,
+    ["reload"] = function()
+        saveAllConfigs()
+        formattedAddChatMessage("Reloading script... please wait.")
+        lua_thread.create(function()
+            wait(0)
+            thisScript():reload()
+        end)
+    end,
+    ["betatesters"] = function()
+        if not betatesters then
+            formattedAddChatMessage("Failed to fetch betatesters data.", clr.RED)
+            return
+        end
+
+        formattedAddChatMessage("__________________ Betatesters _________________")
+        for _, tester in ipairs(betatesters) do
+            formattedAddChatMessage(string.format("%s | Bugs Found: %s | Hours Wasted: %s | Discord: %s.", tester.nickName, tester.bugFinds, convertDecimalToHours(tester.hoursWasted), tester.discord))
+        end
+        formattedAddChatMessage("_______________________________________________")
+    end,
+    ["changelog"] = function()
+        menu.changelog.window[0] = not menu.changelog.window[0]
     end
+}
 
-    if sampIsChatCommandDefined(shortName) then
-        sampUnregisterChatCommand(shortName)
-    end
-
-    sampRegisterChatCommand(scriptName, autobindCommand)
-    sampRegisterChatCommand(shortName, autobindCommand)
-
-    -- Register Chat Commands
-    if autobind.Settings.enable then
-        registerAutobindCommands()
-    end
-end
-
---- Register Autobind Commands
 function registerAutobindCommands()
-    for _, command in pairs(cmds) do
+    local function handleChatCommand(alias, params)
+        local command, newParams = params:match("^(%S*)%s*(.*)")
+        if autobindCommands[command] then
+            local success, err = pcall(autobindCommands[command], newParams, command, alias)
+            if not success then
+                formattedAddChatMessage(string.format("Error in command /%s: %s", command, err))
+            end
+        else
+            formattedAddChatMessage(string.format("USAGE: '/%s help' for more information.", alias))
+        end
+    end
+
+    for _, command in pairs({scriptName, shortName}) do
+        if sampIsChatCommandDefined(command) then
+            sampUnregisterChatCommand(command)
+        end
+
+        sampRegisterChatCommand(command, function(params)
+            handleChatCommand(command, params)
+        end)
+    end
+end
+
+function registerClientCommands()
+    for _, command in pairs(clientCommands) do
         if sampIsChatCommandDefined(command.cmd) then
             sampUnregisterChatCommand(command.cmd)
         end
@@ -3890,373 +4009,14 @@ function registerAutobindCommands()
     end
 end
 
-function autobindCommand(params)
-    local commands = {
-        [""] = function()
-            menu.settings.pageId = 1
-            menu.settings.window[0] = not menu.settings.window[0]
-        end,
-        ["help"] = function(newParams)
-            if #newParams < 1 then
-                formattedAddChatMessage(string.format("Help {%06x}| Type '{%06x}/ab help desc{%06x}' to display the description of all commands.", clr.WHITE, clr.GREY, clr.WHITE), clr.REALGREEN)
-                formattedAddChatMessage(string.format("/ab {%06x}cmds, showkeys, getskin, status, funcs, reload", clr.GREY))
-                formattedAddChatMessage(string.format("/ab {%06x}fonts, keybinds, skins, bms, locker", clr.GREY))
-                formattedAddChatMessage(string.format("/ab {%06x}changelog, betatesters", clr.GREY))
-            elseif newParams:match("^desc$") then
-                formattedAddChatMessage(string.format("/ab {%06x}- Opens the autobind settings menu.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab cmds {%06x}- Lists all commands.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab fonts {%06x}- Opens the font menu for customization.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab keybinds {%06x}- Opens the keybinds menu for customization.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab showkeys {%06x}- Lists all keys for keybinds.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab skins {%06x}- Opens the skins menu for customization.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab getskin [playerid/partofname] {%06x}- Gets the skin ID of a player.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab bms {%06x}- Opens the black market menu.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab locker {%06x}- Opens the faction locker menu.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab status {%06x}- Displays the status of all scripts and the autobind menu.", clr.GREY))
-                formattedAddChatMessage(string.format("/ab reload {%06x}- Reloads the script.", clr.GREY))
-            else
-                formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab help desc{%06x} for more information.", clr.GREY, clr.WHITE))
-            end
-        end,
-        ["cmds"] = function(newParams)
-            if #newParams < 1 then
-                formattedAddChatMessage(string.format("Commands{%06x} | Type '{%06x}/ab cmds [desc|alts]{%06x}' to display the description of all commands.", clr.WHITE, clr.GREY, clr.WHITE), clr.REALGREEN)
-                local commandsList = {}
-                local commandCount = 0
-                for _, command in pairs(cmds) do
-                    table.insert(commandsList, string.format("/%s", command.cmd))
-                    commandCount = commandCount + 1
-                end
-                table.sort(commandsList)
-
-                -- Set your maximum length (in characters) for each line.
-                local maxLineLength = 80
-
-                local currentLine = {}
-                local currentLength = 0
-
-                for i, cmd in ipairs(commandsList) do
-                    local cmdLength = #cmd
-                    local sepLength = (#currentLine > 0) and 2 or 0  -- ", " separator length if needed
-
-                    if currentLength + sepLength + cmdLength > maxLineLength then
-                        formattedAddChatMessage(table.concat(currentLine, ", "))
-                        currentLine = { cmd }
-                        currentLength = cmdLength
-                    else
-                        table.insert(currentLine, cmd)
-                        currentLength = currentLength + sepLength + cmdLength
-                    end
-                end
-
-                -- Print any remaining commands.
-                if #currentLine > 0 then
-                    formattedAddChatMessage(table.concat(currentLine, ", "))
-                end
-
-                formattedAddChatMessage(string.format("%d commands available.", commandCount), clr.GREY)
-            elseif newParams:match("^desc$") then
-                local sortedCommands = {}
-                for _, command in pairs(cmds) do
-                    table.insert(sortedCommands, command)
-                end
-                table.sort(sortedCommands, function(a, b) return a.id < b.id end)
-
-                for _, command in pairs(sortedCommands) do
-                    formattedAddChatMessage(string.format("/%s {%06x}- %s. ID: %d", command.cmd, clr.GREY, command.desc, command.id))
-                end
-            elseif newParams:match("^alts$") then
-                local sortedCommands = {}
-                for _, command in pairs(cmds) do
-                    table.insert(sortedCommands, command)
-                end
-                table.sort(sortedCommands, function(a, b) return a.id < b.id end)
-
-                for _, command in pairs(sortedCommands) do
-                    if command.alt then
-                        local altList = {}
-                        for _, alt in ipairs(command.alt) do
-                            table.insert(altList, "/" .. alt)
-                        end
-                        formattedAddChatMessage(string.format("/%s {%06x}- %s.", command.cmd, clr.GREY, table.concat(altList, ", ")))
-                    end
-                end
-            else
-                formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab cmds [desc|alts]{FFFFFF} for more information.", clr.GREY))
-            end
-        end,
-        ["showkeys"] = function()
-            local keybindsList = {}
-            for bind, _ in pairs(autobind.Keybinds) do
-                table.insert(keybindsList, bind)
-            end
-            table.sort(keybindsList)
-            for _, bind in ipairs(keybindsList) do
-                local newName = bind
-                if bind:find("BlackMarket") then
-                    newName = bind:gsub("BlackMarket", "BM")
-                elseif bind:find("FactionLocker") then
-                    newName = bind:gsub("FactionLocker", "FLocker")
-                end
-                local keybindMessage = string.format(
-                    "Keybind: {%06x}%s{FFFFFF}, Enabled: {%06x}%s{FFFFFF}, Keys: {%06x}%s.",
-                    clr.YELLOW, 
-                    newName,
-                    autobind.Keybinds[bind].Toggle and clr.GREEN or clr.RED, 
-                    autobind.Keybinds[bind].Toggle and "Yes" or "No", 
-                    clr.LIGHTBLUE, 
-                    getKeybindKeys(bind)
-                )
-                formattedAddChatMessage(keybindMessage)
-            end
-        end,
-        ["getskin"] = function(newParams)
-            if #newParams < 1 then
-                formattedAddChatMessage("USAGE: /ab getskin [playerid/partofname]")
-                return
-            end
-
-            local result, playerId, name = findPlayer(newParams, true)
-            if not result then
-                formattedAddChatMessage("Invalid player specified.")
-                return
-            end
-
-            local result, peds = sampGetCharHandleBySampPlayerId(playerId)
-            local _, sampPlayerId = sampGetPlayerIdByCharHandle(ped)
-            if sampPlayerId == playerId then
-                peds = ped
-                result = true
-            end
-
-            formattedAddChatMessage(result and string.format("Skin ID: %d", getCharModel(peds)) or "Player is not near you.")
-        end,
-        ["status"] = function(newParams)
-            if #newParams < 1 then
-                formattedAddChatMessage(string.format("Status {FFFFFF}| Type '{%06x}/ab status timers{FFFFFF}' there are more options below.", clr.GREY), clr.REALGREEN)
-                formattedAddChatMessage("timers, bodyguard, accepter, autofind", clr.GREY)
-                formattedAddChatMessage("backup, farmer, misc", clr.GREY)
-            elseif newParams:match("^timers$") then
-                displayTimers()
-            elseif newParams:match("^bodyguard$") then
-                local bodyguardId = bodyguard.playerId ~= -1 and bodyguard.playerId or ""
-                local bodyguardName = bodyguard.playerName ~= "" and string.format("%s (%s)", bodyguard.playerName, bodyguard.playerId) or "N/A"
-                local bodyguardEnableStatus = bodyguard.enable and "Yes" or "No"
-                local bodyguardReceivedStatus = bodyguard.received and "Yes" or "No"
-
-                formattedAddChatMessage(string.format(
-                    "Bodyguard: %s, Enabled: %s, Received: %s, Price: $%d.",
-                    bodyguardName,
-                    bodyguardEnableStatus,
-                    bodyguardReceivedStatus,
-                    bodyguard.price
-                ))
-            elseif newParams:match("^accepter$") then
-                local accepterId = accepter.playerId ~= -1 and accepter.playerId or ""
-                local accepterName = accepter.playerName ~= "" and string.format("%s (%s)", accepter.playerName, accepterId) or "N/A"
-                local accepterEnableStatus = accepter.enable and "Yes" or "No"
-                local accepterReceivedStatus = accepter.received and "Yes" or "No"
-                local accepterThreadStatus = accepter.thread ~= nil and "On" or "Off"
-
-                formattedAddChatMessage(string.format(
-                    "Accepter: %s, Enabled: %s, Received: %s, Price: $%d, Thread: %s.",
-                    accepterName,
-                    accepterEnableStatus,
-                    accepterReceivedStatus,
-                    accepter.price,
-                    accepterThreadStatus
-                ))
-            elseif newParams:match("^autofind$") then
-                local autofindId = autofind.playerId ~= -1 and autofind.playerId or ""
-                local autofindName = autofind.playerName ~= "" and string.format("%s (%s)", autofind.playerName, autofindId) or "N/A"
-                local autofindEnableStatus = autofind.enable and "Yes" or "No"
-
-                formattedAddChatMessage(string.format(
-                    "Autofind: {%06x}%s{FFFFFF}, Enabled: {%06x}%s{FFFFFF}, Counter: {%06x}%d{FFFFFF}.",
-                    autofind.playerName ~= "" and clr.REALGREEN or clr.RED, autofindName,
-                    autofind.enable and clr.GREEN or clr.RED, autofindEnableStatus,
-                    clr.LIGHTBLUE, autofind.counter
-                ))
-            elseif newParams:match("^backup$") then
-                local backupId = backup.playerId ~= -1 and backup.playerId or ""
-                local backupName = backup.playerName ~= "" and string.format("%s (%s)", backup.playerName, backupId) or "N/A"
-                local backupLocation = backup.location ~= "" and backup.location or "N/A"
-                local backupEnableStatus = backup.enable and "Yes" or "No"
-
-                formattedAddChatMessage(string.format(
-                    "Backup: {%06x}%s{FFFFFF}, Location: {%06x}%s{FFFFFF}, Enabled: {%06x}%s{FFFFFF}.",
-                    backup.playerName ~= "" and clr.TEAM_BLUE_COLOR or clr.RED, backupName,
-                    backup.location ~= "" and clr.GREEN or clr.RED, backupLocation,
-                    backup.enable and clr.GREEN or clr.RED, backupEnableStatus
-                ))
-            elseif newParams:match("^farmer$") then
-                local farmerEnableStatus = farmer.farming and "Yes" or "No"
-                local farmerHarvestingStatus = farmer.harvesting and "Yes" or "No"
-
-                formattedAddChatMessage(string.format(
-                    "Farming: {%06x}%s{FFFFFF}, Harvesting: {%06x}%s{FFFFFF}, Counter: {%06x}%d{FFFFFF}.",
-                    farmer.farming and clr.GREEN or clr.RED, farmerEnableStatus,
-                    farmer.harvesting and clr.GREEN or clr.RED, farmerHarvestingStatus,
-                    clr.LIGHTBLUE, farmer.harvestingCount
-                ))
-            elseif newParams:match("^misc$") then
-                local mode = autobind.Settings.mode or "N/A"
-                local factionType = mode == "Faction" and autobind.Settings.Faction.type or "N/A"
-                local autocapStatus = autocap and "Yes" or "No"
-                local sprunkStatus = usingSprunk and "Yes" or "No"
-                local pointStatus = enteredPoint and "Yes" or "No"
-                local preventHealStatus = preventHeal and "Yes" or "No"
-
-                formattedAddChatMessage(string.format(
-                    "Mode: %s, Type: %s, Auto Capture: %s, Using Sprunk: %s, Point Bounds: %s, Prevent Heal Timer: %s.",
-                    mode,
-                    factionType,
-                    autocapStatus, 
-                    sprunkStatus, 
-                    pointStatus, 
-                    preventHealStatus
-                ))
-            else
-                formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab status [bodyguard|accepter|autofind|backup|farmer|functions|timers]{FFFFFF} for more information.", clr.GREY))
-            end
-        end,
-        ["funcs"] = function(newParams)
-            local action, target = newParams:match("^(%S+)%s*(.*)$")
-            action = action and action:lower() or ""
-            target = target and target:trim() or ""
-
-            if action == "" then
-                formattedAddChatMessage("USAGE: /ab funcs [start|stop|restart] [function_name]", clr.GREY)
-
-                table.sort(functionsToRun, function(a, b) return a.id < b.id end)
-
-                for _, item in ipairs(functionsToRun) do
-                    local status = item.status or "unknown"
-                    local state = item.enabled and "enabled" or "disabled"
-
-                    local statusColor
-                    if status == "running" then
-                        statusColor = clr.GREEN
-                    elseif status == "idle" then
-                        statusColor = clr.NEWS
-                    elseif status == "restarted" then
-                        statusColor = clr.YELLOW
-                    elseif status == "failed" then
-                        statusColor = clr.RED
-                    elseif status == "disabled" or state == "disabled" then
-                        statusColor = clr.RED
-                    else
-                        statusColor = clr.GREY
-                    end
-                    formattedAddChatMessage(string.format("%s - Status: {%06x}%s{FFFFFF} (%s)", item.name, statusColor, status, state))
-                end
-                return
-            elseif action == "start" then
-                if target == "" then
-                    formattedAddChatMessage("USAGE: /ab funcs start [function_name]", clr.GREY)
-                else
-                    functionManager.start(target, function(name, status)
-                        if status == "started" then
-                            formattedAddChatMessage(string.format("Started function: {%06x}%s", clr.GREEN, name))
-                        else
-                            formattedAddChatMessage(string.format("Function %s is already started", name), clr.REALRED)
-                        end
-                    end)
-                end
-                return
-            elseif action == "stop" then
-                if target == "" then
-                    formattedAddChatMessage("USAGE: /ab funcs stop [function_name]", clr.GREY)
-                else
-                    functionManager.stop(target, function(name, status)
-                        if status == "stopped" then
-                            formattedAddChatMessage(string.format("Stopped function: {%06x}%s", clr.RED, name))
-                        else
-                            formattedAddChatMessage(string.format("Function %s is already stopped", name), clr.REALRED)
-                        end
-                    end)
-                end
-                return
-            elseif action == "restart" then
-                if target == "" then
-                    formattedAddChatMessage("USAGE: /ab funcs restart [function_name]", clr.GREY)
-                else
-                    functionManager.restart(target, function(name, status)
-                        formattedAddChatMessage(string.format("Restarted function: {%06x}%s", clr.YELLOW, name))
-                    end)
-                end
-                return
-            else
-                formattedAddChatMessage("USAGE: /ab funcs [start|stop|restart] [function_name]", clr.GREY)
-                return
-            end
-        end,
-        ["fonts"] = function()
-            menu.fonts.window[0] = not menu.fonts.window[0]
-        end,
-        ["keybinds"] = function()
-            menu.keybinds.window[0] = not menu.keybinds.window[0]
-        end,
-        ["skins"] = function()
-            menu.skins.window[0] = not menu.skins.window[0]
-        end,
-        ["bms"] = function()
-            menu.blackmarket.pageId = 1
-            menu.blackmarket.window[0] = not menu.blackmarket.window[0]
-        end,
-        ["locker"] = function()
-            menu.factionlocker.pageId = 1
-            menu.factionlocker.window[0] = not menu.factionlocker.window[0]
-        end,
-        ["reload"] = function()
-            saveAllConfigs()
-            formattedAddChatMessage("Reloading script... please wait.")
-            lua_thread.create(function()
-                wait(0)
-                thisScript():reload()
-            end)
-        end,
-        ["betatesters"] = function()
-            if not betatesters then
-                formattedAddChatMessage("Failed to fetch betatesters data.", clr.RED)
-                return
-            end
-
-            formattedAddChatMessage("__________________ Betatesters _________________")
-            for _, tester in ipairs(betatesters) do
-                formattedAddChatMessage(string.format("%s | Bugs Found: %s | Hours Wasted: %s | Discord: %s.", tester.nickName, tester.bugFinds, convertDecimalToHours(tester.hoursWasted), tester.discord))
-            end
-            formattedAddChatMessage("_______________________________________________")
-        end,
-        ["changelog"] = function()
-            menu.changelog.window[0] = not menu.changelog.window[0]
-        end
-    }
-
-    local command, newParams = params:match("^(%S*)%s*(.*)")
-    if commands[command] then
-        local success, error = pcall(commands[command], newParams)
-        if not success then
-            formattedAddChatMessage(string.format("Error in command /%s: %s", command, error))
-        end
-    else
-        formattedAddChatMessage(string.format("Invalid parameter: Type {%06x}/ab [help] {FFFFFF}for more information.", clr.GREY))
-    end
-end
-
 function convertDecimalToHours(decimalHours)
-    -- Calculate months. (1 month = 30 days * 24 hours = 720 hours)
     local months = math.floor(decimalHours / 720)
     decimalHours = decimalHours % 720
 
-    -- Calculate days (1 day = 24 hours)
     local days = math.floor(decimalHours / 24)
     decimalHours = decimalHours % 24
 
-    -- Calculate hours
     local hours = math.floor(decimalHours)
-
-    -- Calculate minutes (rounding to the nearest whole number)
     local minutes = math.floor((decimalHours - hours) * 60 + 0.5)
 
     local parts = {}
@@ -4281,12 +4041,10 @@ function convertDecimalToHours(decimalHours)
         end
     end
 
-    -- If no parts were added, then the input was zero (or very small)
     if #parts == 0 then
         return "0 minutes"
     end
 
-    -- For proper English joining:
     if #parts == 1 then
         return parts[1]
     else
@@ -4295,7 +4053,6 @@ function convertDecimalToHours(decimalHours)
     end
 end
 
--- Timers
 function displayTimers()
     local currentTime = localClock()
     for name, timer in pairs(timers) do
@@ -4303,54 +4060,43 @@ function displayTimers()
         for fieldName, fieldValue in pairs(timer) do
             if fieldName == 'last' then
                 if type(fieldValue) == "number" then
-                    -- 'last' is a number; calculate elapsed time
                     local elapsedTime = currentTime - fieldValue
                     timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(elapsedTime), clr.WHITE)
                 elseif type(fieldValue) == "table" then
-                    -- 'last' is a table; process each bind entry
                     local subTimerInfo = ""
                     for bindName, bindTime in pairs(fieldValue) do
                         if type(bindTime) == 'number' then
-                            -- Calculate elapsed time for each bind
                             local elapsedTime = currentTime - bindTime
                             subTimerInfo = subTimerInfo .. string.format("%s: {%06x}%s{%06x}, ", bindName, clr.GREY, formatTime(elapsedTime), clr.WHITE)
                         end
                     end
-                    -- Remove trailing comma and space
                     if #subTimerInfo > 0 then
                         subTimerInfo = subTimerInfo:sub(1, -3)
                     end
-                    -- Include the subTimerInfo in the main timerInfo
                     timerInfo = timerInfo .. string.format("%s: {%s}, ", fieldName:upperFirst(), subTimerInfo)
                 end
             elseif fieldName == 'sentTime' then
-                -- 'sentTime' processing
                 if type(fieldValue) == "number" then
                     local elapsedTime = currentTime - fieldValue
                     timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(elapsedTime), clr.WHITE)
                 end
             elseif fieldName == 'timer' then
-                -- 'timer' field
                 if type(fieldValue) == 'number' then
-                    -- If 'last' is a number, calculate time left
                     if type(timer.last) == 'number' then
                         local timeElapsed = currentTime - timer.last
                         local timeLeft = fieldValue - timeElapsed
                         timeLeft = math.max(timeLeft, 0)
                         timerInfo = timerInfo .. string.format("TimeLeft: {%06x}%s{%06x}, ", clr.GREY, formatTime(timeLeft), clr.WHITE)
                     else
-                        -- 'last' is not a number; can't calculate time left
                         timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(fieldValue), clr.WHITE)
                     end
                 end
             else
-                -- Other fields
                 if type(fieldValue) == 'number' then
                     timerInfo = timerInfo .. string.format("%s: {%06x}%s{%06x}, ", fieldName:upperFirst(), clr.GREY, formatTime(fieldValue), clr.WHITE)
                 end
             end
         end
-        -- Remove trailing comma and space
         if #timerInfo > 0 then
             timerInfo = timerInfo:sub(1, -3)
         end
@@ -4358,19 +4104,17 @@ function displayTimers()
     end
 end
 
--- OnScriptTerminate
 function onScriptTerminate(scr, quitGame)
 	if scr == script.this then
-		-- Unregister chat commands
-		for _, command in pairs(cmds) do
+		for _, command in pairs(clientCommands) do
 			sampUnregisterChatCommand(command.cmd)
 		end
 	end
 end
 
--- Function to handle capturing logic
-function handleCapture(currentTime, timer, config)
-    if currentTime - timer.sentTime <= timer.timeOut then
+function handleCapture(mode)
+    local currentTime = localClock()
+    if currentTime - timers.Capture.sentTime <= timers.Capture.timeOut then
         return
     end
 
@@ -4378,27 +4122,27 @@ function handleCapture(currentTime, timer, config)
         return
     end
 
-    if (config.Faction.turf and config.mode == "Faction") or (config.Family.turf and config.mode == "Family") then
-        sampSendChat("/capturf")
-        timer.sentTime = currentTime
-        if config.Family.disableAfterCapturing and config.mode == "Family" then
-            config.Family.turf = false
+    if autobind[mode].point and mode ~= "Faction" then
+        sampSendChat("/capture")
+        timers.Capture.sentTime = currentTime
+        if autobind[mode].disableAfterCapturing and mode == "Family" then
+            autobind[mode].point = false
         end
+        return
     end
 
-    if config.Family.point and config.mode == "Family" then
-        sampSendChat("/capture")
-        timer.sentTime = currentTime
-        if config.Family.disableAfterCapturing then
-            config.Family.point = false
+    if autobind[mode].turf then
+        sampSendChat("/capturf")
+        timers.Capture.sentTime = currentTime
+        if autobind[mode].disableAfterCapturing and mode == "Family" then
+            autobind[mode].turf = false
         end
+        return
     end
 end
 
--- Message Handlers (OnServerMessage)
 local messageHandlers = {
-    -- Time Change (Auto Capture)
-    {
+    {   -- Time Change (Auto Capture)
         pattern = "^The time is now (%d+):(%d+)%.$", -- The time is now 22:00.
         color = clrRGBA["WHITE"],
         action = function(hour, minute)
@@ -4410,10 +4154,7 @@ local messageHandlers = {
             -- Main logic
             lua_thread.create(function()
                 wait(0)
-                local currentTime = localClock()
-                local timer = timers.Capture
-                local config = autobind.Settings
-                handleCapture(currentTime, timer, config)
+                handleCapture(autobind.Settings.mode)
             end)
 
             -- Return the current time message if hour and minute are available
@@ -4422,8 +4163,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Welcome to Horizon Roleplay, Firstname Lastname.
-    {
+    {   -- Welcome to Horizon Roleplay, Firstname Lastname.
         pattern = "^Welcome to Horizon Roleplay, (.-)%.$",
         color = clrRGBA["NEWS"],
         action = function(name)
@@ -4470,48 +4210,44 @@ local messageHandlers = {
                 saveConfigWithErrorHandling(Files.currentplayer, autobind.CurrentPlayer)
                 saveConfigWithErrorHandling(Files.vehiclestorage, autobind.VehicleStorage)
 
-                registerAutobindCommands()
+                registerClientCommands()
 
                 return {clrRGBA["NEWS"], string.format("Welcome to Horizon Roleplay, %s.", name)}
             end
         end
     },
-    -- Muted Message
-    {
+    {   -- Muted Message
         pattern = "^You have been muted automatically for spamming%. Please wait 10 seconds and try again%.$",
         color = clrRGBA["YELLOW"],
         action = function()
             timers.Muted.last = localClock()
         end
     },
-    -- Admin On-Duty
-    {
+    {   -- Admin On-Duty
         pattern = '^You are now on%-duty as admin and have access to all your commands, see /ah.$',
         color = clrRGBA["YELLOW"],
         action = function()
             setSampfuncsGlobalVar("aduty", 1)
         end
     },
-    -- Admin Off-Duty
-    {
+    {   -- Admin Off-Duty
         pattern = '^You are now off%-duty as admin, and only have access to /admins /check /jail /ban /sban /kick /skick /showflags /reports /nrn$',
         color = clrRGBA["YELLOW"],
         action = function()
             setSampfuncsGlobalVar("aduty", 0)
         end
     },
-    -- ARES Radio
-    {
+    {   -- ARES Radio
         pattern = "^%*%*%s*(.-):%s*(.-)%s*%*%*$",
         color = clrRGBA["TEAM_FBI_COLOR"],
         action = function(header, message)
             -- Check if settings and faction modifications are enabled
-            if not (autobind.Settings and autobind.Settings.Faction and autobind.Settings.Faction.modifyRadioChat) then
+            if not (autobind.Settings and autobind.Faction and autobind.Faction.modifyRadioChat) then
                 return
             end
 
             -- Check if faction type and ranks are valid
-            local factionType = autobind.Settings.Faction.type
+            local factionType = autobind.Faction.type
             local factionRanks = factions.ranks[factionType]
             if not (factionType and factionRanks) then
                 return
@@ -4556,14 +4292,12 @@ local messageHandlers = {
             end
         end
     },
-    -- Mode/Frequency
-    {
+    {   -- Mode/Frequency
         pattern = "^([Family|" .. table.concat(factions.names, "|") .. "|LSFMD].+) MOTD: (.+)",
         color = clrRGBA["YELLOW"],
         action = function(type, motdMsg)
-            local config = autobind.Settings
             if type:match("Family") then
-                config.mode = type
+                autobind.Settings.mode = type
                 saveConfigWithErrorHandling(Files.settings, autobind.Settings)
 
                 --[[local freq, allies = motdMsg:match("[Ff]req:?%s*(-?%d+)%s*[/%s]*[Aa]llies:?%s*([^,]+)")
@@ -4591,8 +4325,8 @@ local messageHandlers = {
 
                 return {clrRGBA["DEPTRADIO"], string.format("Family MOTD: %s", motdMsg)}
             elseif type:match("[LSPD|SASD|FBI|ARES|GOV]") then
-                config.mode = "Faction"
-                config.Faction.type = type
+                autobind.Settings.mode = "Faction"
+                autobind.Faction.type = type
                 saveConfigWithErrorHandling(Files.settings, autobind.Settings)
                 if accepter.enable then
                     formattedAddChatMessage("Auto Accept is now disabled because you are now in Faction Mode.")
@@ -4629,26 +4363,25 @@ local messageHandlers = {
 
                 return {clrRGBA["DEPTRADIO"], string.format("%s MOTD: %s", type, motdMsg)}
             elseif type:match("LSFMD") then
-                config.mode = "Faction"
-                config.Faction.type = type
+                autobind.Settings.mode = "Faction"
+                autobind.Faction.type = type
                 saveConfigWithErrorHandling(Files.settings, autobind.Settings)
 
                 return {clrRGBA["DEPTRADIO"], string.format("%s MOTD: %s", type, motdMsg)}
             end
         end
     },
-    -- Set Frequency Message
-    {
+    {   -- Set Frequency Message
         pattern = "You have set the frequency of your portable radio to (-?%d+) kHz.",
         color = clrRGBA["WHITE"],
         action = function(freq)
             if tonumber(freq) == 0 then
                 if autobind.Settings.mode == "Family" then
                     currentFamilyFreq = 0
-                    autobind.Settings.Family.frequency = 0
+                    autobind.Family.frequency = 0
                 elseif autobind.Settings.mode == "Faction" then
                     currentFactionFreq = 0
-                    autobind.Settings.Faction.frequency = 0
+                    autobind.Faction.frequency = 0
                 end
             else
                 formattedAddChatMessage(string.format("You have set the frequency to your {%06x}%s {%06x}portable radio.", clr.DEPTRADIO, autobind.Settings.mode, clr.WHITE))
@@ -4656,8 +4389,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Radio Message
-    {
+    {   -- Radio Message
         pattern = "%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)",
         color = clrRGBA["PUBLICRADIO_COLOR"],
         action = function(freq, playerName, message)
@@ -4668,8 +4400,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Autocap Disabled
-    {
+    {   -- Autocap Disabled
         pattern = "^Your gang is already attempting to capture this turf%.$",
         color = clrRGBA["GRAD1"],
         action = function()
@@ -4681,8 +4412,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Turf Not Ready
-    {
+    {   -- Turf Not Ready
         pattern = "This turf is not ready for takeover yet.",
         color = clrRGBA["GRAD1"],
         action = function()
@@ -4694,8 +4424,7 @@ local messageHandlers = {
             end
         end
     },
-    -- You are not high rank enough to capture!
-    {
+    {   -- You are not high rank enough to capture!
         pattern = "^You are not high rank enough to capture!$",
         color = clrRGBA["GRAD1"],
         action = function()
@@ -4706,9 +4435,9 @@ local messageHandlers = {
                 toggle = true
             end
 
-            if autobind.Settings.Faction.turf and autobind.Settings.mode == "Faction" then
+            if autobind.Faction.turf and autobind.Settings.mode == "Faction" then
                 formattedAddChatMessage("You have capture at signcheck enabled, disabling that now.", clr.GRAD1)
-                autobind.Settings.Faction.turf = false
+                autobind.Faction.turf = false
                 toggle = true
             end
 
@@ -4717,8 +4446,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Bodyguard Not Near (Same as other commands not sure what i wanna do yet)
-    {
+    {   -- Bodyguard Not Near (Same as other commands not sure what i wanna do yet)
         pattern = "That player isn't near you%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -4730,8 +4458,7 @@ local messageHandlers = {
             return {clrRGBA["GREY"], "That player isn't near you."}
         end
     },
-    -- Can't Guard While Aiming
-    {
+    {   -- Can't Guard While Aiming
         pattern = "You can't /guard while aiming%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -4743,8 +4470,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Must Wait Before Selling Vest
-    {
+    {   -- Must Wait Before Selling Vest
         pattern = "You must wait (%d+) seconds? before selling another vest%.?",
         color = clrRGBA["GREY"],
         action = function(cooldown)
@@ -4760,8 +4486,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Offered Protection
-    {
+    {   -- Offered Protection
         pattern = "%* You offered protection to (.+) for %$([%d,]+)%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(nickname, price)
@@ -4782,8 +4507,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Not a Bodyguard
-    {
+    {   -- Not a Bodyguard
         pattern = "You are not a bodyguard%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -4797,8 +4521,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Now a Bodyguard
-    {
+    {   -- Now a Bodyguard
         pattern = "%* You are now a Bodyguard, type %/help to see your new commands%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
@@ -4810,8 +4533,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Accept Vest
-    {
+    {   -- Accept Vest
         pattern = "You are not near the person offering you guard!",
         color = clrRGBA["GRAD2"],
         action = function()
@@ -4824,8 +4546,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Protection Offer
-    {
+    {   -- Protection Offer
         pattern = "^%* Bodyguard (.+) wants to protect you for %$([%d,]+)%, type %/accept bodyguard to accept%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(nickname, price)
@@ -4860,8 +4581,7 @@ local messageHandlers = {
             end
         end
     },
-    -- You Accepted Protection
-    {
+    {   -- You Accepted Protection
         pattern = "^%* You accepted the protection for %$(%d+) from (.+)%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(price, nickname)
@@ -4879,8 +4599,7 @@ local messageHandlers = {
             return {clrRGBA["LIGHTBLUE"], string.format("* You accepted the protection for $%d from %s (%d).", price, nickname, playerId)}
         end
     },
-    -- They Accepted Protection
-    {
+    {   -- They Accepted Protection
         pattern = "%* (.+) accepted your protection, and the %$(%d+) was added to your money.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(nickname, price)
@@ -4892,8 +4611,7 @@ local messageHandlers = {
             return {clrRGBA["LIGHTBLUE"], string.format("* %s (%d) accepted your protection, and the $%d was added to your money.", nickname, playerId, price)}
         end
     },
-    -- Can't Afford Protection
-    {
+    {   -- Can't Afford Protection
         pattern = "You can't afford the Protection!",
         color = clrRGBA["GREY"],
         action = function()
@@ -4902,8 +4620,7 @@ local messageHandlers = {
             return {clrRGBA["GREY"], "You can't afford the protection!"}
         end
     },
-    -- Can't Use Locker Recently Shot
-    {
+    {   -- Can't Use Locker Recently Shot
         pattern = "You can't use your lockers if you were recently shot.",
         color = clrRGBA["WHITE"],
         action = function()
@@ -4916,8 +4633,7 @@ local messageHandlers = {
             return false
         end
     },
-    -- Heal Timer Extended
-    {
+    {   -- Heal Timer Extended
         pattern = "^You can't heal if you were recently shot, except within points, events, minigames, and paintball%.$",
         color = clrRGBA["WHITE"],
         action = function()
@@ -4926,8 +4642,7 @@ local messageHandlers = {
             return false
         end
     },
-    -- Not Diamond Donator
-    {
+    {   -- Not Diamond Donator
         pattern = "^You are not a Diamond Donator%!",
         color = clrRGBA["GREY"],
         action = function()
@@ -4935,8 +4650,7 @@ local messageHandlers = {
             autobind.AutoVest.donor = false
         end
     },
-    -- Not Sapphire or Diamond Donator
-    {
+    {   -- Not Sapphire or Diamond Donator
         pattern = "^You are not a Sapphire or Diamond Donator%!",
         color = clrRGBA["GREY"],
         action = function()
@@ -4946,8 +4660,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Not at Black Market
-    {
+    {   -- Not at Black Market
         pattern = "^%s*You are not at the black market%!",
         color = clrRGBA["GRAD2"],
         action = function()
@@ -4957,8 +4670,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Already Searched for Someone
-    {
+    {   -- Already Searched for Someone
         pattern = "^You have already searched for someone %- wait a little%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -4971,8 +4683,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Can't Find Person Hidden in Turf
-    {
+    {   -- Can't Find Person Hidden in Turf
         pattern = "^You can't find that person as they're hidden in one of their turfs%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -4987,8 +4698,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Not a Detective
-    {
+    {   -- Not a Detective
         pattern = "^You are not a detective%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -5003,8 +4713,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Now a Detective
-    {
+    {   -- Now a Detective
         pattern = "^%* You are now a Detective, type %/help to see your new commands%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
@@ -5020,8 +4729,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Unable to Find Person
-    {
+    {   -- Unable to Find Person
         pattern = "^You are unable to find this person%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -5040,8 +4748,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Cross Devil has been last seen at <optional location>.
-    {
+    {   -- Cross Devil has been last seen at <optional location>.
         pattern = "^(.+) has been last seen at%s*(.-)%.$",
         color = clrRGBA["GRAD2"],
         action = function(nickname, location)
@@ -5058,8 +4765,7 @@ local messageHandlers = {
             end
         end
     },
-    -- SMS: I need the where-abouts of Player Name, Sender: Player Name (Phone Number)
-    {
+    {   -- SMS: I need the where-abouts of Player Name, Sender: Player Name (Phone Number)
         pattern = "^SMS: I need the where%-abouts of ([^,]+), Sender: ([^%(]+)%((%d+)%)$",
         color = clrRGBA["YELLOW"],
         action = function(nickname, sender, phonenumber)
@@ -5069,8 +4775,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Your backup request has been cleared.
-    {
+    {   -- Your backup request has been cleared.
         pattern = "^Your backup request has been cleared%.$",
         color = clrRGBA["GRAD2"],
         action = function()
@@ -5078,8 +4783,7 @@ local messageHandlers = {
             return {clrRGBA["GRAD2"], "Your backup request has been cleared."}
         end
     },
-    -- You already have an active backup request!
-    {
+    {   -- You already have an active backup request!
         pattern = "^You already have an active backup request!$",
         color = clrRGBA["GREY"],
         action = function()
@@ -5087,8 +4791,7 @@ local messageHandlers = {
             return {clrRGBA["GRAD2"], "You already have an active backup request!"}
         end
     },
-    -- You don't have an active backup request!
-    {
+    {   -- You don't have an active backup request!
         pattern = "^You don't have an active backup request!$",
         color = clrRGBA["GRAD2"],
         action = function()
@@ -5096,8 +4799,7 @@ local messageHandlers = {
             return {clrRGBA["GRAD2"], "You don't have an active backup request!"}
         end
     },
-    -- Your backup request has been cleared automatically.
-    {
+    {   -- Your backup request has been cleared automatically.
         pattern = "^Your backup request has been cleared automatically.$",
         color = clrRGBA["GRAD2"],
         action = function()
@@ -5105,8 +4807,7 @@ local messageHandlers = {
             return {clrRGBA["GRAD2"], "Your backup request has been cleared automatically."}
         end
     },
-    -- Requesting immediate backup
-    {
+    {   -- Requesting immediate backup
         pattern = "^(.+) is requesting immediate backup at%s*(.-)%.$",
         color = clrRGBA["TEAM_BLUE_COLOR"],
         action = function(nickname, location)
@@ -5122,12 +4823,11 @@ local messageHandlers = {
                     backup.playerId = playerId
                     backup.location = location
                 end
-                return {clrRGBA["WHITE"], string.format("{%06x}%s (%d) {FFFFFF}is requesting immediate backup %s.", changeAlpha(playerColor, 0), nickname, playerId, (cleanLocation == "" and "out of the map or no location was provided" or string.format("at {%06x}%s", clr.YELLOW, cleanLocation)))}
+                return {clrRGBA["WHITE"], string.format("{%06x}%s (%d) {%06x}is requesting immediate backup %s.", changeAlpha(playerColor, 0), nickname, playerId, clr.GREY, (cleanLocation == "" and "out of the map or no location was provided" or string.format("at {%06x}%s", clr.YELLOW, cleanLocation)))}
             end
         end
     },
-    -- You have cleared your beacon.
-    {
+    {   -- You have cleared your beacon.
         pattern = "^You have cleared your beacon.$",
         color = clrRGBA["GRAD2"],
         action = function()
@@ -5135,8 +4835,7 @@ local messageHandlers = {
             return {clrRGBA["GRAD2"], "You have cleared your beacon."}
         end
     },
-    -- Your beacon has been cleared automatically.
-    {
+    {   -- Your beacon has been cleared automatically.
         pattern = "^Your beacon has been cleared automatically.$",
         color = clrRGBA["GRAD2"],
         action = function()
@@ -5144,8 +4843,7 @@ local messageHandlers = {
             return {clrRGBA["GRAD2"], "Your beacon has been cleared automatically."}
         end
     },
-    -- Requesting help
-    {
+    {   -- Requesting help
         pattern = "^(.+) is requesting help at (.+).$",
         color = clrRGBA["YELLOW"],
         action = function(nickname, location)
@@ -5163,8 +4861,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Accept Repair
-    {
+    {   -- Accept Repair
         pattern = "^%* Car Mechanic (.+) wants to repair your car for %$1, %(type %/accept repair%) to accept%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
@@ -5176,8 +4873,7 @@ local messageHandlers = {
             end
         end
     },
-    -- Auto Badge (ARES)
-    {
+    {   -- Auto Badge (ARES)
         pattern = "^Your hospital bill [comes to %%$%%d+%%%. Have a nice day%!$|was paid for by your faction insurance%.$]",
         color = clrRGBA["TEAM_MED_COLOR"],
         action = function()
@@ -5185,7 +4881,7 @@ local messageHandlers = {
                 backup.enable = false
             end
 
-            if autobind.Settings.Faction.autoBadge and not checkMuted() and not checkAdminDuty() then
+            if autobind.Faction.autoBadge and not checkMuted() and not checkAdminDuty() then
                 if autobind.Settings.mode == "Faction" then
                     lua_thread.create(function()
                         wait(0)
@@ -5195,28 +4891,26 @@ local messageHandlers = {
             end
         end
     },
-    -- Muted Notification
-    {
+    {   -- Muted Notification
         pattern = "^You have been muted automatically for spamming%. Please wait 10 seconds and try again%.$",
         color = clrRGBA["YELLOW"],
         action = function()
             timers.Muted.last = localClock()
         end
     },
-    -- Help Command Additions
-    {
+    {   -- Help Command Additions
         pattern = "^%*%*%* OTHER %*%*%* /cellphonehelp /carhelp /househelp /toyhelp /renthelp /jobhelp /leaderhelp /animhelp /fishhelp /insurehelp /businesshelp /bankhelp",
         color = clrRGBA["WHITE"],
         action = function()
             lua_thread.create(function()
                 wait(0)
+                local cmds = clientCommands
                 sampAddChatMessage(string.format("*** AUTOBIND *** /%s /%s /%s /%s /%s /%s /%s /%s /%s /%s /%s", shortName, shortName .. " help", cmds.repairnear.cmd, cmds.autocap.cmd, cmds.capcheck.cmd, cmds.sprintbind.cmd, cmds.bikebind.cmd, cmds.sprunkspam.cmd, cmds.autofarm.cmd, cmds.resetvst.cmd, cmds.autopicklock.cmd), -1)
                 sampAddChatMessage(string.format("*** AUTOVEST *** /%s /%s /%s /%s /%s", cmds.autovest.cmd, cmds.ddmode.cmd, cmds.autoaccept.cmd, cmds.vestnear.cmd, cmds.vestall.cmd), -1)
             end)
         end
     },
-    -- * (.+) opens a can of sprunk.
-    {
+    {   -- * (.+) opens a can of sprunk.
         pattern = "^%* (.+) opens a can of sprunk.$",
         color = clrRGBA["PURPLE"],
         action = function(nickname)
@@ -5224,8 +4918,7 @@ local messageHandlers = {
             return {clrRGBA["PURPLE"], string.format("%s opens a can of sprunk.", nickname)}
         end
     },
-    -- Dropped Sprunk
-    {
+    {   -- Dropped Sprunk
         pattern = "^(.+) drops their sprunk onto the floor.$",
         color = clrRGBA["PURPLE"],
         action = function(nickname)
@@ -5233,8 +4926,7 @@ local messageHandlers = {
             return {clrRGBA["PURPLE"], string.format("%s drops their sprunk onto the floor.", nickname)}
         end
     },
-    -- You already have full health.
-    {
+    {   -- You already have full health.
         pattern = "^You already have full health.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -5243,8 +4935,7 @@ local messageHandlers = {
             end
         end
     },
-    -- "You have stored your (.-)%. The vehicle has been (.-)%."
-    {
+    {   -- "You have stored your (.-)%. The vehicle has been (.-)%."
         pattern = "You have stored your (.-)%. The vehicle has been despawned%.",
         color = clrRGBA["WHITE"],
         action = function(vehName)
@@ -5252,8 +4943,7 @@ local messageHandlers = {
             return {clrRGBA["WHITE"], string.format("* You have stored your %s. The vehicle has been despawned.", vehName)}
         end
     },
-    -- "You have taken your (.-) out of storage%. The vehicle has been (.-) at the last parking location%."
-    {
+    {   -- "You have taken your (.-) out of storage%. The vehicle has been (.-) at the last parking location%."
         pattern = "You have taken your (.-) out of storage%. The vehicle has been spawned at the last parking location%.",
         color = clrRGBA["WHITE"],
         action = function(vehName)
@@ -5261,8 +4951,7 @@ local messageHandlers = {
             return {clrRGBA["WHITE"], string.format("* You have taken your %s out of storage. The vehicle has been spawned at the last parking location.", vehName)}
         end
     },
-    -- Your (.-) has been sent to the location at which you last parked it.
-    {
+    {   -- Your (.-) has been sent to the location at which you last parked it.
         pattern = "Your (.-) has been sent to the location at which you last parked it%.$",
         color = clrRGBA["GRAD1"],
         action = function(vehName)
@@ -5270,8 +4959,7 @@ local messageHandlers = {
             return {clrRGBA["GRAD1"], string.format("* Your %s has been sent to the location at which you last parked it.", vehName)}
         end
     },
-    -- You cannot store this vehicle as someone is currently occupying it.
-    {
+    {   -- You cannot store this vehicle as someone is currently occupying it.
         pattern = "You can not store this vehicle as someone is currently occupying it%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -5279,8 +4967,7 @@ local messageHandlers = {
             return {clrRGBA["GREY"], "* You cannot store this vehicle as someone is currently occupying it."}
         end
     },
-    -- This vehicle is too damaged to be stored.
-    {
+    {   -- This vehicle is too damaged to be stored.
         pattern = "This vehicle is too damaged to be stored%.$",
         color = clrRGBA["GREY"],
         action = function()
@@ -5288,8 +4975,7 @@ local messageHandlers = {
             return {clrRGBA["GREY"], "* This vehicle is too damaged to be stored."}
         end
     },
-    -- You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions).
-    {
+    {   -- You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions).
         pattern = "^You can't spawn a disabled vehicle. It is disabled due to your Donator level %(vehicle restrictions%)%.$",
         color = clrRGBA["WHITE"],
         action = function()
@@ -5297,8 +4983,7 @@ local messageHandlers = {
             return {clrRGBA["WHITE"], "* You can't spawn a disabled vehicle. It is disabled due to your Donator level (vehicle restrictions)."}
         end
     },
-    -- You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore.
-    {
+    {   -- You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore.
         pattern = "^You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore%.$",
         color = clrRGBA["WHITE"],
         action = function()
@@ -5306,8 +4991,7 @@ local messageHandlers = {
             return {clrRGBA["WHITE"], "* You can't spawn an impounded vehicle. If you wish to reclaim it, do so at the DMV in Dillimore."}
         end
     },
-    -- You have failed to pick the lock!
-    {
+    {   -- You have failed to pick the lock!
         pattern = "^You have failed to pick the lock%!$",
         color = clrRGBA["WHITE"],
         action = function()
@@ -5319,8 +5003,7 @@ local messageHandlers = {
             end
         end
     },
-    -- You have successfully picked the lock of this vehicle.
-    {
+    {   -- You have successfully picked the lock of this vehicle.
         pattern = "^You have successfully picked the lock of this vehicle%.$",
         color = clrRGBA["WHITE"],
         action = function()
@@ -5334,8 +5017,7 @@ local messageHandlers = {
             end
         end
     },
-    -- * You have now started farming. You must load up this vehicle with the harvest.
-    {
+    {   -- * You have now started farming. You must load up this vehicle with the harvest.
         pattern = "^%* You have now started farming%. You must load up this vehicle with the harvest%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
@@ -5346,8 +5028,7 @@ local messageHandlers = {
             end
         end
     },
-    -- * You received $225 for delivering the harvest.
-    {
+    {   -- * You received $225 for delivering the harvest.
         pattern = "^%* You received (.-) for delivering the harvest%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(amount)
@@ -5367,8 +5048,7 @@ local messageHandlers = {
             end
         end
     },
-    -- * You harvested X out of the 8 needed crops. Type /harvest to harvest some more crops.
-    {
+    {   -- * You harvested X out of the 8 needed crops. Type /harvest to harvest some more crops.
         pattern = "^%* You harvested (.-) out of the 8 needed crops%. Type /harvest to harvest some more crops%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(cropsHarvested)
@@ -5383,8 +5063,7 @@ local messageHandlers = {
             end
         end
     },
-    -- * You harvested 8 out of the 8 needed crops. Get inside your truck.
-    {
+    {   -- * You harvested 8 out of the 8 needed crops. Get inside your truck.
         pattern = "^%* You harvested 8 out of the 8 needed crops%. Get inside your truck%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
@@ -5411,8 +5090,7 @@ local messageHandlers = {
             end
         end
     },
-    -- * You have arrived at your designated farming spot. Type /harvest to harvest some crops.
-    {
+    {   -- * You have arrived at your designated farming spot. Type /harvest to harvest some crops.
         pattern = "^%* You have arrived at your designated farming spot%. Type /harvest to harvest some crops%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
@@ -5451,8 +5129,7 @@ local messageHandlers = {
             end
         end
     },
-    -- All current checkpoints, trackers and accepted fares have been reset.
-    {
+    {   -- All current checkpoints, trackers and accepted fares have been reset.
         pattern = "^All current checkpoints, trackers and accepted fares have been reset%.$",
         color = clrRGBA["WHITE"],
         action = function()
@@ -5463,28 +5140,25 @@ local messageHandlers = {
             end
         end
     },
-    -- You have switched to faction ID %d+ ((.+))%.$
-    {
+    {   -- You have switched to faction ID %d+ ((.+))%.$
         pattern = "^You have switched to faction ID (%d+)%s*%((.+)%)%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function(factionId, factionName)
-            --[[if not autobind.Settings.Faction then
+            --[[if not autobind.Faction then
                 return
             end]]
 
             print(factionId, factionName)
         end
     },
-    -- * You sold your (.+) to (.+) for %$([%d,]+)%.$
-    {
+    {   -- * You sold your (.+) to (.+) for %$([%d,]+)%.$
         pattern = "^%* You sold your (.+) to (.+) for %$([%d,]+)%.$",
         color = clrRGBA["WHITE"],
         action = function(vehicle, buyer, price)
             print("You sold your " .. vehicle .. " to " .. buyer .. " for $" .. price .. ".")
         end
     },
-    -- DIAMOND DONATOR: You have purchased an? (.-) for %$([%d,]+)%.
-    {
+    {   -- DIAMOND DONATOR: You have purchased an? (.-) for %$([%d,]+)%.
         pattern = "^DIAMOND DONATOR: You have purchased an? (.-) for %$([%d,]+)%.$",
         color = clrRGBA["BLUE"],
         action = function(item, price)
@@ -5493,8 +5167,7 @@ local messageHandlers = {
             end
         end
     },
-    -- DIAMOND DONATOR: You have purchased full health and armor for %$350%.
-    {
+    {   -- DIAMOND DONATOR: You have purchased full health and armor for %$350%.
         pattern = "^DIAMOND DONATOR: You have purchased full health and armor for %$350%.$",
         color = clrRGBA["BLUE"],
         action = function()
@@ -5503,8 +5176,7 @@ local messageHandlers = {
             end
         end
     },
-    -- You have purchased an? (.+) for %$([%d,]+)%.$
-    {
+    {   -- You have purchased an? (.+) for %$([%d,]+)%.$
         pattern = "^You have purchased an? (.-) for %$([%d,]+)%.$",
         color = clrRGBA["WHITE"],
         action = function(item, price)
@@ -5515,19 +5187,15 @@ local messageHandlers = {
     }
 }
 
--- OnServerMessage
 function sampev.onServerMessage(color, text)
-    -- Do not run if autobind is disabled
     if not autobind.Settings.enable then
         return
     end
 
-    -- Do not run if the player is paused
     if isPlayerPaused then
         return
     end
 
-    -- Run the message handler
     for _, handler in ipairs(messageHandlers) do
         if color == handler.color then
             local captures = {text:match(handler.pattern)}
@@ -5542,7 +5210,6 @@ function sampev.onServerMessage(color, text)
     end
 end
 
--- OnSendTakeDamage
 function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
 	if damage < 1 then
 		return
@@ -5567,14 +5234,11 @@ function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
 	timers.Heal.last = localClock()
 end
 
--- OnCreate3DText
+-- Dynamically update the locations of the black market and faction locker
 function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedPlayerId, attachedVehicleId, text)
-    -- Dynamic Black Market Locations (From the server)
     if text:match("Type /blackmarket to purchase items") or text:match("Type /dlocker to purchase items") then
-        -- Ensure the Locations table is initialized
         autobind.BlackMarket.Locations = autobind.BlackMarket.Locations or {}
         
-        -- Store the location data
         autobind.BlackMarket.Locations[tostring(id)] = {
             x = position.x,
             y = position.y,
@@ -5584,10 +5248,8 @@ function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedP
     end
 
     if text:match("/locker") and text:match("To open your locker.") then
-        -- Ensure the Locations table is initialized
         autobind.FactionLocker.Locations = autobind.FactionLocker.Locations or {}
 
-        -- Store the location data
         autobind.FactionLocker.Locations[tostring(id)] = {
             x = position.x,
             y = position.y,
@@ -5597,11 +5259,9 @@ function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedP
     end
 end
 
--- OnShowDialog
 function sampev.onShowDialog(id, style, title, button1, button2, text)
     if title:find("Vehicle storage") and style == 2 then
         if not vehicles.initialFetch then
-            -- Get the player name
             local playerName = autobind.CurrentPlayer.name
             if not playerName or playerName == "" then
                 local _, playerId = sampGetPlayerIdByCharHandle(ped)
@@ -5746,27 +5406,22 @@ function sampev.onPlayerQuit(playerId, reason)
     end
 end
 
--- OnConnectionRejected
 function sampev.onConnectionRejected(reason)
     autoConnect()
 end
 
--- OnConnectionClosed
 function sampev.onConnectionClosed()
     autoConnect()
 end
 
--- OnConnectionBanned
 function sampev.onConnectionBanned()
     autoConnect()
 end
 
--- OnConnectionLost
 function sampev.onConnectionLost()
     autoConnect()
 end
 
--- OnSetPlayerTime
 function sampev.onSetPlayerTime(hour, minute)
     if autobind.TimeAndWeather then
         autobind.TimeAndWeather.serverHour = hour
@@ -5777,7 +5432,6 @@ function sampev.onSetPlayerTime(hour, minute)
     end
 end
 
--- OnSetWeather
 function sampev.onSetWeather(weatherId)
     if autobind.TimeAndWeather then
         autobind.TimeAndWeather.serverWeather = weatherId
@@ -5787,25 +5441,24 @@ function sampev.onSetWeather(weatherId)
     end
 end
 
--- OnPlayAudioStream
 function sampev.onPlayAudioStream(url, position, radius, usePosition)
     if url:match("^https://hzgaming.net/horizonfm/radio.pls$") and not autobind.Settings.HZRadio then
         return false
-    elseif url:match("^https://hzgaming.net/zhao/sounds%/%w+.mp3$") and not autobind.Settings.LoginAudio then
+    elseif url:match("^https://hzgaming.net/zhao/sounds%/%w+.mp3$") and not autobind.Settings.LoginMusic then
+        formattedAddChatMessage("You have login music disabled, type /loginmusic to enable it.")
         return false
     end
 end
 
--- Elements Data (Renders)
 local elements = {
     OfferedTo = {
-        enable = function() return autobind.AutoVest.offeredTo.enable end,
-        pos = function() return autobind.AutoVest.offeredTo.Pos end,
-        colors = function() return autobind.AutoVest.offeredTo.colors end,
-        align = function() return autobind.AutoVest.offeredTo.align end,
-        fontName = function() return autobind.AutoVest.offeredTo.font end,
-        fontSize = function() return autobind.AutoVest.offeredTo.size end,
-        flags = function() return autobind.AutoVest.offeredTo.flags end,
+        enable = function() return autobind.Elements.offeredTo.enable end,
+        pos = function() return autobind.Elements.offeredTo.Pos end,
+        colors = function() return autobind.Elements.offeredTo.colors end,
+        align = function() return autobind.Elements.offeredTo.align end,
+        fontName = function() return autobind.Elements.offeredTo.font end,
+        fontSize = function() return autobind.Elements.offeredTo.size end,
+        flags = function() return autobind.Elements.offeredTo.flags end,
         textFunc = function(self)
             local offeredTo = string.format("%s (%d)", bodyguard.playerName:gsub("_", " "), bodyguard.playerId)
             return string.format("{%06x}Offered To: {%06x}%s; $%s", self.colors().text, self.colors().value, menu.fonts.window[0] and "Player_Name (ID)" or offeredTo, formatNumber(bodyguard.price))
@@ -5815,13 +5468,13 @@ local elements = {
         end,
     },
     OfferedFrom = {
-        enable = function() return autobind.AutoVest.offeredFrom.enable end,
-        pos = function() return autobind.AutoVest.offeredFrom.Pos end,
-        colors = function() return autobind.AutoVest.offeredFrom.colors end,
-        align = function() return autobind.AutoVest.offeredFrom.align end,
-        fontName = function() return autobind.AutoVest.offeredFrom.font end,
-        fontSize = function() return autobind.AutoVest.offeredFrom.size end,
-        flags = function() return autobind.AutoVest.offeredFrom.flags end,
+        enable = function() return autobind.Elements.offeredFrom.enable end,
+        pos = function() return autobind.Elements.offeredFrom.Pos end,
+        colors = function() return autobind.Elements.offeredFrom.colors end,
+        align = function() return autobind.Elements.offeredFrom.align end,
+        fontName = function() return autobind.Elements.offeredFrom.font end,
+        fontSize = function() return autobind.Elements.offeredFrom.size end,
+        flags = function() return autobind.Elements.offeredFrom.flags end,
         textFunc = function(self)
             local offeredFrom = string.format("%s (%d)", accepter.playerName:gsub("_", " "), accepter.playerId)
             return string.format("{%06x}Offered From: {%06x}%s; $%s", self.colors().text, self.colors().value, menu.fonts.window[0] and "Player_Name (ID)" or offeredFrom, formatNumber(accepter.price))
@@ -5831,13 +5484,13 @@ local elements = {
         end,
     },
     PedsCount = {
-        enable = function() return autobind.PedsCount.enable end,
-        pos = function() return autobind.PedsCount.Pos end,
-        colors = function() return autobind.PedsCount.colors end,
-        align = function() return autobind.PedsCount.align end,
-        fontName = function() return autobind.PedsCount.font end,
-        fontSize = function() return autobind.PedsCount.size end,
-        flags = function() return autobind.PedsCount.flags end,
+        enable = function() return autobind.Elements.PedsCount.enable end,
+        pos = function() return autobind.Elements.PedsCount.Pos end,
+        colors = function() return autobind.Elements.PedsCount.colors end,
+        align = function() return autobind.Elements.PedsCount.align end,
+        fontName = function() return autobind.Elements.PedsCount.font end,
+        fontSize = function() return autobind.Elements.PedsCount.size end,
+        flags = function() return autobind.Elements.PedsCount.flags end,
         textFunc = function(self)
             local pedCount = sampGetPlayerCount(true) - 1
             return string.format("{%06x}Peds: {%06x}%d", self.colors().text, self.colors().value, pedCount)
@@ -5847,31 +5500,31 @@ local elements = {
         end,
     },
     AutoFind = {
-        enable = function() return autobind.AutoFind.enable end,
-        pos = function() return autobind.AutoFind.Pos end,
-        colors = function() return autobind.AutoFind.colors end,
-        align = function() return autobind.AutoFind.align end,
-        fontName = function() return autobind.AutoFind.font end,
-        fontSize = function() return autobind.AutoFind.size end,
-        flags = function() return autobind.AutoFind.flags end,
+        enable = function() return autobind.Elements.AutoFind.enable end,
+        pos = function() return autobind.Elements.AutoFind.Pos end,
+        colors = function() return autobind.Elements.AutoFind.colors end,
+        align = function() return autobind.Elements.AutoFind.align end,
+        fontName = function() return autobind.Elements.AutoFind.font end,
+        fontSize = function() return autobind.Elements.AutoFind.size end,
+        flags = function() return autobind.Elements.AutoFind.flags end,
         textFunc = function(self)
-            local autoFind = string.format("%s (%d)", autofind.playerName:gsub("_", " "), autofind.playerId)
+            local playerName = string.format("%s (%d)", autofind.playerName:gsub("_", " "), autofind.playerId)
             local timeLeft = math.ceil(timers.Find.timer - (localClock() - timers.Find.last))
             local locationText = menu.fonts.window[0] and "; Location" or (autofind.location == "" and "" or ("; " .. autofind.location))
-            return string.format("{%06x}Auto Find: {%06x}%s; Next: %02ds%s", self.colors().text, self.colors().value, menu.fonts.window[0] and "Player_Name (ID)" or autoFind, timeLeft < 0 and 0 or timeLeft, locationText)
+            return string.format("{%06x}Auto Find: {%06x}%s; Next: %02ds%s", self.colors().text, self.colors().value, menu.fonts.window[0] and "Player_Name (ID)" or playerName, timeLeft < 0 and 0 or timeLeft, locationText)
         end,
         isVisible = function()
             return (autofind.playerName and autofind.playerName ~= "" and autofind.playerId and autofind.playerId ~= -1) or menu.fonts.window[0]
         end,
     },
     LastBackup = {
-        enable = function() return autobind.LastBackup.enable end,
-        pos = function() return autobind.LastBackup.Pos end,
-        colors = function() return autobind.LastBackup.colors end,
-        align = function() return autobind.LastBackup.align end,
-        fontName = function() return autobind.LastBackup.font end,
-        fontSize = function() return autobind.LastBackup.size end,
-        flags = function() return autobind.LastBackup.flags end,
+        enable = function() return autobind.Elements.LastBackup.enable end,
+        pos = function() return autobind.Elements.LastBackup.Pos end,
+        colors = function() return autobind.Elements.LastBackup.colors end,
+        align = function() return autobind.Elements.LastBackup.align end,
+        fontName = function() return autobind.Elements.LastBackup.font end,
+        fontSize = function() return autobind.Elements.LastBackup.size end,
+        flags = function() return autobind.Elements.LastBackup.flags end,
         textFunc = function(self)
             local lastBackup = string.format("%s (%d)", backup.playerName:gsub("_", " "), backup.playerId)
             return string.format("{%06x}Last Backup: {%06x}%s; %s", self.colors().text, self.colors().value, menu.fonts.window[0] and "Player_Name (ID)" or lastBackup, menu.fonts.window[0] and "Location" or backup.location)
@@ -5881,17 +5534,17 @@ local elements = {
         end,
     },
     FactionBadge = {
-        enable = function() return autobind.FactionBadge.enable end,
-        pos = function() return autobind.FactionBadge.Pos end,
+        enable = function() return autobind.Elements.FactionBadge.enable end,
+        pos = function() return autobind.Elements.FactionBadge.Pos end,
         colors = function()
             local _, playerId = sampGetPlayerIdByCharHandle(ped)
             local playerColor = sampGetPlayerColor(playerId)
             return {text = changeAlpha(playerColor, 0)}
         end,
-        align = function() return autobind.FactionBadge.align end,
-        fontName = function() return autobind.FactionBadge.font end,
-        fontSize = function() return autobind.FactionBadge.size end,
-        flags = function() return autobind.FactionBadge.flags end,
+        align = function() return autobind.Elements.FactionBadge.align end,
+        fontName = function() return autobind.Elements.FactionBadge.font end,
+        fontSize = function() return autobind.Elements.FactionBadge.size end,
+        flags = function() return autobind.Elements.FactionBadge.flags end,
         textFunc = function(self)
             if factions.badges[self.colors().text] then
                 local faction = factions.badges[self.colors().text]
@@ -5907,56 +5560,37 @@ local elements = {
     }
 }
 
--- Initialize 'myFonts' table
-local myFonts = {}
-
--- Table to store drag state for each element
-local dragState = {}
-
--- Flag Values
-local flagValues = {
-    BOLD = 0x1, 
-    ITALICS = 0x2,
-    BORDER = 0x4, 
-    SHADOW = 0x8,
-    UNDERLINE = 0x10,
-    STRIKEOUT = 0x20
-}
-
--- Function to create fonts for all elements
 function createFonts()
     for name, element in pairs(elements) do
-        -- Get the flags table from 'autobind'
         local flags = element.flags() or {}
+        local flag_sum = 0
 
         -- Calculate the flag sum
-        local flag_sum = 0
         for flagName, flagValue in pairs(flagValues) do
             if flags[flagName] then
                 flag_sum = flag_sum + flagValue
             end
         end
 
-        -- Create the font with the calculated flags
-        local fontName = element.fontName()
-        local fontSize = element.fontSize()
-        myFonts[name] = renderCreateFont(fontName, fontSize, flag_sum)
+        -- Create all fonts with the calculated flags
+        myFonts[name] = renderCreateFont(element.fontName(), element.fontSize(), flag_sum)
     end
 end
 
--- Function to create or update font based on element settings
 function createFont(name, element)
     local flag_sum = 0
+
+    -- Calculate the flag sum
     for flagName, flagValue in pairs(flagValues) do
         if element.flags[flagName] then
             flag_sum = flag_sum + flagValue
         end
     end
 
+    -- Create the font with the calculated flags
     myFonts[name] = renderCreateFont(element.font, element.size, flag_sum)
 end
 
--- Function to draw all elements
 local function drawElements()
     for name, element in pairs(elements) do
         if element.enable() and element.isVisible() then
@@ -5982,8 +5616,7 @@ local function drawElements()
     end
 end
 
--- Function to handle moving elements
-local function moveElements()
+local function dragElements()
     if not isCursorActive() then return end
     local cursorX, cursorY = getCursorPos()
 
@@ -6036,7 +5669,6 @@ local function moveElements()
     end
 end
 
--- onD3DPresent
 function onD3DPresent()
 	if not autobind.Settings or not autobind.Keybinds then
 		return
@@ -6052,47 +5684,35 @@ function onD3DPresent()
         return
     end
 
-    -- Draw all elements
+    -- Draw all elements and listen for drag events
     drawElements()
-
-    -- Move elements
-    moveElements()
+    dragElements()
 end
 
--- ImGUI Initialize
 imgui.OnInitialize(function()
-	-- Disable ini file
     imgui.GetIO().IniFilename = nil
 
-    -- Load FontAwesome5 Icons
+	-- Check if the font exists
+	assert(doesFileExist(Files.trebucbd), '[AB] Font "' .. Files.trebucbd .. '" doesn\'t exist!')
+
+    -- Setup Font and Icons (Large, Medium, Small)
     loadFontIcons(true, 14.0, fa.min_range, fa.max_range, Files.fawesome5)
+    for _, font in pairs(fontData) do
+        font.font = imgui.GetIO().Fonts:AddFontFromFileTTF(Files.trebucbd, font.size)
+        loadFontIcons(true, font.size, fa.min_range, fa.max_range, Files.fawesome5)
+    end
 
-	-- Load the font with the desired size
-	local fontFile = Files.trebucbd
-	assert(doesFileExist(fontFile), '[AB] Font "' .. fontFile .. '" doesn\'t exist!')
-	fontData.font = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSize)
-
-	-- Load FontAwesome5 Icons (Again for the font above)
-	loadFontIcons(true, fontData.fontSize, fa.min_range, fa.max_range, Files.fawesome5)
-
-    -- Load the small font
-    fontData.fontSmall = imgui.GetIO().Fonts:AddFontFromFileTTF(fontFile, fontData.fontSmallSize)
-
-    -- Load FontAwesome5 Icons (Small)
-    loadFontIcons(true, fontData.fontSmallSize, fa.min_range, fa.max_range, Files.fawesome5)
-
-	-- Load Skins
+	-- Load skin images
 	for i = 0, 311 do
-		if skinTexture[i] == nil then
+		if skinTextures[i] == nil then
 			local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, i)
 			if doesFileExist(skinPath) then
-				skinTexture[i] = imgui.CreateTextureFromFile(skinPath)
+				skinTextures[i] = imgui.CreateTextureFromFile(skinPath)
 			end
 		end
 	end
 end)
 
--- Predefined Sizes
 local button_size_small = imgui.ImVec2(75, 75)
 local button_size_large = imgui.ImVec2(165, 75)
 local child_size1 = imgui.ImVec2(85, 382)
@@ -6101,7 +5721,6 @@ local child_size_pages = imgui.ImVec2(500, 276)
 local child_size_bottom = imgui.ImVec2(500, 20)
 local button_size_small2 = imgui.ImVec2(15, 15)
 
--- Update Icons And Status
 local updateStatusIcons = {
     up_to_date = fa.ICON_FA_CHECK .. ' Up to date',
     new_version = fa.ICON_FA_RETWEET .. ' Update\nNew Version',
@@ -6110,7 +5729,6 @@ local updateStatusIcons = {
     beta_version = fa.ICON_FA_RETWEET .. ' Update\nBeta Version'
 }
 
--- Button Tables
 local buttons1 = {
     {
         id = 1,
@@ -6125,9 +5743,9 @@ local buttons1 = {
         action = function()
             autobind.Settings.enable = not autobind.Settings.enable
             if autobind.Settings.enable then
-                registerAutobindCommands()
+                registerClientCommands()
             else
-                for _, command in pairs(cmds) do
+                for _, command in pairs(clientCommands) do
                     sampUnregisterChatCommand(command.cmd)
                     if command.alt then
                         for _, altCommand in pairs(command.alt) do
@@ -6180,45 +5798,39 @@ local buttons1 = {
                 {"CurrentPlayer", "id"}
             }
 
-            -- Ensure Defaults
             ensureDefaults(autobind, autobind_defaultSettings, true, ignoreKeys)
 
-            -- Create Fonts
             createFonts()
 
-            -- Reset Key Functions
             resetLockersKeyFunctions()
 
-            -- Initialize Key Functions
-            InitializeBlackMarketKeyFunctions()
-            InitializeFactionLockerKeyFunctions()
+            InitializeLockerKeyFunctions(autobind.BlackMarket.maxKits, "Black Market", "/bm")
+            InitializeLockerKeyFunctions(autobind.FactionLocker.maxKits, "Faction Locker", "/locker")
 
             vehicles.initialFetch = false
             vehicles.populating = true
             sampSendChat("/vst")
 
-            -- Fetch Skins
             if autobind.AutoVest.autoFetchSkins then
-                fetchDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
+                fetchJsonDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
                     if decodedData then
                         autobind.AutoVest.skins = decodedData
-                        family.skins = listToSet(autobind.AutoVest.skins)
+                        family.skins = table.listToSet(autobind.AutoVest.skins)
                     end
                 end)
             else
-                family.skins = listToSet(autobind.AutoVest.skins)
+                family.skins = table.listToSet(autobind.AutoVest.skins)
             end
 
-            -- Fetch Names
             if autobind.AutoVest.autoFetchNames then
-                fetchDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
+                fetchJsonDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
                     if decodedData then
                         autobind.AutoVest.names = decodedData
-                        names = listToSet(autobind.AutoVest.names)
+                        names = table.listToSet(autobind.AutoVest.names)
                     end
                 end)
             else
-                names = listToSet(autobind.AutoVest.names)
+                names = table.listToSet(autobind.AutoVest.names)
             end
         end,
         color = function()
@@ -6277,16 +5889,13 @@ local buttons2 = {
     }
 }
 
--- Precompute cursor positions for buttons1
 local cursor_positions_y_buttons1 = {}
 for i, _ in ipairs(buttons1) do
     cursor_positions_y_buttons1[i] = (i - 1) * 76
 end
 
--- Predefine bools
 local bool_autosave = new.bool(false)
 
--- Function to handle the Autosave checkbox
 local function handleAutosaveCheckbox()
     bool_autosave[0] = autobind.Settings.autoSave
     if imgui.Checkbox('Autosave', bool_autosave) then
@@ -6295,8 +5904,8 @@ local function handleAutosaveCheckbox()
     imgui.CustomTooltip('Automatically saves your settings when you exit the game')
 end
 
--- OnWindowMessage
 function onWindowMessage(msg, wparam, lparam)
+    -- Check if the player is paused and set AFK upon setting focus
     if msg == wm.WM_SETFOCUS then
         isPlayerPaused = false
         isPlayerAFK = true
@@ -6306,11 +5915,6 @@ function onWindowMessage(msg, wparam, lparam)
 
     -- Auto Close Samp Help Dialog
     if wparam == VK_F1 then
-        --[[if msg == wm.WM_KEYDOWN then
-            consumeWindowMessage(true, false)
-            sampCloseCurrentDialogWithButton(0)
-            print("F1 down")
-        end]]
         if msg == wm.WM_KEYUP then
             sampCloseCurrentDialogWithButton(0)
         end
@@ -6339,10 +5943,8 @@ function onWindowMessage(msg, wparam, lparam)
     end
 end
 
--- Settings Window
 imgui.OnFrame(function() return menu.initialized[0] end,
 function(self)
-    -- Returns if Samp is not loaded
     if not isSampLoaded() or not isSampAvailable() then return end
 
     -- Check if any menu window is open to control cursor visibility
@@ -6377,21 +5979,33 @@ function(self)
             if previousMenuStates[key] and not state[0] then
                 if key == "settings" then
                     if autobind.Settings.autoSave then
-                        autobind.AutoVest.names = setToList(names)
+                        autobind.AutoVest.names = table.setToList(names)
                         saveAllConfigs()
                     end
                 end
 
                 if key == "blackmarket" then
-                    InitializeBlackMarketKeyFunctions()
+                    InitializeLockerKeyFunctions(autobind.BlackMarket.maxKits, "Black Market", "/bm")
+
+                    saveConfigWithErrorHandling(Files.blackmarket, autobind.BlackMarket)
                 end
 
                 if key == "factionlocker" then
-                    InitializeFactionLockerKeyFunctions()
+                    InitializeLockerKeyFunctions(autobind.FactionLocker.maxKits, "Faction Locker", "/locker")
+
+                    saveConfigWithErrorHandling(Files.factionlocker, autobind.FactionLocker)
+                end
+
+                if key == "keybinds" then
+                    saveConfigWithErrorHandling(Files.keybinds, autobind.Keybinds)
+                end
+
+                if key == "fonts" then
+                    saveConfigWithErrorHandling(Files.elements, autobind.Elements)
                 end
 
                 if key == "skins" then
-                    autobind.AutoVest.skins = setToList(family.skins)
+                    autobind.AutoVest.skins = table.setToList(family.skins)
                 end
 
                 if key == "confirm" then
@@ -6421,7 +6035,7 @@ function(self)
         -- Settings Window
         if imgui.Begin(menu.settings.title, menu.settings.window, imgui_flags) then
             -- First child (Side Buttons)
-            imgui.PushFont(fontData.font)
+            imgui.PushFont(fontData.medium.font)
             imgui.BeginChild("##1", child_size1, false)
             for i, button in ipairs(buttons1) do
                 imgui.SetCursorPosY(cursor_positions_y_buttons1[i])
@@ -6480,7 +6094,7 @@ function(self)
             -- Fourth child (Bottom Settings)
             imgui.SetCursorPos(imgui.ImVec2(92, 390))
 
-            imgui.PushFont(fontData.font)
+            imgui.PushFont(fontData.medium.font)
             imgui.BeginChild("##4", child_size_bottom, false)
             handleAutosaveCheckbox()
 
@@ -6490,7 +6104,7 @@ function(self)
                 keybinds.window[0] = not keybinds.window[0]
             end
             imgui.CustomTooltip("Opens keybinds settings.")
-            imgui.CustomTooltip(string.format("You can also use {%06x}'/%s keybinds'{FFFFFF} to open this menu.", clr.GREY, shortName))
+            imgui.CustomTooltip(string.format("You can also use {%06x}'/%s keybinds'{%06x} to open this menu.", clr.GREY, shortName, clr.WHITE))
 
             imgui.SameLine()
             if imgui.Button(fa.ICON_FA_FONT .. " Fonts") then
@@ -6498,7 +6112,7 @@ function(self)
                 fonts.window[0] = not fonts.window[0]
             end
             imgui.CustomTooltip("Opens fonts settings.")
-            imgui.CustomTooltip(string.format("You can also use {%06x}'/%s fonts'{FFFFFF} to open this menu.", clr.GREY, shortName))
+            imgui.CustomTooltip(string.format("You can also use {%06x}'/%s fonts'{%06x} to open this menu.", clr.GREY, shortName, clr.WHITE))
 
             imgui.SameLine()
             if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " BMS") then
@@ -6506,7 +6120,7 @@ function(self)
                 blackmarket.window[0] = not blackmarket.window[0]
             end
             imgui.CustomTooltip("Opens black market settings.")
-            imgui.CustomTooltip(string.format("You can also use {%06x}'/%s bms'{FFFFFF} to open this menu.", clr.GREY, shortName))
+            imgui.CustomTooltip(string.format("You can also use {%06x}'/%s bms'{%06x} to open this menu.", clr.GREY, shortName, clr.WHITE))
 
             if autobind.Settings.mode == "Faction" then
                 imgui.SameLine()
@@ -6515,7 +6129,7 @@ function(self)
                     faction.window[0] = not faction.window[0]
                 end
                 imgui.CustomTooltip("Opens faction locker settings.")
-                imgui.CustomTooltip(string.format("You can also use {%06x}'/%s locker'{FFFFFF} to open this menu.", clr.GREY, shortName))
+                imgui.CustomTooltip(string.format("You can also use {%06x}'/%s locker'{%06x} to open this menu.", clr.GREY, shortName, clr.WHITE))
             elseif autobind.Settings.mode == "Family" then
                 imgui.SameLine()
                 if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " Skins") then
@@ -6523,7 +6137,7 @@ function(self)
                     skins.window[0] = not skins.window[0]
                 end
                 imgui.CustomTooltip("Opens family skins settings.")
-                imgui.CustomTooltip(string.format("You can also use {%06x}'/%s skins'{FFFFFF} to open this menu.", clr.GREY, shortName))
+                imgui.CustomTooltip(string.format("You can also use {%06x}'/%s skins'{%06x} to open this menu.", clr.GREY, shortName, clr.WHITE))
             end
             imgui.EndChild()
             imgui.PopFont()
@@ -6557,7 +6171,7 @@ function(self)
 
         for _, value in pairs(autobind.VehicleStorage.Vehicles[playerName]) do
             if value.id and value.status and value.vehicle and value.location then
-                local statusColor = statusColors[value.status] or clr.WHITE
+                local statusColor = statusVehicleColors[value.status] or clr.WHITE
                 table.insert(vehText.id, string.format("%s", value.id and value.id + 1 or "N/A"))
                 table.insert(vehText.status, string.format("{%06X}%s", statusColor, value.status or "Unknown"))
                 table.insert(vehText.vehicle, string.format("%s", value.vehicle or "Unknown"))
@@ -6568,7 +6182,7 @@ function(self)
         if imgui.Begin(menu.vehiclestorage.title, menu.vehiclestorage.window, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.NoMove) then
             imgui.SetCursorPosX(imgui.GetWindowWidth() - 20)
             imgui.SetCursorPosY(5)
-            imgui.PushFont(fontData.fontSmall)
+            imgui.PushFont(fontData.small.font)
             local textColor = menu.vehiclestorage.dragging[0] and imguiRGBA["REALGREEN"] or imguiRGBA["REALRED"]
             if imgui.CustomButton(fa.ICON_FA_MAP_PIN, imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], textColor, button_size_small2) then
                 menu.vehiclestorage.dragging[0] = not menu.vehiclestorage.dragging[0]
@@ -6581,7 +6195,7 @@ function(self)
             local textSize = imgui.CalcTextSize(menu.vehiclestorage.title)
             imgui.SetCursorPosX(imgui.GetWindowWidth() / 2 - textSize.x / 2)
             imgui.SetCursorPosY(5)
-            imgui.PushFont(fontData.font)
+            imgui.PushFont(fontData.medium.font)
             imgui.TextColoredRGB(menu.vehiclestorage.title)
 
             imgui.SetCursorPosX(10)
@@ -6622,17 +6236,17 @@ function(self)
                 keyEditor(editor.label, editor.key, editor.description, nil)
 
                 if editor.key == "Frisk" then
-                    imgui.PushFont(fontData.font)
+                    imgui.PushFont(fontData.medium.font)
                     
                     imgui.SetCursorPosY(imgui.GetCursorPosY() - 5)
 
-                    if imgui.Checkbox('Targeting', new.bool(autobind.Settings.Frisk.mustTarget)) then
-                        autobind.Settings.Frisk.mustTarget = toggleBind("Targeting", autobind.Settings.Frisk.mustTarget)
+                    if imgui.Checkbox('Targeting', new.bool(autobind.Settings.mustTargetToFrisk)) then
+                        autobind.Settings.mustTargetToFrisk = toggleBind("Targeting", autobind.Settings.mustTargetToFrisk)
                     end
                     imgui.CustomTooltip('Must be targeting a player to frisk. (Green Blip above the player)')
                     imgui.SameLine()
-                    if imgui.Checkbox('Must Aim', new.bool(autobind.Settings.Frisk.mustAim)) then
-                        autobind.Settings.Frisk.mustAim = toggleBind("Must Aim", autobind.Settings.Frisk.mustAim)
+                    if imgui.Checkbox('Must Aim', new.bool(autobind.Settings.mustAimToFrisk)) then
+                        autobind.Settings.mustAimToFrisk = toggleBind("Must Aim", autobind.Settings.mustAimToFrisk)
                     end
                     imgui.CustomTooltip('Must be aiming to frisk.')
 
@@ -6669,7 +6283,7 @@ function(self)
             -- Create a string of selected skin IDs
             local selectedSkinsText = table.concat(storedSkins, ",")
 
-            imgui.PushFont(fontData.font)
+            imgui.PushFont(fontData.medium.font)
 
             -- Display read-only input field with selected skins
             imgui.PushItemWidth(500)
@@ -6701,14 +6315,14 @@ function(self)
                         imgui.PushStyleColor(imgui.Col.Button, imguiRGBA["REALGREEN"]) -- Green highlight
                     end
 
-                    if skinTexture[skinId] == nil then
+                    if skinTextures[skinId] == nil then
                         local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, skinId)
                         if doesFileExist(skinPath) then
-                            skinTexture[skinId] = imgui.CreateTextureFromFile(skinPath)
+                            skinTextures[skinId] = imgui.CreateTextureFromFile(skinPath)
                         end
                     end
 
-                    if imgui.ImageButton(skinTexture[skinId], imgui.ImVec2(50, 80)) then
+                    if imgui.ImageButton(skinTextures[skinId], imgui.ImVec2(50, 80)) then
                         if isSelected then
                             family.skins[skinId] = nil -- Remove entry if deselected
                         else
@@ -6732,12 +6346,12 @@ function(self)
         setupWindowDraggingAndSize("Fonts")
 
         local fontElements = {
-            {name = "OfferedTo", label = "Vest To", value = autobind.AutoVest.offeredTo, disableColor = false},
-            {name = "OfferedFrom", label = "Vest From", value = autobind.AutoVest.offeredFrom, disableColor = false},
-            {name = "PedsCount", label = "Peds", value = autobind.PedsCount, disableColor = false},
-            {name = "AutoFind", label = "Auto Find", value = autobind.AutoFind, disableColor = false},
-            {name = "LastBackup", label = "Last Backup", value = autobind.LastBackup, disableColor = false},
-            {name = "FactionBadge", label = "Badge", value = autobind.FactionBadge, disableColor = true}
+            {name = "OfferedTo", label = "Vest To", value = autobind.Elements.offeredTo, disableColor = false},
+            {name = "OfferedFrom", label = "Vest From", value = autobind.Elements.offeredFrom, disableColor = false},
+            {name = "PedsCount", label = "Peds", value = autobind.Elements.PedsCount, disableColor = false},
+            {name = "AutoFind", label = "Auto Find", value = autobind.Elements.AutoFind, disableColor = false},
+            {name = "LastBackup", label = "Last Backup", value = autobind.Elements.LastBackup, disableColor = false},
+            {name = "FactionBadge", label = "Badge", value = autobind.Elements.FactionBadge, disableColor = true}
         }        
 
         if imgui.Begin(menu.fonts.title, menu.fonts.window, imgui_flags) then
@@ -6824,7 +6438,7 @@ function renderChangelogWindow()
                 for i, change in ipairs(changelog[version]) do
                     local textColor = (i % 2 == 1) and imguiRGBA["WHITE"] or imguiRGBA["GREY"]
                     imgui.PushStyleColor(imgui.Col.Text, textColor)
-                    imgui.PushFont(fontData.font)
+                    imgui.PushFont(fontData.medium.font)
                     imgui.TextWrapped(change)
                     imgui.PopFont()
                     imgui.PopStyleColor()
@@ -6844,7 +6458,6 @@ function setupWindowDraggingAndSize(label, allowSize)
 
     local lowerLabel = label:lower()
 
-    -- Handle Window Dragging And Position
     local newPos, status = imgui.handleWindowDragging(label, autobind.WindowPos[label], menu[lowerLabel].size, menu[lowerLabel].pivot, menu[lowerLabel].dragging[0])
     if status then
         autobind.WindowPos[label] = newPos
@@ -6854,18 +6467,15 @@ function setupWindowDraggingAndSize(label, allowSize)
     end
 
     if allowSize then
-        -- Set Window Size
         imgui.SetNextWindowSize(menu[lowerLabel].size, imgui.Cond.FirstUseEver)
     end
 end
 
--- Define a global boolean variable
 local hasRunForThirdKey = false
 
 function renderLockerWindow(label, name)
     local lowerName = name:lower()
     local pageId = menu[lowerName].pageId
-    local currentKits = "current" .. name .. "Kits"
 
     if #autobind.Keybinds[name .. pageId].Keys == 1 then
         menu[lowerName].size.y = 250
@@ -6882,7 +6492,7 @@ function renderLockerWindow(label, name)
 
     -- Define a table to map kitId to key and menu data
     local kits = {}
-    for i = 1, autobind.Settings[currentKits] do
+    for i = 1, autobind[name].maxKits do
         kits[i] = {key = name .. i, menu = autobind[name]["Kit" .. i]}
     end
 
@@ -6913,7 +6523,7 @@ function renderLockerWindow(label, name)
                 imgui.BeginGroup()
                 imgui.PushItemWidth(82)
                 if imgui.BeginCombo("##" .. name .. "_preview", fa.ICON_FA_SHOPPING_CART .. " Kit " .. id) then
-                    for i = 1, autobind.Settings[currentKits] do
+                    for i = 1, autobind[name].maxKits do
                         if imgui.Selectable(fa.ICON_FA_SHOPPING_CART .. " Kit " .. i .. (i == id and ' [x]' or ''), pageId == i) then
                             menu[lowerName].pageId = i
                         end
@@ -6924,13 +6534,13 @@ function renderLockerWindow(label, name)
 
                 -- Create new kit
                 if imgui.Button("Add New Kit", imgui.ImVec2(82, 20)) then
-                    if autobind.Settings[currentKits] < maxKits then
-                        autobind.Settings[currentKits] = autobind.Settings[currentKits] + 1
-                        autobind[name]["Kit" .. autobind.Settings[currentKits]] = {1, 2, 10, 11}
+                    if autobind[name].maxKits < lockers.maxKits then
+                        autobind[name].maxKits = autobind[name].maxKits + 1
+                        autobind[name]["Kit" .. autobind[name].maxKits] = {1, 2, 10, 11}
 
-                        menu[lowerName].pageId = autobind.Settings[currentKits]
+                        menu[lowerName].pageId = autobind[name].maxKits
 
-                        autobind.Keybinds[name .. autobind.Settings[currentKits]] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
+                        autobind.Keybinds[name .. autobind[name].maxKits] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
                     end
                 end
                 imgui.EndGroup()
@@ -6957,78 +6567,76 @@ function calculateTotalPrice(kit, items)
     return totalPrice
 end
 
--- Render Settings
 function renderSettings()
     imgui.SetCursorPos(imgui.ImVec2(20, 5))
     if imgui.BeginChild("##config", imgui.ImVec2(485, 255), false) then
         -- Autobind/Capture
         imgui.Text('Auto Bind:')
-        createRow(string.format('Auto Cap (/%s)', cmds.autocap.cmd), 'Auto Capture will automatically type /capturf every 1.5 seconds.', autocap, toggleAutoCapture, true)
+        createRow(string.format('Auto Cap (/%s)', clientCommands.autocap.cmd), 'Auto Capture will automatically type /capturf every 1.5 seconds.', autocap, toggleAutoCapture, true)
 
         local mode = autobind.Settings.mode
-        createRow(string.format('Capturf at Signcheck (/%s)', cmds.capcheck.cmd), 'Capture (Turfs) will automatically type /capturf at signcheck time.', autobind.Settings[mode].turf, function()
-            autobind.Settings[mode].turf = toggleBind("Capture (Turfs)", autobind.Settings[mode].turf)
+        createRow(string.format('Capturf at Signcheck (/%s)', clientCommands.capcheck.cmd), 'Capture (Turfs) will automatically type /capturf at signcheck time.', autobind[mode].turf, function()
+            autobind[mode].turf = toggleBind("Capture (Turfs)", autobind[mode].turf)
             if mode == "Family" then
-                autobind.Settings[mode].point = false
+                autobind[mode].point = false
             end
         end, false)
         
         if mode == "Family" then
-            createRow('Disable capturing', 'Disable capturing after capturing: turns off auto capturing after the point/turf has been secured.', autobind.Settings.Family.disableAfterCapturing, function()
-                autobind.Settings.Family.disableAfterCapturing = toggleBind("Disable Capturing", autobind.Settings.Family.disableAfterCapturing)
+            createRow('Disable capturing', 'Disable capturing after capturing: turns off auto capturing after the point/turf has been secured.', autobind.Family.disableAfterCapturing, function()
+                autobind.Family.disableAfterCapturing = toggleBind("Disable Capturing", autobind.Family.disableAfterCapturing)
             end, true)
             
-            createRow('Capture (Points)', 'Capture (Points) will automatically type /capturf at signcheck time.', autobind.Settings.Family.point, function()
-                autobind.Settings.Family.point = toggleBind("Capture Point", autobind.Settings.Family.point)
-                if autobind.Settings.Family.point then
-                    autobind.Settings.Family.turf = false
+            createRow('Capture (Points)', 'Capture (Points) will automatically type /capturf at signcheck time.', autobind.Family.point, function()
+                autobind.Family.point = toggleBind("Capture Point", autobind.Family.point)
+                if autobind.Family.point then
+                    autobind.Family.turf = false
                 end
             end, false)
         end
         
-        createRow(string.format('Auto Repair (/%s)', cmds.repairnear.cmd), 'Auto Repair will automatically accept repair requests.', autobind.Settings.autoRepair, function()
+        createRow(string.format('Auto Repair (/%s)', clientCommands.repairnear.cmd), 'Auto Repair will automatically accept repair requests.', autobind.Settings.autoRepair, function()
             autobind.Settings.autoRepair = toggleBind("Accept Repair", autobind.Settings.autoRepair)
         end, true)
         
         if mode == "Faction" then
-            createRow(string.format('Auto Badge (/%s)', cmds.autobadge.cmd), 'Automatically types /badge after spawning from the hospital.', autobind.Settings.Faction.autoBadge, function()
-                autobind.Settings.Faction.autoBadge = toggleBind("Auto Badge", autobind.Settings.Faction.autoBadge)
+            createRow(string.format('Auto Badge (/%s)', clientCommands.autobadge.cmd), 'Automatically types /badge after spawning from the hospital.', autobind.Faction.autoBadge, function()
+                autobind.Faction.autoBadge = toggleBind("Auto Badge", autobind.Faction.autoBadge)
             end, false)
         end
         
         -- Auto Vest
         imgui.NewLine()
         imgui.Text('Auto Vest:')
-        createRow(string.format('Enable (/%s)', cmds.autovest.cmd), 'Enable for automatic vesting.', autobind.AutoVest.enable, function()
+        createRow(string.format('Enable (/%s)', clientCommands.autovest.cmd), 'Enable for automatic vesting.', autobind.AutoVest.enable, function()
             autobind.AutoVest.enable = toggleBind("Auto Vest", autobind.AutoVest.enable)
         end, true)
         
-        createRow(string.format('Diamond Donator (/%s)', cmds.ddmode.cmd), 'Enable for Diamond Donators. Uses /guardnear does not have armor/paused checks.', autobind.AutoVest.donor, function()
+        createRow(string.format('Diamond Donator (/%s)', clientCommands.ddmode.cmd), 'Enable for Diamond Donators. Uses /guardnear does not have armor/paused checks.', autobind.AutoVest.donor, function()
             autobind.AutoVest.donor = toggleBind("DD Mode", autobind.AutoVest.donor)
             timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
         end, false)
         
         -- Accept
-        createRow(string.format('Auto Accept (/%s)', cmds.autoaccept.cmd), 'Accept Vest will automatically accept vest requests.', accepter.enable, function()
+        createRow(string.format('Auto Accept (/%s)', clientCommands.autoaccept.cmd), 'Accept Vest will automatically accept vest requests.', accepter.enable, function()
             accepter.enable = toggleBind("Auto Accept", accepter.enable)
         end, true)
     
-        createRow(string.format('Allow Everyone (/%s)', cmds.vestall.cmd), 'With this enabled, the vest will be applied to everyone on the server.', autobind.AutoVest.everyone, function()
+        createRow(string.format('Allow Everyone (/%s)', clientCommands.vestall.cmd), 'With this enabled, the vest will be applied to everyone on the server.', autobind.AutoVest.everyone, function()
             autobind.AutoVest.everyone = toggleBind("Allow Everyone", autobind.AutoVest.everyone)
         end, false)
         
         if mode == "Faction" then
             imgui.NewLine()
             imgui.Text('Radio Chat:')
-            createRow('Modify [WIP]', 'Modify the radio chat to your liking.', autobind.Settings.Faction.modifyRadioChat, function()
-                autobind.Settings.Faction.modifyRadioChat = toggleBind("Modify Radio Chat", autobind.Settings.Faction.modifyRadioChat)
+            createRow('Modify [WIP]', 'Modify the radio chat to your liking.', autobind.Faction.modifyRadioChat, function()
+                autobind.Faction.modifyRadioChat = toggleBind("Modify Radio Chat", autobind.Faction.modifyRadioChat)
             end, false)
         end
     end
     imgui.EndChild()
 end
 
--- Helper function to draw skin images
 local function drawSkinImages(skins, columns, imageSize, spacing, startPos)
     local index = 0
     for skinId, _ in pairs(skins) do
@@ -7038,13 +6646,13 @@ local function drawSkinImages(skins, columns, imageSize, spacing, startPos)
         local posY = startPos.y + row * (imageSize.y + spacing / 4)
 
         imgui.SetCursorPos(imgui.ImVec2(posX, posY))
-        if skinTexture[skinId] then
-            imgui.Image(skinTexture[skinId], imageSize)
+        if skinTextures[skinId] then
+            imgui.Image(skinTextures[skinId], imageSize)
         else
             imgui.Button("No\nImage", imageSize)
             local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, skinId)
             if doesFileExist(skinPath) then
-                skinTexture[skinId] = imgui.CreateTextureFromFile(skinPath)
+                skinTextures[skinId] = imgui.CreateTextureFromFile(skinPath)
             end
         end
         if imgui.IsItemHovered() then
@@ -7056,7 +6664,6 @@ local function drawSkinImages(skins, columns, imageSize, spacing, startPos)
     return index
 end
 
--- Render Skins
 function renderSkins()
     imgui.SetCursorPos(imgui.ImVec2(10, 1))
     if imgui.BeginChild("##skins", imgui.ImVec2(487, 270), false) then
@@ -7065,7 +6672,7 @@ function renderSkins()
         local spacing = 10.0
         
         if autobind.Settings.mode == "Family" then
-            imgui.PushFont(fontData.font)
+            imgui.PushFont(fontData.medium.font)
 
             imgui.PushItemWidth(326)
             local url = new.char[128](autobind.AutoVest.skinsUrl)
@@ -7076,11 +6683,11 @@ function renderSkins()
             imgui.SameLine()
             imgui.PopItemWidth()
             if imgui.Button("Fetch") then
-                fetchDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
+                fetchJsonDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
                     autobind.AutoVest.skins = decodedData
 
                     -- Convert list to set
-                    family.skins = listToSet(autobind.AutoVest.skins)
+                    family.skins = table.listToSet(autobind.AutoVest.skins)
                 end)
             end
             imgui.CustomTooltip("Fetches skins from provided URL")
@@ -7110,30 +6717,32 @@ function renderSkins()
             end
             imgui.CustomTooltip("Checks if the player has the skins listed below, otherwise it relies on color.")
 
-            -- Build a list of unique RGB colors from factions.colors:
             imgui.SameLine()
 
-            local uniqueColors = {}
-            local seenRGB = {}
-            for color, _ in pairs(factions.colors) do
-                -- Mask out the alpha; only keep the RGB value.
-                local rgb = bit.band(color, 0xFFFFFF)
-                if not seenRGB[rgb] then
-                    seenRGB[rgb] = true
-                    table.insert(uniqueColors, rgb)
-                end
+            local disabled = { LSPD = false, ARES = false, FBI = false, SASD = true, GOV = true }
+            local desiredFactionsOrder = {"LSPD", "ARES", "FBI", "SASD", "GOV"}
+
+            local factionColors = {}
+            for color, factionName in pairs(factions.badges) do
+                factionColors[factionName] = color
             end
 
-            -- Now, print all unique colors in one line using imgui.TextColoredRGB.
-            -- The function call below uses string.format to output the hex code in "{%06x}Hello!" format.
-            for i, color in ipairs(uniqueColors) do
-                imgui.TextColoredRGB(string.format("{%06x}Hello!", color))
-                if i < #uniqueColors then
-                    imgui.SameLine()
+            imgui.SetCursorPosY(3.5)
+            imgui.BeginGroup()
+            local firstDisplayed = true
+            for _, factionName in ipairs(desiredFactionsOrder) do
+                local color = factionColors[factionName]
+                if color and not disabled[factionName] then
+                    if not firstDisplayed then
+                        imgui.SameLine()
+                    else
+                        firstDisplayed = false
+                    end
+                    imgui.TextColoredRGB(string.format("{%06x}%s", color, factionName))
+                    imgui.CustomTooltip(string.format("{%06x}#%06X", color, color))
                 end
-                imgui.CustomTooltip(string.format("Factions: %06X", color))
             end
-
+            imgui.EndGroup()
             local startPos = imgui.GetCursorPos()
             drawSkinImages(factions.skins, columns, imageSize, spacing, startPos)
         end
@@ -7141,12 +6750,11 @@ function renderSkins()
     imgui.EndChild()
 end
 
--- Render Names
 function renderNames()
     imgui.SetCursorPos(imgui.ImVec2(10, 1))
     if imgui.BeginChild("##names", imgui.ImVec2(487, 263), false) then
 
-        imgui.PushFont(fontData.font)
+        imgui.PushFont(fontData.medium.font)
 
         imgui.PushItemWidth(326)
         local url = new.char[128](autobind.AutoVest.namesUrl)
@@ -7157,12 +6765,12 @@ function renderNames()
         imgui.SameLine()
         imgui.PopItemWidth()
         if imgui.Button("Fetch") then
-            fetchDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
+            fetchJsonDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
                 if decodedData then
                     autobind.AutoVest.names = decodedData
 
                     -- Convert list to set
-                    names = listToSet(autobind.AutoVest.names)
+                    names = table.listToSet(autobind.AutoVest.names)
                 end
             end)
         end
@@ -7217,9 +6825,7 @@ function renderNames()
     imgui.EndChild()
 end
 
--- Function to create ImGui font menu for elements using columns
 function createFontMenuElement(name, title, element, disableColor)
-    -- Check if the element exists
     if element.enable == nil then
         return
     end
@@ -7237,20 +6843,16 @@ function createFontMenuElement(name, title, element, disableColor)
     imgui.SetColumnWidth(6, 60) -- Text color picker
     imgui.SetColumnWidth(7, 100) -- Value color picker
 
-    imgui.PushFont(fontData.font)
-
-    -- Column 1: Title
+    imgui.PushFont(fontData.medium.font)
     imgui.AlignTextToFramePadding()
     imgui.Text(title .. ":")
     imgui.NextColumn()
 
-    -- Column 2: Toggle Checkbox
     if imgui.Checkbox(string.format("%s##%s_toggle", element.enable and "On" or "Off", title), new.bool(element.enable)) then
         element.enable = not element.enable
     end
     imgui.NextColumn()
 
-    -- Column 3: Alignment Options
     imgui.PushItemWidth(68)
     local alignments = {"Left", "Center", "Right"}
     local currentAlignment = element.align == "left" and 1 or element.align == "center" and 2 or 3
@@ -7265,7 +6867,6 @@ function createFontMenuElement(name, title, element, disableColor)
     imgui.PopItemWidth()
     imgui.NextColumn()
 
-    -- Column 4: Font Flags Options
     imgui.PushItemWidth(75)
     if imgui.BeginCombo("##flags_" .. title, "Flags") then
         local flagNames = {'BOLD', 'ITALICS', 'BORDER', 'SHADOW', 'UNDERLINE', 'STRIKEOUT'}
@@ -7273,7 +6874,6 @@ function createFontMenuElement(name, title, element, disableColor)
             local flagValue = element.flags[flagName]
             if imgui.Checkbox(flagName:lower():upperFirst(), new.bool(flagValue)) then
                 element.flags[flagName] = not flagValue
-                -- Recreate the font with new flags if necessary
                 createFont(name, element)
             end
         end
@@ -7282,7 +6882,6 @@ function createFontMenuElement(name, title, element, disableColor)
     imgui.PopItemWidth()
     imgui.NextColumn()
 
-    -- Column 5: Font Name Input
     imgui.PushItemWidth(80)
     local fontName = new.char[30](element.font)
     if imgui.InputText("##font_" .. title, fontName, sizeof(fontName), imgui.InputTextFlags.EnterReturnsTrue) then
@@ -7292,7 +6891,6 @@ function createFontMenuElement(name, title, element, disableColor)
     imgui.PopItemWidth()
     imgui.NextColumn()
 
-    -- Column 6: Font Size Adjustment
     imgui.PushItemWidth(50)
     if imgui.BeginCombo("##size_" .. title, tostring(element.size)) then
         for i = 1, 72 do
@@ -7307,7 +6905,6 @@ function createFontMenuElement(name, title, element, disableColor)
     imgui.NextColumn()
 
     if not disableColor then
-        -- Column 1: Text Color Picker
         imgui.BeginGroup()
         imgui.PushItemWidth(95)
         local clrText = convertColor(element.colors.text, true, false, false)
@@ -7322,7 +6919,6 @@ function createFontMenuElement(name, title, element, disableColor)
         imgui.EndGroup()
         imgui.NextColumn()
 
-        -- Column 2: Value Color Picker
         imgui.BeginGroup()
         imgui.PushItemWidth(95)
         local clrValue = convertColor(element.colors.value, true, false, false)
@@ -7336,14 +6932,12 @@ function createFontMenuElement(name, title, element, disableColor)
         imgui.Text("Value")
         imgui.EndGroup()
 
-        -- End second row columns
         imgui.Columns(1)
     end
 
     imgui.PopFont()
 end
 
--- Function to Download Files From URL
 function downloadFilesFromURL(urls, progress, callback)
     local function onComplete(downloadsFinished)
         callback(downloadsFinished)
@@ -7364,8 +6958,7 @@ function downloadFilesFromURL(urls, progress, callback)
     downloadManager:queueDownloads(urls, onComplete, progress and onProgress or nil)
 end
 
--- Function to Fetch Data Directly From URL
-function fetchDataDirectlyFromURL(url, callback)
+function fetchJsonDataDirectlyFromURL(url, callback)
     local function onComplete(decodedData)
         if decodedData and next(decodedData) ~= nil then
             callback(decodedData)
@@ -7377,9 +6970,8 @@ function fetchDataDirectlyFromURL(url, callback)
     downloadManager:queueFetches({{url = url, callback = onComplete}})
 end
 
--- Update Check
 function updateCheck()
-    fetchDataDirectlyFromURL(Urls.update(autobind.Settings.fetchBeta), function(content)
+    fetchJsonDataDirectlyFromURL(Urls.update(autobind.Settings.fetchBeta), function(content)
         if content and content.version and content.lastversion then
             local compareNew = compareVersions(content.version, scriptVersion)
             local compareOld = compareVersions(content.lastversion, scriptVersion)
@@ -7400,7 +6992,6 @@ function updateCheck()
     end)
 end
 
--- Update Script
 function updateScript()
     autobind.Settings.updateInProgress = true
     autobind.Settings.lastVersion = scriptVersion
@@ -7436,7 +7027,7 @@ function updateScript()
                     end
 
                     if content:find(currentContent.version) then
-                        formattedAddChatMessage("Update has been validated! Please type '/ab reload' to finish the update.")
+                        formattedAddChatMessage(string.format("Update has been validated! Please type '/%s reload' to finish the update.", shortName))
                     else
                         formattedAddChatMessage("Update was not validated! Please try again later.")
                     end
@@ -7449,7 +7040,6 @@ function updateScript()
     end)
 end
 
--- Function to Generate Skins URLs
 function generateSkinsUrls()
     local files = {}
     for i = 0, 311 do
@@ -7467,7 +7057,6 @@ function generateSkinsUrls()
     return files
 end
 
--- Function to Initiate the Skin Download Process
 function downloadSkins(urls)
     downloadFilesFromURL(urls, true, function(downloadsFinished)
         if downloadsFinished then
@@ -7482,7 +7071,6 @@ function downloadSkins(urls)
     end)
 end
 
--- Create Row (Settings)
 function createRow(label, tooltip, setting, toggleFunction, sameLine)
     if imgui.Checkbox(label, new.bool(setting)) then
         toggleFunction()
@@ -7495,7 +7083,6 @@ function createRow(label, tooltip, setting, toggleFunction, sameLine)
     end
 end
 
--- Create Checkbox (Blackmarket & Faction Locker)
 function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
     local isChecked = tableContains(tbl, index)
     if imgui.Checkbox(label, new.bool(isChecked)) then
@@ -7532,7 +7119,6 @@ function createCheckbox(label, index, tbl, exclusiveGroups, maxSelections)
     end
 end
 
--- Create Menu (Blackmarket & Faction Locker)
 function createMenu(title, items, tbl, exclusiveGroups, maxSelections, options)
     options = options or {}
     local combineGroups = options.combineGroups or {}
@@ -7564,7 +7150,6 @@ function createMenu(title, items, tbl, exclusiveGroups, maxSelections, options)
     end
 end
 
--- Custom function to display tooltips based on key type
 local function showKeyTypeTooltip(keyType)
     local tooltips = {
         KeyDown = "Triggers when the key is held down. (Repeats until the key is released)",
@@ -7573,12 +7158,10 @@ local function showKeyTypeTooltip(keyType)
     imgui.CustomTooltip(tooltips[keyType] or "Unknown key type.")
 end
 
--- Key Name Shortener
 local function correctKeyName(keyName)
 	return keyName:gsub("Left ", ""):gsub("Right ", ""):gsub("Context ", ""):gsub("Numpad", "Num")
 end
 
--- Key Editor
 function keyEditor(title, index, description, callback)
     local keyBinds = autobind.Keybinds[index]
 
@@ -7604,7 +7187,7 @@ function keyEditor(title, index, description, callback)
     local verticalSpacing = 2  -- Vertical spacing after the last key entry
 
     -- Load the font with the desired size
-    imgui.PushFont(fontData.font)
+    imgui.PushFont(fontData.medium.font)
 
     -- Begin Group
     imgui.BeginGroup()
@@ -7739,14 +7322,12 @@ function keyEditor(title, index, description, callback)
     imgui.PopFont()
 end
 
--- Game Mode Restart
 function GameModeRestart()
     local bs = raknetNewBitStream()
     raknetEmulRpcReceiveBitStream(40, bs)
     raknetDeleteBitStream(bs)
 end
 
--- Set Time
 function setTime(hour, minute)
     local bs = raknetNewBitStream()
     raknetBitStreamWriteInt8(bs, hour)
@@ -7755,7 +7336,6 @@ function setTime(hour, minute)
     raknetDeleteBitStream(bs)
 end
 
--- Set Weather
 function setWeather(weatherId)
     local bs = raknetNewBitStream()
     raknetBitStreamWriteInt8(bs, weatherId)
@@ -7763,24 +7343,21 @@ function setWeather(weatherId)
     raknetDeleteBitStream(bs)
 end
 
--- Auto Connect
 function autoConnect()
-    if autobind.Reconnect and autobind.Reconnect.autoReconnect then
+    if autobind.Settings and autobind.Settings.autoReconnect then
         GameModeRestart()
         sampSetGamestate(1)
     end
 end
 
--- Toggle Auto Capture
 function toggleAutoCapture()
 	if not checkAdminDuty() then
 		autocap = not autocap
 
-		formattedAddChatMessage(autocap and  ("Starting capture attempt... {%06x}(type /%s to toggle)"):format(clr.YELLOW, cmds.autocap.cmd) or "Auto Capture ended.")
+		formattedAddChatMessage(autocap and  ("Starting capture attempt... {%06x}(type /%s to toggle)"):format(clr.YELLOW, clientCommands.autocap.cmd) or "Auto Capture ended.")
 	end
 end
 
--- Toggle Bind
 function toggleBind(name, bool)
     bool = not bool
     local color = bool and clr.REALGREEN or clr.RED
@@ -7788,13 +7365,11 @@ function toggleBind(name, bool)
     return bool
 end
 
--- Create Farmer Dialog
 function createFarmerDialog()
     local dialogText = "You have arrived at your designated farming spot.\nAuto-Typing /harvest to harvest some crops.\n\nWarning: Pressing disable will turn off auto farming."
     sampShowDialog(farmer.dialogId, ("[%s] Auto Farming"):format(shortName:upper()), dialogText, "Close", "Disable", 0)
 end
 
--- Update Vehicle Storage
 function updateVehicleStorage(status, vehName)
     local playerName = autobind.CurrentPlayer.name
     if vehicles.currentIndex ~= -1 then
@@ -7831,7 +7406,6 @@ function findVehiclesByName(vehList, partialName)
     return results
 end
 
--- Get Keybind Keys
 function getKeybindKeys(bind)
     local keybind = autobind.Keybinds[bind]
     if not keybind then
@@ -7855,7 +7429,6 @@ function getKeybindKeys(bind)
     return table.concat(keys, " + ")
 end
 
--- Get visible players
 function getVisiblePlayers(maxDist, type)
     local visiblePlayers = {}
     local myX, myY, myZ = getCharCoordinates(ped)
@@ -7909,7 +7482,6 @@ function getVisiblePlayers(maxDist, type)
     return visiblePlayers
 end
 
--- Check if any of the specified menus is active
 function activeCheck(chat, dialog, scoreboard, console, pause)
 	return (chat and not sampIsChatInputActive()) and 
 		   (dialog and not sampIsDialogActive()) and 
@@ -7924,7 +7496,7 @@ function checkAdminDuty()
     return aduty == 1
 end
 
--- Check muted
+-- Check if the muted timer has been triggered
 function checkMuted()
 	if localClock() - timers.Muted.last < timers.Muted.timer then
 		return true
@@ -7932,7 +7504,7 @@ function checkMuted()
 	return false
 end
 
--- Heal timer
+-- Check if you if the heal timer has expired or not
 function checkHeal()
 	if localClock() - timers.Heal.last < timers.Heal.timer then
 		return true
@@ -7940,7 +7512,6 @@ function checkHeal()
 	return false
 end
 
--- Reset timer
 function setTimer(additionalTime, timer)
 	timer.last = localClock() - (timer.timer - 0.2) + (additionalTime or 0)
 end
@@ -7950,7 +7521,6 @@ function convertSpeed(speed, isMPHOrKMH)
     return math.ceil(speed * (isMPHOrKMH and 2.98 or 4.80))
 end
 
--- Function to check if a table is a sparse array
 local function isSparseArray(tbl)
     local count = 0
     for k, v in pairs(tbl) do
@@ -7983,7 +7553,6 @@ local function checkForIssues(tbl, path)
     return true
 end
 
--- Handle Config File
 function handleConfigFile(path, defaults, configVar, ignoreKeys)
     ignoreKeys = ignoreKeys or {}
     if doesFileExist(path) then
@@ -8020,7 +7589,6 @@ function handleConfigFile(path, defaults, configVar, ignoreKeys)
     return true, configVar, nil
 end
 
--- Ensure Defaults
 function ensureDefaults(config, defaults, reset, ignoreKeys)
     ignoreKeys = ignoreKeys or {}
     local status = false
@@ -8082,7 +7650,6 @@ function ensureDefaults(config, defaults, reset, ignoreKeys)
     return status
 end
 
--- Load Config
 function loadConfig(filePath)
     local file = io.open(filePath, "r")
     if not file then
@@ -8108,7 +7675,6 @@ function loadConfig(filePath)
     end
 end
 
--- Save Config
 function saveConfig(filePath, config)
     local success, err = checkForIssues(config)
     if not success then
@@ -8124,7 +7690,6 @@ function saveConfig(filePath, config)
     return true
 end
 
--- Save Config With Error Handling
 function saveConfigWithErrorHandling(path, config)
     local success, err = saveConfig(path, config)
     if not success then
@@ -8157,7 +7722,6 @@ function removeHexBrackets(text)
     return string.gsub(text, "{%x+}", "")
 end
 
--- Format Number
 function formatNumber(num)
     -- Convert to string and handle negative numbers
     local isNegative = num < 0
@@ -8170,7 +7734,6 @@ function formatNumber(num)
     return isNegative and "-" .. formatted or formatted
 end
 
--- Compare Versions
 function compareVersions(version1, version2)
     local letterWeights = {
         A = 1, B = 2, C = 3, D = 4, E = 5,
@@ -8211,7 +7774,6 @@ function compareVersions(version1, version2)
     return 0
 end
 
--- Get Down Keys
 function getDownKeys()
     local keyslist = nil
     local bool = false
@@ -8224,7 +7786,6 @@ function getDownKeys()
     return keyslist, bool
 end
 
--- Key Check
 function keycheck(bind)
     local r = true
 
@@ -8242,7 +7803,6 @@ function keycheck(bind)
     return r
 end
 
--- Find Player
 function findPlayer(target, includeLocalPlayer)
     if not target then return false end
 
@@ -8271,7 +7831,6 @@ function findPlayer(target, includeLocalPlayer)
     return false
 end
 
--- Get Player Id By Nickname
 function sampGetPlayerIdByNickname(nick)
 	nick = tostring(nick)
 	local _, myid = sampGetPlayerIdByCharHandle(ped)
@@ -8284,7 +7843,6 @@ function sampGetPlayerIdByNickname(nick)
     return -1
 end
 
--- Table Contains
 function tableContains(tbl, value)
     for _, v in ipairs(tbl) do
         if v == value then
@@ -8294,7 +7852,6 @@ function tableContains(tbl, value)
     return false
 end
 
--- Handle Window Dragging
 function imgui.handleWindowDragging(menuId, pos, size, pivot, dragging)
     if not dragging then
         return {x = pos.x, y = pos.y}, false
@@ -8335,7 +7892,6 @@ function imgui.handleWindowDragging(menuId, pos, size, pivot, dragging)
     return {x = pos.x, y = pos.y}, false
 end
 
--- Text Colored RGB
 function imgui.TextColoredRGB(text)
     local style = imgui.GetStyle()
     local colors = style.Colors
@@ -8399,7 +7955,6 @@ function imgui.TextColoredRGB(text)
     end
 end
 
--- Custom Button
 function imgui.CustomButton(name, color, colorHovered, colorActive, textColor, size)
     local clr = imgui.Col
     imgui.PushStyleColor(clr.Button, color)
@@ -8412,7 +7967,6 @@ function imgui.CustomButton(name, color, colorHovered, colorActive, textColor, s
     return result
 end
 
--- Custom Tooltip
 function imgui.CustomTooltip(tooltip)
     if imgui.IsItemHovered() and tooltip then
         imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 8))
@@ -8423,7 +7977,6 @@ function imgui.CustomTooltip(tooltip)
     end
 end
 
--- Load Font Icons (File or Memory)
 function loadFontIcons(fileOrMemory, fontSize, min, max, fontdata)
     local config = imgui.ImFontConfig()
     config.MergeMode = true
