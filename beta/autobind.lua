@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.24b3")
+script_version("1.8.24b4")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -242,7 +242,6 @@ function table.setToList(set)
     end
     return list
 end
-
 local clr = {
     GRAD1 = 0xB4B5B7, -- #B4B5B7
     GRAD2 = 0xBFC0C2, -- #BFC0C2
@@ -298,7 +297,6 @@ local clr = {
     TEAM_GROVE_COLOR = 0x00D900, -- #00D900
     REALRED = 0xFF0606, -- #FF0606
     REALGREEN = 0x00FF00, -- #00FF00
-    WANTED_COLOR = 0xFF0000, -- #FF0000
     MONEY = 0x2F5A26, -- #2F5A26
     MONEY_NEGATIVE = 0x9C1619, -- #9C1619
     BETA = 0x5D8AA8, -- #5D8AA8
@@ -311,11 +309,15 @@ local clr = {
     OOC = 0x6F570E, -- #6F570E
     GOV = 0xBEBEBE, -- #BEBEBE
     SASD = 0xCC9933, -- #CC9933
+    LIGHTGREY = 0xB4B4B4, -- #B4B4B4
 }
+
+-- Extra color (Alpha is not the same)
+clr.ARRESTED = clr.TEAM_BLUE_COLOR
 
 local function formattedAddChatMessage(message, color)
     color = color or clr.WHITE
-    sampAddChatMessage(("[%s] {%06x}%s"):format(shortName:upper(), color, message), clr.LIGHTBLUE)
+    sampAddChatMessage(("[%s] {%06x}%s"):format(shortName:upper(), color, message), clr.ARES)
 end
 
 function main()
@@ -326,7 +328,6 @@ function main()
         formattedAddChatMessage(("Some dependencies are missing, downloading now... (Missing: %d %s)"):format(#missingFiles, missingFileText))
     end
 
-    -- Wait Indefinitely
     wait(-1)
 end
 
@@ -1076,7 +1077,8 @@ for name, color in pairs(clr) do
        name == "YELLOW" or 
        name == "LIGHTBLUE" or 
        name == "TEAM_MED_COLOR" or
-       name == "NEWS" then
+       name == "NEWS" or
+       name == "ARRESTED" then
         clrs.a = 170
     else
         if name ~= "TEAM_BLUE_COLOR" then
@@ -1132,6 +1134,7 @@ local funcsLoop = {
 
 local resX, resY = getScreenResolution()
 
+local isLoadingObjects = false
 local cursorActive = false
 local isPlayerPaused = false
 local isPlayerAFK = false
@@ -1182,7 +1185,8 @@ local autobind_defaultSettings = {
         frequency = 0,
         turf = true,
         modifyRadioChat = false,
-        autoBadge = true
+        autoBadge = true,
+        hideChargeReporter = false
     },
     AutoVest = {
 		enable = true,
@@ -1294,6 +1298,21 @@ local autobind_defaultSettings = {
         modifyWeather = false,
         serverWeather = 0
     },
+    Wanted = {
+        List = {},
+        Pos = {x = 500, y = 500},
+        BackgroundColor = changeAlpha(clr.BLACK, 225),
+        BorderColor = clr.WHITE,
+        BorderSize = 2.0,
+        Pivot = {x = 0.5, y = 0.0},
+        Padding = {x = 8.0, y = 8.0},
+        Enabled = true,
+        Stars = false,
+        Ping = false,
+        ShowRefresh = false,
+        Timer = 7.0,
+        Expiry = 10.0
+    },
 	Keybinds = {
         Accept = {Toggle = true, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}},
         Offer = {Toggle = true, Keys = {VK_MENU, VK_O}, Type = {'KeyDown', 'KeyPressed'}},
@@ -1303,7 +1322,7 @@ local autobind_defaultSettings = {
         FactionLocker1 = {Toggle = false, Keys = {VK_MENU, VK_X}, Type = {'KeyDown', 'KeyPressed'}},
         FactionLocker2 = {Toggle = false, Keys = {VK_MENU, VK_C}, Type = {'KeyDown', 'KeyPressed'}},
         FactionLocker3 = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}},
-        BikeBind = {Toggle = true, Keys = {VK_SHIFT}, Type = {'KeyDown', 'KeyDown'}},
+        BikeBind = {Toggle = true, Keys = {VK_SHIFT, VK_W}, Type = {'KeyDown', 'KeyDown'}},
         SprintBind = {Toggle = true, Keys = {VK_F11}, Type = {'KeyPressed'}},
         Frisk = {Toggle = false, Keys = {VK_MENU, VK_F}, Type = {'KeyDown', 'KeyPressed'}},
         TakePills = {Toggle = true, Keys = {VK_F12}, Type = {'KeyPressed'}},
@@ -1330,7 +1349,7 @@ local timers = {
     Capture = {timer = 1.5, last = 0, sentTime = 0, timeOut = 5.0},
     Sprunk = {timer = 0.2, last = 0},
     Point = {timer = 180.0, last = 0},
-    AFK = {timer = 45.0, last = 0, sentTime = 0, timeOut = 5.0}
+    AFK = {timer = 90.0, last = 0, sentTime = 0, timeOut = 5.0}
 }
 
 local guardTime = 13.0
@@ -1370,18 +1389,33 @@ local backup = {
 }
 
 local farmer = {
-    dialogId = 22272,
-    dialogId2 = 22273,
     farming = false,
     harvesting = false,
     harvestingCount = 0
 }
 
-local radio = {
-    dialogId = 22274,
-    current = 0
+local wanted = {
+    enabled = false,
+
 }
 
+local currentRadio = 0
+
+local dialogs = {
+    farmer = {
+        id = 22272,
+        id2 = 22273
+    },
+    radio = {
+        id = 22274
+    },
+    weather = {
+        id = 22275
+    },
+    time = {
+        id = 22276
+    }
+}
 local vehicles = {
     populating = false,
     spawning = false,
@@ -1409,6 +1443,12 @@ local flagValues = {
     UNDERLINE = 0x10,
     STRIKEOUT = 0x20
 }
+
+local last_wanted = 0
+local commandSent = false
+
+local lastKeybindTime = 0
+local keyBindDelay = 1.5
 
 local usingSprunk = false
 
@@ -1541,7 +1581,9 @@ end
 
 local lockers = {
     maxKits = 6,
-    blackmarket = {
+    BlackMarket = {
+        name = "Black Market",
+        command = "/bm",
         isBindActive = false,
         isProcessing = false,
         maxSelections = 6,
@@ -1580,7 +1622,9 @@ local lockers = {
             {12, 13}
         }
     },
-    factionlocker = {
+    FactionLocker = {
+        name = "Faction Locker",
+        command = "/locker",
         isBindActive = false,
         isProcessing = false,
         maxSelections = 6,
@@ -1618,16 +1662,21 @@ local lockers = {
     }
 }
 
+local updateStatus = "up_to_date"
+local currentContent = nil
+local isUpdateHovered = false
+
 local menu = {
     initialized = new.bool(false),
     confirm = {
+        title = function() return ("%s - Update %s"):format(shortName:upper(), scriptVersion, currentContent.version or "Unknown") end,
         window = new.bool(false),
         size = {x = 300, y = 100},
         pivot = {x = 0.5, y = 0.5},
         update = new.bool(false)
     },
 	settings = {
-        title = ("%s %s - v%s"):format(fa.ICON_FA_SHIELD_ALT, scriptName:upperFirst(), scriptVersion),
+        title = function() return ("%s %s - v%s"):format(fa.ICON_FA_SHIELD_ALT, shortName:upper(), scriptVersion) end,
 		window = new.bool(false),
         size = {x = 588, y = 420},
         pivot = {x = 0.5, y = 0.5},
@@ -1635,7 +1684,22 @@ local menu = {
         dragging = new.bool(true)
 	},
     vehiclestorage = {
-        title = "Vehicle Storage:",
+        title = function() 
+            if autobind.CurrentPlayer.name ~= "" then
+                local vehicles = autobind.VehicleStorage.Vehicles[autobind.CurrentPlayer.name]
+                local spawnedVehicles = 0
+                for _, vehicle in pairs(vehicles) do
+                    if vehicle.status == "Spawned" or vehicle.status == "Respawned" or vehicle.status == "Occupied" or vehicle.status == "Damaged" then
+                        spawnedVehicles = spawnedVehicles + 1
+                    end
+                end
+
+                local freeSlots = 20 - #vehicles
+                return ("%s - Vehicle Storage [%s/4] - (Slots Available: %s)"):format(shortName:upper(), spawnedVehicles, 20 - #vehicles) 
+            else
+                return ("%s - Vehicle Storage"):format(shortName:upper()) 
+            end
+        end,
 		window = new.bool(false),
         size = {x = 338, y = 165},
         pivot = {x = 0.5, y = 0.5},
@@ -1664,6 +1728,7 @@ local menu = {
         dragging = new.bool(true)
 	},
 	blackmarket = {
+        title = function(label, pageId, totalPrice) return string.format("%s - Kit: %d - $%s", label, pageId, formatNumber(totalPrice)) end,
 		window = new.bool(false),
         size = {x = 226, y = 290},
         pivot = {x = 0.5, y = 0.5},
@@ -1671,6 +1736,7 @@ local menu = {
         dragging = new.bool(true)
 	},
 	factionlocker = {
+        title = function(label, pageId, totalPrice) return string.format("%s - Kit: %d - $%s", label, pageId, formatNumber(totalPrice)) end,
 		window = new.bool(false),
         size = {x = 226, y = 290},
         pivot = {x = 0.5, y = 0.5},
@@ -1678,11 +1744,17 @@ local menu = {
         dragging = new.bool(true)
 	},
 	changelog = {
+        title = function() 
+            return ("%s - Script: v%s - Latest: v%s - Last: v%s - Updated: %s - Updated By: %s"):format(shortName:upper(), scriptVersion, currentContent.version or "Unknown", currentContent.lastversion or "Unknown", currentContent.date or "Unknown", currentContent.updatedBy or "Unknown")
+        end,
 		window = new.bool(false),
         size = {x = 650, y = 400},
         pivot = {x = 0.5, y = 0.5},
         dragging = new.bool(true)
-	}
+	},
+    wanted = {
+        window = new.bool(true),
+    }
 }
 
 local imgui_flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove
@@ -1734,10 +1806,6 @@ local escapePressed = false
 local skinTextures = {}
 local skinsUrls = {}
 
-local updateStatus = "up_to_date"
-local currentContent = nil
-local isUpdateHovered = false
-
 local changeKey = {}
 local keyEditors = {
     {label = "Accept", key = "Accept", description = "Accepts a vest from someone. (Options are to the left)"},
@@ -1773,7 +1841,10 @@ local ignoreKeysMap = {
     Keybinds = {"BikeBind", "SprintBind", "Frisk", "TakePills", "Accept", "Offer", "AcceptDeath", "RequestBackup", "UseCrack", "UsePot"},
     BlackMarket = {"Locations"},
     FactionLocker = {"Locations"},
-    VehicleStorage = {"Vehicles"}
+    VehicleStorage = {"Vehicles"},
+    Elements = {"OfferedTo", "OfferedFrom", "PedsCount", "AutoFind", "LastBackup", "FactionBadge"},
+    WindowPos = {"Settings", "VehicleStorage", "Skins", "Keybinds", "Fonts", "BlackMarket", "FactionLocker", "Changelog"},
+    Wanted = {"List", "Pos", "Pivot", "Padding"}
 }
 
 for kitId = 1, lockers.maxKits do
@@ -1861,22 +1932,19 @@ function initializeComponents()
     end)
 
     -- Startup Timers
+    local currentTime = localClock()
     for name, timer in pairs(timers) do
         if type(timer.last) == "number" and name ~= "AFK" then
-            timer.last = localClock() - timer.timer
+            timer.last = currentTime - timer.timer
         end
         if type(timer.sentTime) == "number" then
-            timer.sentTime = localClock() - timer.timeOut
+            timer.sentTime = currentTime - timer.timeOut
         end
     end
 
     -- Setup Skins
     skinsUrls = generateSkinsUrls()
     downloadSkins(skinsUrls)
-
-    -- Setup Locker Keybinds
-    InitializeLockerKeyFunctions(autobind.BlackMarket.maxKits, "Black Market", "/bm")
-    InitializeLockerKeyFunctions(autobind.FactionLocker.maxKits, "Faction Locker", "/locker")
 
     -- Turn radio on/off and set favorite radio
     lua_thread.create(function()
@@ -1892,6 +1960,11 @@ function initializeComponents()
             setRadioChannel(autobind.Settings.favoriteRadio or 0)
         end
     end)
+
+    -- Setup Locker Keybinds
+    for _, name in pairs({"BlackMarket", "FactionLocker"}) do
+        InitializeLockerKeyFunctions(autobind[name].maxKits, lockers[name].name, lockers[name].command)
+    end
 
     -- Initialize Menu
     menu.initialized[0] = true
@@ -1913,7 +1986,7 @@ function main()
     registerAutobindCommands()
     registerClientCommands()
     createFonts()
-
+    
     while true do wait(0)
         -- Check if not connected to the server
         if sampGetGamestate() ~= 3 then
@@ -1923,110 +1996,37 @@ function main()
                 autobind.CurrentPlayer.name = ""
                 autobind.CurrentPlayer.id = -1
             end
-        end
-        
-        -- Check if dialog is active
-        local result, button, _, _ = sampHasDialogRespond(farmer.dialogId)
-        if result then
-            if button == 1 then
-                if isCharInAnyCar(ped) or isCharSittingInAnyCar(ped) then
-                    formattedAddChatMessage("You cannot close this dialog while in a vehicle.")
-                    createFarmerDialog()
-                end
-            elseif button == 0 then
-                -- Disable auto farming
-                formattedAddChatMessage("You have disabled auto farming.")
-                autobind.Settings.autoFarm = false
-            
-                -- Reset farming
-                farmer.farming = false
-                farmer.harvesting = false
-                farmer.harvestingCount = 0
-            end
-        end
-
-        -- Check if dialog is active
-        local result2, button2, _, _ = sampHasDialogRespond(farmer.dialogId2)
-        if result2 then
-            if button2 == 1 then
-                -- Reset farming
-                farmer.farming = false
-                farmer.harvesting = false
-                farmer.harvestingCount = 0
-            elseif button2 == 0 then
-                -- Enable farming
-                farmer.farming = true
-                autobind.Settings.autoFarm = true
-                formattedAddChatMessage("You have enabled auto farming.")
-            end
-        end
-
-        -- Radio
-        local result3, button3, list3, _ = sampHasDialogRespond(radio.dialogId)
-        if result3 then
-            if button3 == 1 then
-                if list3 ~= 12 then
-                    formattedAddChatMessage(("You have selected radio station %d: %s - %s."):format(list3, radioStations[list3].name, radioStations[list3].desc))
-                    lua_thread.create(function()
-                        if not autobind.Settings.noRadio then
-                            autobind.Settings.noRadio = true
-                            toggleRadio(true)
-                            wait(500)
-                        end
-
-                        -- Fix user tracks
-                        if list3 == 11 then 
-                            list3 = 24
-                        end
-
-                        setRadioChannel(list3)
-                    end)
-                else
-                    formattedAddChatMessage("You have selected radio station 12: Radio Off.")
-                    lua_thread.create(function()
-                        if autobind.Settings.noRadio then
-                            autobind.Settings.noRadio = false
-                            setRadioChannel(list3)
-                            wait(500)
-                            toggleRadio(false)
-                        end
-                    end)
-                end
+            if autobind.Wanted.List then
+                --[[if menu.wanted.window[0] then 
+                    menu.wanted.window[0] = false 
+                end]]
+                autobind.Wanted.List = {}
             end
         end
 
         -- Reset Locker Processing if player is not in location
-        resetLockerProcessing("factionlocker", autobind.FactionLocker.Locations)
-        resetLockerProcessing("blackmarket", autobind.BlackMarket.Locations)
+        for _, name in ipairs({"FactionLocker", "BlackMarket"}) do
+            resetLockerProcessing(name, autobind[name].Locations)
+        end
 
         -- Get Radio Channel if player is in a vehicle
         if isCharInAnyCar(ped) then
-            radio.current = getRadioChannel()
+            currentRadio = getRadioChannel()
         end
 
         -- Get the status of samps cursor
         cursorActive = sampIsCursorActive()
 
         -- Vehicle Storage
-        if autobind.VehicleStorage.enable then
+        --if autobind.VehicleStorage.enable then
             menu.vehiclestorage.window[0] = (--[[sampGetChatInputText():find("/v") and ]]sampIsChatInputActive()) and true or false
-        end
+        --end
 
-        -- Initialize Components and send success message
         functionsLoop(function(started, failed)
             initializeComponents()
 
             formattedAddChatMessage(("%s has loaded successfully! {%06x}Type /%s help for more information."):format(scriptVersion, clr.GREY, shortName))
         end)
-    end
-end
-
-function resetLockerProcessing(name, locations)
-    if lockers[name].isProcessing and not isPlayerInLocation(locations) then
-        lockers[name].isProcessing = false
-        lockers[name].isBindActive = false
-        lockers[name].thread = nil
-        formattedAddChatMessage("You left the locker room area while getting items. Please retrieve items again.")
     end
 end
 
@@ -2077,40 +2077,40 @@ end
 function checkAndSendVest(skipArmorCheck)
     local currentTime = localClock()
     if not autobind.AutoVest.enable and not skipArmorCheck then
-        return
+        return false, nil
     end
 
     if isPlayerAFK then
-        return "You cannot send a vest while AFK, move your character."
+        return false, "You cannot send a vest while AFK, move your character."
     end
 
     if checkAdminDuty() then
-        return "You are on admin duty, you cannot send a vest."
+        return false, "You are on admin duty, you cannot send a vest."
     end
 
     if not isPlayerControlOn(h) then
-        return "You cannot send a vest while frozen, please wait."
+        return false, "You cannot send a vest while frozen, please wait."
     end
 
     if not checkBodyguardCondition() then
-        return "You cannot send a vest while not a bodyguard."
+        return false, "You cannot send a vest while not a bodyguard."
     end
 
     if checkMuted() then
-        return "You cannot send a vest while muted, please wait."
+        return false, "You cannot send a vest while muted, please wait."
     end
 
     if bodyguard.received then
         if currentTime - timers.Vest.sentTime > timers.Vest.timeOut then
             bodyguard.received = false
         else
-            return "Vest has been sent, please wait."
+            return false, "Vest has been sent, please wait."
         end
     end
 
     if (currentTime - timers.Vest.last) < timers.Vest.timer then
         local timeLeft = math.ceil(timers.Vest.timer - (currentTime - timers.Vest.last))
-        return string.format("You must wait %d seconds before sending vest.", timeLeft > 1 and timeLeft or 1)
+        return false, string.format("You must wait %d seconds before sending vest.", timeLeft > 1 and timeLeft or 1)
     end
 
     if not bodyguard.received then
@@ -2119,43 +2119,43 @@ function checkAndSendVest(skipArmorCheck)
                 sampSendChat(autobind.AutoVest.donor and '/guardnear' or string.format("/guard %d %d", player.playerId, autobind.AutoVest.price))
                 bodyguard.received = true
                 timers.Vest.sentTime = currentTime
-                return
+                return true, nil
             end
         end
-        return "No suitable players found to vest, please try again."
+        return false, "No suitable players found to vest, please try again."
     end
 end
 
-function checkAndAcceptVest(autoaccept)
+function checkAndAcceptVest(allowAutoAccept)
 	local currentTime = localClock()
 	if currentTime - timers.Accept.last < timers.Accept.timer then
-		return
+		return false, nil
 	end
 
     if isPlayerAFK then
-        return "You cannot accept a vest while AFK, move your character."
+        return false, "You cannot accept a vest while AFK, move your character."
     end
 
     if checkAdminDuty() then
-        return "You are on admin duty, you cannot accept a vest."
+        return false, "You are on admin duty, you cannot accept a vest."
     end
 
 	if checkMuted() then
-		return "You cannot accept a vest while muted, please wait."
+		return false, "You cannot accept a vest while muted, please wait."
 	end
 
 	if checkHeal() then
 		local timeLeft = math.ceil(timers.Heal.timer - (currentTime - timers.Heal.last))
-		return string.format("You must wait %d seconds before accepting a vest.", timeLeft > 1 and timeLeft or 1)
+		return false, string.format("You must wait %d seconds before accepting a vest.", timeLeft > 1 and timeLeft or 1)
 	end
 
 	if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
 		for _, player in ipairs(getVisiblePlayers(5, "all")) do
-			if autoaccept and accepter.received then
+			if allowAutoAccept and accepter.received then
 				if sampGetPlayerNickname(player.playerId) == accepter.playerName then
 					sampSendChat("/accept bodyguard")
 					timers.Accept.last = currentTime
-					return
+					return true
 				end
 			end
 		end
@@ -2165,9 +2165,9 @@ function checkAndAcceptVest(autoaccept)
             message = string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId)
         end
 
-        return message or "No one has offered you bodyguard."
+        return false, message or "No one has offered you bodyguard."
 	else
-		return "You are already have a vest."
+		return false, "You are already have a vest."
 	end
 end
 
@@ -2234,79 +2234,87 @@ function resetLocker(name)
     lockers[name].obtainedItems = {}
 end
 
+function resetLockerProcessing(name, locations)
+    if lockers[name].isProcessing and not isPlayerInLocation(locations) then
+        lockers[name].isProcessing = false
+        lockers[name].isBindActive = false
+        lockers[name].thread = nil
+        formattedAddChatMessage("You left the locker room area while getting items. Please retrieve items again.")
+    end
+end
+
 function handleLocker(kitNumber, name, command)
     local fullName = name:gsub(" ", "")
     local lowerName = fullName:lower()
 
-    if lockers[lowerName].isBindActive then
-        print("isBindActive")
-        return
+    if lockers[fullName].isBindActive then
+        return false
     end
 
-    lockers[lowerName].isBindActive = true
+    lockers[fullName].isBindActive = true
 
-    if lockers[lowerName].isProcessing then
+    if lockers[fullName].isProcessing then
         formattedAddChatMessage(("You are already getting items from %s, please wait."):format(name), clr.YELLOW)
-        lockers[lowerName].isBindActive = false
-        return
+        lockers[fullName].isBindActive = false
+        return false
     end
 
     if checkMuted() then
         formattedAddChatMessage("You have been muted for spamming, please wait.", clr.YELLOW)
-        lockers[lowerName].isBindActive = false
-        return
+        lockers[fullName].isBindActive = false
+        return false
     end
 
     if not isPlayerInLocation(autobind[fullName].Locations) then
         formattedAddChatMessage(("You are not at the %s!"):format(name), clr.GREY)
-        lockers[lowerName].isBindActive = false
-        return
+        lockers[fullName].isBindActive = false
+        return false
     end
 
     if not isPlayerControlOn(h) then
         formattedAddChatMessage("You cannot get items while frozen, please wait.", clr.YELLOW)
-        lockers[lowerName].isBindActive = false
-        return
+        lockers[fullName].isBindActive = false
+        return false
     end
 
     if checkHeal() then
         local timeLeft = math.ceil(timers.Heal.timer - (localClock() - timers.Heal.last))
         formattedAddChatMessage(string.format("You must wait %d seconds before getting items.", timeLeft > 1 and timeLeft or 1))
-        lockers[lowerName].isBindActive = false
-        return
+        lockers[fullName].isBindActive = false
+        return false
     end
 
     -- Check if the player can afford the kit
     local money = getPlayerMoney()
-    local totalPrice = calculateTotalPrice(autobind[fullName]["Kit" .. kitNumber], lockers[lowerName].Items)
+    local totalPrice = calculateTotalPrice(autobind[fullName]["Kit" .. kitNumber], lockers[fullName].Items)
     if totalPrice and money < totalPrice and totalPrice ~= 0 then
         formattedAddChatMessage(("You do not have enough money to buy this kit, you need $%s more. Total price: $%s."):format(
             formatNumber(totalPrice - money), 
             formatNumber(totalPrice)), 
         clr.YELLOW)
-        lockers[lowerName].isBindActive = false
-        return
+        lockers[fullName].isBindActive = false
+        return false
     end
 
     -- Start processing and reset bind
-    lockers[lowerName].isProcessing = true
-    lockers[lowerName].isBindActive = false
+    lockers[fullName].isProcessing = true
+    lockers[fullName].isBindActive = false
 
     -- Start fresh
-    resetLocker(lowerName)
-    lockers[lowerName].getItemFrom = kitNumber
-    lockers[lowerName].thread = nil
+    resetLocker(fullName)
+    lockers[fullName].getItemFrom = kitNumber
+    lockers[fullName].thread = nil
 
-    lockers[lowerName].thread = lua_thread.create(function()
+    lockers[fullName].thread = lua_thread.create(function()
         local kitItems = autobind[fullName]["Kit" .. kitNumber]
 
         -- Check for what items are needed
         local neededItems = {}
         local skippedItems = {}
         for _, itemIndex in ipairs(kitItems) do
-            local item = lockers[lowerName].Items[itemIndex]
+            local item = lockers[fullName].Items[itemIndex]
             if item then
-                if canObtainItem(item, lockers[lowerName].Items) then
+                if canObtainItem(item, lockers[fullName].Items) then
                     table.insert(neededItems, item)
                 else
                     table.insert(skippedItems, item.label)
@@ -2316,17 +2324,26 @@ function handleLocker(kitNumber, name, command)
 
         -- Start getting items
         for i, item in ipairs(neededItems) do
-            if not lockers[lowerName].isProcessing --[[or lockers[lowerName].isBindActive]] then
-                return
+            if not lockers[fullName].isProcessing then
+                return false
             end
 
-            lockers[lowerName].currentKey = item.index
-            lockers[lowerName].gettingItem = true
+            if i == 1 then
+                formattedAddChatMessage(string.format(
+                    "Getting items from %s using Kit #%d. {%06x}Please stop moving and do not use any other commands.",
+                    name,
+                    kitNumber,
+                    clr.YELLOW
+                ), clr.WHITE)
+            end
+
+            lockers[fullName].currentKey = item.index
+            lockers[fullName].gettingItem = true
             sampSendChat(command)
             
-            repeat wait(0) until not lockers[lowerName].gettingItem
+            repeat wait(0) until not lockers[fullName].gettingItem
             
-            table.insert(lockers[lowerName].obtainedItems, item.label)
+            table.insert(lockers[fullName].obtainedItems, item.label)
 
             if (i % 3 == 0) and (i < #neededItems) then
                 local waitTime = math.random(1500, 1750)
@@ -2351,8 +2368,8 @@ function handleLocker(kitNumber, name, command)
         end
 
         -- Check if items were obtained
-        if #lockers[lowerName].obtainedItems > 0 then
-            formattedAddChatMessage(string.format("Obtained items: {%06x}%s.", clr.WHITE, table.concat(lockers[lowerName].obtainedItems, ", ")), clr.YELLOW)
+        if #lockers[fullName].obtainedItems > 0 then
+            formattedAddChatMessage(string.format("Obtained items: {%06x}%s.", clr.WHITE, table.concat(lockers[fullName].obtainedItems, ", ")), clr.YELLOW)
         end
         
         -- Check if items were skipped
@@ -2360,12 +2377,16 @@ function handleLocker(kitNumber, name, command)
             formattedAddChatMessage(string.format("Skipped items: {%06x}%s.", clr.WHITE, table.concat(skippedItems, ", ")), clr.REALRED)
         end
 
+        -- Reset processing and locker
+        lockers[fullName].isProcessing = false
+        resetLocker(fullName)
+
         wait(1500)
 
         -- Verify items are actually in the player's possession now
         local notObtained = {}
         for _, item in ipairs(neededItems) do
-            if canObtainItem(item, lockers[lowerName].Items) then
+            if canObtainItem(item, lockers[fullName].Items) then
                 table.insert(notObtained, item.label)
             end
         end
@@ -2377,34 +2398,36 @@ function handleLocker(kitNumber, name, command)
                 table.concat(notObtained, ", ")
             ), clr.YELLOW)
         end
-        
-        -- Reset processing and locker
-        lockers[lowerName].isProcessing = false
-        resetLocker(lowerName)
     end)
+
+    if not lockers[fullName].thread then
+        formattedAddChatMessage("Failed to start locker thread, please try again.", clr.YELLOW)
+        lockers[fullName].isBindActive = false
+        return false
+    end
 end
 
 local keyFunctions = {
     Accept = function()
-        local message = checkAndAcceptVest(true)
+        local success, message = checkAndAcceptVest(true)
         if message then
             formattedAddChatMessage(message)
         end
     end,
     Offer = function()
-        local message = checkAndSendVest(true)
+        local success, message = checkAndSendVest(true)
         if message then
             formattedAddChatMessage(message)
         end
     end,
     BikeBind = function()
         if not isCharOnAnyBike(ped) or not autobind.Keybinds.BikeBind.Toggle then
-            return
+            goto skipBikeBind
         end
 
         local veh = storeCarCharIsInNoSave(ped)
         if isCarInAirProper(veh) or getCarSpeed(veh) < 0.1 then
-            return
+            goto skipBikeBind
         end
 
         local model = getCarModel(veh)
@@ -2419,13 +2442,15 @@ local keyFunctions = {
             wait(0)
             setGameKeyState(vehKey, 0)
         end
+
+        ::skipBikeBind::
     end,
     SprintBind = function()
         autobind.Keybinds.SprintBind.Toggle = toggleBind("SprintBind", autobind.Keybinds.SprintBind.Toggle)
     end,
     Frisk = function()
         if checkAdminDuty() or checkMuted() then
-            return
+            goto skipFrisk
         end
 
         local targeting = getCharPlayerIsTargeting(h)
@@ -2437,30 +2462,34 @@ local keyFunctions = {
                 end
             end
         end
+
+        ::skipFrisk::
     end,
     TakePills = function()
         if checkAdminDuty() or checkMuted() then
-            return
+            goto skipTakePills
         end
 
         if checkHeal() then
             formattedAddChatMessage("You can't heal after being attacked recently. You cannot take pills.")
-            return
+            goto skipTakePills
         end
 
         sampSendChat("/takepills")
+
+        ::skipTakePills::
     end,
     AcceptDeath = function()
         sampSendChat("/accept death")
     end,
     RequestBackup = function()
         if checkAdminDuty() or checkMuted() then
-            return
+            goto skipRequestBackup
         end
 
         if backup.enable then
             sampSendChat("/nobackup")
-            return
+            goto skipRequestBackup
         end
 
         local backupPrimary = autobind.Settings.mode == "Faction" and "backup" or "fbackup"
@@ -2475,6 +2504,8 @@ local keyFunctions = {
             local checkForSubZone = subZoneName == nil and zoneName or string.format("%s in %s", subZoneName, zoneName)
             sampSendChat(string.format("/%s I need urgent backup! Currently at %s.", backupSecondary, checkForSubZone))
         end
+
+        ::skipRequestBackup::
     end,
     Reconnect = function()
         GameModeRestart()
@@ -2513,15 +2544,16 @@ end
 function createKeybinds()
     local currentTime = localClock()
     for key, value in pairs(autobind.Keybinds) do
+        -- Check if the player is processing a locker; skip this keybind instead of returning entirely.
+        if (key:find("FactionLocker") and lockers.FactionLocker.isProcessing) or 
+           (key:find("BlackMarket") and lockers.BlackMarket.isProcessing) then
+            goto continue
+        end
+
         local bind = {
             keys = value.Keys,
             type = value.Type
         }
-
-        -- Check if the player is processing a locker and return if so
-        if (key:find("FactionLocker") and lockers.factionlocker.isProcessing) or (key:find("BlackMarket") and lockers.blackmarket.isProcessing) then
-            return
-        end
 
         if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
             if activeCheck(true, true, true, true, true) and not menu.settings.window[0] then
@@ -2530,10 +2562,17 @@ function createKeybinds()
                     if not success then
                         print(string.format("Error in %s function: %s", key, errorMsg))
                     end
+
                     timers.Binds.last[key] = currentTime
+                    -- Record the last keybind activity
+                    if key ~= "BikeBind" and key ~= "Reconnect" and key ~= "SprintBind" then
+                        lastKeybindTime = currentTime
+                    end
                 end
             end
         end
+
+        ::continue::
     end
 end
 
@@ -2553,7 +2592,7 @@ end
  
 function createAutoCapture()
     if not autocap or checkMuted() or checkAdminDuty() then
-        return
+        goto skipAutoCapture
     end
 
 	local currentTime = localClock()
@@ -2561,22 +2600,24 @@ function createAutoCapture()
 		sampSendChat("/capturf")
 		timers.Capture.last = currentTime
 	end
+
+    ::skipAutoCapture::
 end
 
 function createPointBounds()
     -- Reset data if you are not connected to a server
     if sampGetGamestate() ~= 3 then
         gzData = nil
-        return
+        goto skipPointBounds
     end
 
     if not gzData then
         gzData = ffi.cast('struct stGangzonePool*', sampGetGangzonePoolPtr())
-        return
+        goto skipPointBounds
     end
 
     if autobind.Settings.mode ~= "Family" then
-        return
+        goto skipPointBounds
     end
 
     for i = 0, 1023 do
@@ -2602,22 +2643,24 @@ function createPointBounds()
             end
         end
     end
+
+    ::skipPointBounds::
 end
 
 function createAutoFind()
     if not autofind.enable or checkMuted() or isPlayerAFK then
-        return
+        goto skipAutoFind
     end
 
     -- Check if the player is frozen
     if not isPlayerControlOn(h) then
-        return
+        goto skipAutoFind
     end
 
     if not sampIsPlayerConnected(autofind.playerId) then
         formattedAddChatMessage("The player you were finding has disconnected, you are no longer finding anyone.")
         autofind.enable = false
-        return
+        goto skipAutoFind
     end
 
     local currentTime = localClock()
@@ -2634,17 +2677,19 @@ function createAutoFind()
             autofind.received = true
         end
     end
+
+    ::skipAutoFind::
 end
 
 function createSprunkSpam()
     -- Return if not using sprunk
     if not usingSprunk then
-        return
+        goto skipSprunkSpam
     end
 
     if isButtonPressed(h, 15) then
         usingSprunk = false
-        return
+        goto skipSprunkSpam
     end
 
     -- Return if already full health and drop the sprunk
@@ -2655,19 +2700,19 @@ function createSprunkSpam()
         wait(0)
         setGameKeyState(key, 0)
         usingSprunk = false
-        return
+        goto skipSprunkSpam
     end
     
     -- Return if not connected
     local result, playerId = sampGetPlayerIdByCharHandle(ped)
     if not result then
-        return
+        goto skipSprunkSpam
     end
 
     -- Return if not enough time has passed
     local currentTime = localClock()
     if currentTime - timers.Sprunk.last < timers.Sprunk.timer then
-        return
+        goto skipSprunkSpam
     end
 
     -- Use the sprunk
@@ -2678,6 +2723,8 @@ function createSprunkSpam()
         setGameKeyState(key, 0)
         timers.Sprunk.last = currentTime
     end
+
+    ::skipSprunkSpam::
 end
 
 local afkKeys = {
@@ -2701,19 +2748,19 @@ function createAFKCheck()
         setTimer(45.0, timers.AFK)  -- Reset the timer for the next AFK check
         initialAFKStart = false
         isPlayerAFK = false
-        return
+        goto skipAFKCheck
     end
 
     -- Check if the AFK timer has expired (player is considered AFK)
     if currentTime - timers.AFK.last >= timers.AFK.timer then
         timers.AFK.last = currentTime
         isPlayerAFK = true
-        return
+        goto skipAFKCheck
     end
 
     -- Check if the AFK timer reset timeout has passed.
     if currentTime - timers.AFK.sentTime <= timers.AFK.timeOut then
-        return
+        goto skipAFKCheck
     end
 
     -- Check if the player is in a moving vehicle and only reset if enough time has passed
@@ -2725,7 +2772,7 @@ function createAFKCheck()
                 isPlayerAFK = false
                 timers.AFK.last = currentTime
                 timers.AFK.sentTime = currentTime
-                return
+                goto skipAFKCheck
             end
         end
     end
@@ -2737,8 +2784,171 @@ function createAFKCheck()
                 isPlayerAFK = false
                 timers.AFK.last = currentTime
                 timers.AFK.sentTime = currentTime
-                return
+                goto skipAFKCheck
             end
+        end
+    end
+
+    ::skipAFKCheck::
+end
+
+-- Define a table with dialog configurations
+local dialogConfigs = {
+    {
+        id = dialogs.farmer.id,
+        onButton1 = function()
+            if isCharInAnyCar(ped) or isCharSittingInAnyCar(ped) then
+                formattedAddChatMessage("You cannot close this dialog while in a vehicle.")
+                createFarmerDialog()
+            end
+        end,
+        onButton0 = function()
+            formattedAddChatMessage("You have disabled auto farming.")
+            autobind.Settings.autoFarm = false
+            farmer.farming = false
+            farmer.harvesting = false
+            farmer.harvestingCount = 0
+        end
+    },
+    {
+        id = dialogs.farmer.id2,
+        onButton1 = function()
+            farmer.farming = false
+            farmer.harvesting = false
+            farmer.harvestingCount = 0
+        end,
+        onButton0 = function()
+            farmer.farming = true
+            autobind.Settings.autoFarm = true
+            formattedAddChatMessage("You have enabled auto farming.")
+        end
+    },
+    {
+        id = dialogs.radio.id,
+        onButton1 = function(list)
+            if list ~= 12 then
+                formattedAddChatMessage(("You have selected radio station %d: %s - %s."):format(list, radioStations[list].name, radioStations[list].desc))
+                lua_thread.create(function()
+                    if not autobind.Settings.noRadio then
+                        autobind.Settings.noRadio = true
+                        toggleRadio(true)
+                        wait(500)
+                    end
+
+                    if list == 11 then 
+                        list = 24
+                    end
+
+                    setRadioChannel(list)
+                end)
+            else
+                formattedAddChatMessage("You have selected radio station 12: Radio Off.")
+                lua_thread.create(function()
+                    if autobind.Settings.noRadio then
+                        autobind.Settings.noRadio = false
+                        setRadioChannel(list)
+                        wait(500)
+                        toggleRadio(false)
+                    end
+                end)
+            end
+        end
+    },
+    {
+        id = dialogs.weather.id,
+        onButton1 = function(list)
+            autobind.TimeAndWeather.weather = list
+            if list >= 22 then
+                formattedAddChatMessage("You have selected weather: Unknown.")
+            else
+                formattedAddChatMessage(("You have selected weather: %s (%d)."):format(getWeatherName(list), list))
+            end
+            setWeather(list)
+        end
+    }
+}
+
+function createDialogResponses()
+    -- Iterate over the dialog configurations
+    for _, config in ipairs(dialogConfigs) do
+        local result, button, list, _ = sampHasDialogRespond(config.id)
+        if result then
+            if button == 1 and config.onButton1 then
+                config.onButton1(list)
+            elseif button == 0 and config.onButton0 then
+                config.onButton0(list)
+            end
+        end
+    end
+end
+
+local refreshCount = 0
+local timerOffset = 0.0
+function createWantedCommand()
+
+    if isPlayerAFK then
+        if timerOffset ~= 10 then
+            timerOffset = 10
+        end
+    else
+        if timerOffset ~= 0 then
+            timerOffset = 0
+        end
+    end
+
+    if isLoadingObjects then
+        goto skipWantedCommand
+    end
+
+    local currentTime = localClock()
+    if autobind.Wanted.Enabled and (autobind.Wanted.Timer + timerOffset) <= currentTime - last_wanted then
+        if sampGetGamestate() ~= 3 then
+            goto skipWantedTimer
+        end
+
+        if checkMuted() or checkAdminDuty() then
+            commandSent = false
+            goto skipWantedTimer
+        end
+
+        if lockers.FactionLocker.isProcessing or lockers.FactionLocker.isBindActive or 
+        lockers.BlackMarket.isProcessing or lockers.BlackMarket.isBindActive then
+            commandSent = false
+            goto skipWantedTimer
+        end
+
+        if currentTime - lastKeybindTime < keyBindDelay then
+            commandSent = false
+            goto skipWantedTimer
+        end
+
+        sampSendChat("/wanted")
+        commandSent = true
+        last_wanted = currentTime
+        refreshCount = refreshCount + 1
+
+        if refreshCount >= 10 then
+            refreshCount = 0
+            saveConfigWithErrorHandling(Files.wanted, autobind.Wanted)
+        end
+
+        ::skipWantedTimer::
+    end
+
+    ::skipWantedCommand::
+end
+
+function sampev.onSendCommand(command)
+    if command:match("^/wanted$") then
+        if isLoadingObjects then
+            print("preventing wanted command, loading objects")
+            return false
+        end
+
+        local currentTime = localClock()
+        if currentTime - lastKeybindTime < keyBindDelay then
+            print("preventing wanted command, keybind delay")
+            return false
         end
     end
 end
@@ -2756,7 +2966,8 @@ local functionsToRun = {
         interval = 0.001,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
     },
     {
         id = 2,
@@ -2767,18 +2978,23 @@ local functionsToRun = {
         interval = 0.001,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
     },
     {
         id = 3,
         name = "AutoAccept",
         func = function() 
-            checkAndAcceptVest(accepter.enable)
+            local success, message = checkAndAcceptVest(accepter.enable)
+            if success and message then
+                formattedAddChatMessage(message)
+            end
         end,
         interval = 0.001,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
     },
     {
         id = 4,
@@ -2787,16 +3003,18 @@ local functionsToRun = {
         interval = 0.001,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
     },
     {
         id = 5,
         name = "AutoCapture",
         func = createAutoCapture,
-        interval = 0.001,
+        interval = 0.1,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
     },
     {
         id = 6,
@@ -2805,25 +3023,28 @@ local functionsToRun = {
         interval = 1.5,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
     },
     {
         id = 7,
         name = "AutoFind",
         func = createAutoFind,
-        interval = 0.0,
+        interval = 0.1,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
     },
     {
         id = 8,
         name = "SprunkSpam",
         func = createSprunkSpam,
-        interval = 0.01,
+        interval = 0.1,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
     },
     {
         id = 9,
@@ -2832,29 +3053,47 @@ local functionsToRun = {
         interval = 0.5,
         lastRun = localClock(),
         enabled = true,
-        status = "idle"
+        status = "idle",
+        statusError = "Nothing to report"
+    },
+    {
+        id = 10,
+        name = "DialogResponses",
+        func = createDialogResponses,
+        interval = 0.5,
+        lastRun = localClock(),
+        enabled = true,
+        status = "idle",
+        statusError = "Nothing to report"
+    },
+    {
+        id = 11,
+        name = "WantedCommand",
+        func = createWantedCommand,
+        interval = 0.5,
+        lastRun = localClock(),
+        enabled = true,
+        status = "idle",
+        statusError = "Nothing to report"
     }
 }
 
--- Define the delay before a restarted function becomes "running" (in seconds)
 local restartDelay = 5.0
 
--- Functions Loop now stores status in each functionsToRun entry.
 function functionsLoop(onFunctionsStatus)
-    -- Check if the autobind is enabled
     if isPlayerPaused then
-        return
+        goto skipFunctionsLoop
     end
 
     local currentTime = localClock()
     for _, item in ipairs(functionsToRun) do
         if item.enabled and (currentTime - item.lastRun >= item.interval) then
-            local success, err = xpcall(item.func, debug.traceback)
+            local success, err = pcall(item.func)
             if not success then
                 print(string.format("Error in %s function: %s", item.name, err))
                 item.errorCount = (item.errorCount or 0) + 1
                 item.status = "failed"
-
+                item.statusError = err
                 if item.errorCount >= 5 then
                     print(string.format("%s function disabled after repeated errors.", item.name))
                     item.enabled = false
@@ -2862,22 +3101,18 @@ function functionsLoop(onFunctionsStatus)
                 end
             else
                 item.errorCount = 0
-                -- If the function was idle, simply update to running.
                 if item.status == "idle" then
                     item.status = "running"
                 end
             end
             item.lastRun = currentTime
         end
-
-        -- Update functions that are in the "restarted" state.
         if item.status == "restarted" and item.restartTimestamp and 
            (currentTime - item.restartTimestamp >= restartDelay) then
             item.status = "running"
         end
     end
 
-    -- Use status from functionsToRun for the callback.
     if onFunctionsStatus and not funcsLoop.callbackCalled then
         local started = {}
         local failed = {}
@@ -2892,6 +3127,8 @@ function functionsLoop(onFunctionsStatus)
         onFunctionsStatus(started, failed)
         funcsLoop.callbackCalled = true
     end
+
+    ::skipFunctionsLoop::
 end
 
 local functionManager = {}
@@ -2960,6 +3197,14 @@ function functionManager.restart(name, callback)
         end
     end
     print("Function " .. name .. " not found.")
+end
+
+function functionManager.getErrorStatus(name)
+    for _, item in ipairs(functionsToRun) do
+        if item.name:lower() == name:lower() then
+            return item.statusError:gsub(workingDir .. "\\", "")
+        end
+    end
 end
 
 local clientCommands = {
@@ -3341,7 +3586,7 @@ local clientCommands = {
     },
     changemode = {
         cmd = "changemode",
-        alt = {"switchmode"},
+        alt = {"cm", "switchmode"},
         desc = "Switches between Faction and Family mode",
         id = 21,
         func = function(cmd, params)
@@ -3367,25 +3612,20 @@ local clientCommands = {
         func = function(cmd, params)
             if #params < 1 then
                 formattedAddChatMessage(string.format(
-                    "Status: {%06x}%s{%06x}, Current Weather: {%06x}%s (%d).",
+                    "Status: {%06x}%s{%06x}, Weather: {%06x}%s (%d).",
                     autobind.TimeAndWeather.modifyWeather and clr.REALGREEN or clr.REALRED, 
-                    autobind.TimeAndWeather.modifyWeather and "Enabled" or "Disabled",
+                    autobind.TimeAndWeather.modifyWeather and "On" or "Off",
                     clr.WHITE,
                     clr.LIGHTBLUE, 
                     getWeatherName(autobind.TimeAndWeather.weather),
                     autobind.TimeAndWeather.weather
                 ))
-                formattedAddChatMessage(string.format("Server Weather: {%06x}%s (%d).", clr.LIGHTBLUE, getWeatherName(autobind.TimeAndWeather.serverWeather), autobind.TimeAndWeather.serverWeather))
-                formattedAddChatMessage(string.format("USAGE: /%s [weatherId|help|toggle|reset]", cmd))
+                formattedAddChatMessage(string.format("Server: {%06x}%s (%d).", clr.LIGHTBLUE, getWeatherName(autobind.TimeAndWeather.serverWeather), autobind.TimeAndWeather.serverWeather))
+                formattedAddChatMessage(string.format("USAGE: /%s [weatherId|tgl|list]", cmd))
                 return
             end
 
-            if params:match("^help$") then
-                formattedAddChatMessage(string.format("USAGE: /%s [weatherId|toggle|reset]", cmd))
-                formattedAddChatMessage(string.format("Toggle: {%06x}Toggles weather on or off.", clr.GREY))
-                formattedAddChatMessage(string.format("Reset: {%06x}Resets weather to default.", clr.GREY))
-                formattedAddChatMessage(string.format("WeatherId: {%06x}Sets the weather to the specified ID.", clr.GREY))
-            elseif params:match("^toggle$") then
+            if params:match("^tgl$") then
                 autobind.TimeAndWeather.modifyWeather = toggleBind("Weather", autobind.TimeAndWeather.modifyWeather)
 
                 if autobind.TimeAndWeather.modifyWeather then
@@ -3393,12 +3633,14 @@ local clientCommands = {
                 else
                     setWeather(autobind.TimeAndWeather.serverWeather or autobind_defaultSettings.TimeAndWeather.serverWeather)
                 end
-            elseif params:match("^reset$") then
-                autobind.TimeAndWeather.weather = autobind_defaultSettings.TimeAndWeather.weather
-                formattedAddChatMessage("Weather has been reset to default.")
-                if autobind.TimeAndWeather.modifyWeather then
-                    setWeather(autobind.TimeAndWeather.weather)
+            elseif params:match("^list$") then
+                local messages = ""
+                for i = 0, 22 do
+                    messages = messages .. string.format("Weather ID: {%06x}%d{%06x}, %s.\n", clr.LIGHTBLUE, i, clr.WHITE, getWeatherName(i))
                 end
+
+                local title = string.format("[%s] Weather List", shortName:upper())
+                sampShowDialog(dialogs.weather.id, title, messages, "Select", "Close", 2)
             else
                 local weatherId = tonumber(params)
                 if weatherId and weatherId >= 0 and weatherId <= 50 then
@@ -3409,7 +3651,7 @@ local clientCommands = {
                         setWeather(weatherId)
                     end
                 else
-                    formattedAddChatMessage(string.format("USAGE: /%s [weatherId|help|toggle|reset]", cmd))
+                    formattedAddChatMessage(string.format("USAGE: /%s [weatherId|tgl|list]", cmd))
                 end
             end
         end
@@ -3421,34 +3663,21 @@ local clientCommands = {
         id = 23,
         func = function(cmd, params)
             if #params < 1 then
-                formattedAddChatMessage(string.format("Status: {%06x}%s{%06x}, Current Time: {%06x}%s (%02d:%02d).", autobind.TimeAndWeather.modifyTime and clr.REALGREEN or clr.REALRED, autobind.TimeAndWeather.modifyTime and "Enabled" or "Disabled", clr.WHITE, clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.hour), autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute))
-                formattedAddChatMessage(string.format("Server Time: {%06x}%s (%02d:%02d).", clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.serverHour), autobind.TimeAndWeather.serverHour, autobind.TimeAndWeather.serverMinute))
-                formattedAddChatMessage(string.format("USAGE: /%s [hour (minute)|help|toggle|reset]", cmd))
+                formattedAddChatMessage(string.format("Status: {%06x}%s{%06x}, Time: {%06x}%s (%02d:%02d).", autobind.TimeAndWeather.modifyTime and clr.REALGREEN or clr.REALRED, autobind.TimeAndWeather.modifyTime and "On" or "Off", clr.WHITE, clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.hour), autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute))
+                formattedAddChatMessage(string.format("Server: {%06x}%s (%02d:%02d).", clr.LIGHTBLUE, getTimeName(autobind.TimeAndWeather.serverHour), autobind.TimeAndWeather.serverHour, autobind.TimeAndWeather.serverMinute))
+                formattedAddChatMessage(string.format("USAGE: /%s [hour(:minute)|tgl] e.g., '/%s 12:30'", cmd, cmd))
                 return
             end
     
-            if params:match("^help$") then
-                formattedAddChatMessage(string.format("USAGE: /%s [hour (minute)|help|toggle|reset]", cmd))
-                formattedAddChatMessage(string.format("Toggle: {%06x}Toggles time on or off.", clr.GREY))
-                formattedAddChatMessage(string.format("Reset: {%06x}Resets time to default.", clr.GREY))
-                formattedAddChatMessage(string.format("Hour: {%06x}Sets the time to the specified hour.", clr.GREY))
-                formattedAddChatMessage(string.format("Minute: {%06x}Optional, sets the time to the specified minute.", clr.GREY))
-            elseif params:match("^toggle$") then
+            if params:match("^tgl$") then
                 autobind.TimeAndWeather.modifyTime = toggleBind("Time", autobind.TimeAndWeather.modifyTime)
                 if autobind.TimeAndWeather.modifyTime then
                     setTime(autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute)
                 else
                     setTime(autobind.TimeAndWeather.serverHour, autobind.TimeAndWeather.serverMinute)
                 end
-            elseif params:match("^reset$") then
-                autobind.TimeAndWeather.hour = autobind_defaultSettings.TimeAndWeather.hour
-                autobind.TimeAndWeather.minute = autobind_defaultSettings.TimeAndWeather.minute
-                formattedAddChatMessage("Time has been reset to default.")
-                if autobind.TimeAndWeather.modifyTime then
-                    setTime(autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute)
-                end
             else
-                local hour, minute = params:match("^(%d+)%s*(%d*)$")
+                local hour, minute = params:match("^(%d+):?(%d*)$")
                 hour = tonumber(hour)
                 minute = tonumber(minute) or 0
     
@@ -3461,7 +3690,7 @@ local clientCommands = {
                         setTime(hour, minute)
                     end
                 else
-                    formattedAddChatMessage(string.format("USAGE: /%s [hour (minute)|help|toggle|reset]", cmd))
+                    formattedAddChatMessage(string.format("USAGE: /%s [hour(:minute)|tgl] e.g., '/%s 12:30'", cmd, cmd))
                 end
             end
         end
@@ -3482,7 +3711,7 @@ local clientCommands = {
             end
 
             if #params < 1 then
-                local radioInfo = radioStations[radio.current]
+                local radioInfo = radioStations[currentRadio]
                 if not radioInfo then
                     radioInfo = radioStations[12]
                 end
@@ -3495,11 +3724,11 @@ local clientCommands = {
                     clr.LIGHTBLUE, 
                     autobind.Settings.noRadio and radioInfo.name or "Radio Off"
                 ))
-                formattedAddChatMessage(string.format("USAGE: /%s [channel number|toggle|fav|list]", cmd))
+                formattedAddChatMessage(string.format("USAGE: /%s [channel|tgl|fav|list]", cmd))
                 return
             end
 
-            if params:match("^toggle$") then
+            if params:match("^tgl$") then
                 autobind.Settings.noRadio = toggleBind("Radio", autobind.Settings.noRadio)
 
                 lua_thread.create(function()
@@ -3534,7 +3763,7 @@ local clientCommands = {
 
                         setRadioChannel(channel)
                     else
-                        formattedAddChatMessage(string.format("USAGE: /%s [channel number|toggle|fav|list]", cmd))
+                        formattedAddChatMessage(string.format("USAGE: /%s [channel|tgl|fav|list]", cmd))
                     end
                 end
             elseif params:match("^list$") then
@@ -3544,7 +3773,7 @@ local clientCommands = {
                 end
 
                 local title = string.format("[%s] Radio List", shortName:upper())
-                sampShowDialog(radio.dialogId, title, messages, "Select", "Close", 2)
+                sampShowDialog(dialogs.radio.id, title, messages, "Select", "Close", 2)
             else
                 local channel = tonumber(params)
                 if channel and channel >= 0 and channel <= 11 then
@@ -3562,7 +3791,7 @@ local clientCommands = {
                         setRadioChannel(channel)
                     end)
                 else
-                    formattedAddChatMessage(string.format("USAGE: /%s [channel number|toggle|fav|list]", cmd))
+                    formattedAddChatMessage(string.format("USAGE: /%s [channel|tgl|fav|list]", cmd))
                 end
             end
         end
@@ -3578,6 +3807,7 @@ local clientCommands = {
     },
     hzradio = {
         cmd = "hzradio",
+        alt = {"hzr"},
         desc = "Toggles Hz Radio on or off",
         id = 26,
         func = function(cmd)
@@ -3586,10 +3816,44 @@ local clientCommands = {
     },
     loginmusic = {
         cmd = "loginmusic",
+        alt = {"lm"},
         desc = "Toggles login music on or off",
         id = 27,
         func = function(cmd)
             autobind.Settings.LoginMusic = toggleBind("Login Music", autobind.Settings.LoginMusic)
+        end
+    },
+    hidechargereporter = {
+        cmd = "hidechargereporter",
+        alt = {"hcr"},
+        desc = "Toggles the charge reporter on or off",
+        id = 28,
+        func = function(cmd)
+            autobind.Faction.hideChargeReporter = toggleBind("Charge Reporter", autobind.Faction.hideChargeReporter)
+        end
+    },
+    wanted = {
+        cmd = "wanted",
+        --alt = {"w"},
+        desc = "Toggles the wanted list on or off",
+        id = 29,
+        func = function(cmd)
+            if not autobind.Wanted.Enabled then 
+                sampSendChat("/wanted") 
+                return 
+            end
+
+            sampAddChatMessage("__________WANTED LIST__________", clr.ORANGE)
+            if autobind.Wanted.List and #autobind.Wanted.List > 0 then
+                for _, list in pairs(autobind.Wanted.List) do
+                    local wantedString = formatWantedString(list, false, false)
+
+                    sampAddChatMessage(wantedString, clr.WHITE)
+                end
+            else
+                sampAddChatMessage("No current wanted suspects.", clr.WHITE)
+            end
+            sampAddChatMessage("________________________________", clr.ORANGE)
         end
     }
 }
@@ -3601,29 +3865,32 @@ local autobindCommands = {
     end,
     ["help"] = function(newParams, cmd, alias)
         if #newParams < 1 then
-            formattedAddChatMessage(string.format("%s {%06x}| Type '/%s %s desc' to display the description of all commands.", cmd:upperFirst(), clr.WHITE, alias, cmd), clr.REALGREEN)
+            formattedAddChatMessage(string.format("%s | Type '/%s %s desc' to display the description of all commands.", cmd:upperFirst(), alias, cmd))
             formattedAddChatMessage(string.format("/%s {%06x}cmds, showkeys, getskin, status, funcs, reload", alias, clr.GREY))
             formattedAddChatMessage(string.format("/%s {%06x}fonts, keybinds, skins, bms, locker", alias, clr.GREY))
             formattedAddChatMessage(string.format("/%s {%06x}changelog, betatesters", alias, clr.GREY))
         elseif newParams:match("^desc$") then
             formattedAddChatMessage(string.format("/%s {%06x}- Opens the autobind settings menu.", alias, clr.GREY))
             formattedAddChatMessage(string.format("/%s cmds {%06x}- Lists all commands.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s showkeys {%06x}- Lists all keys for keybinds.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s getskin [playerid/partofname] {%06x}- Gets the skin ID of a player.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s status {%06x}- Displays the status of all scripts and the autobind menu.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s funcs {%06x}- Lists all functions and their status.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s reload {%06x}- Reloads the script.", alias, clr.GREY))
             formattedAddChatMessage(string.format("/%s fonts {%06x}- Opens the font menu for customization.", alias, clr.GREY))
             formattedAddChatMessage(string.format("/%s keybinds {%06x}- Opens the keybinds menu for customization.", alias, clr.GREY))
-            formattedAddChatMessage(string.format("/%s showkeys {%06x}- Lists all keys for keybinds.", alias, clr.GREY))
             formattedAddChatMessage(string.format("/%s skins {%06x}- Opens the skins menu for customization.", alias, clr.GREY))
-            formattedAddChatMessage(string.format("/%s getskin [playerid/partofname] {%06x}- Gets the skin ID of a player.", alias, clr.GREY))
             formattedAddChatMessage(string.format("/%s bms {%06x}- Opens the black market menu.", alias, clr.GREY))
             formattedAddChatMessage(string.format("/%s locker {%06x}- Opens the faction locker menu.", alias, clr.GREY))
-            formattedAddChatMessage(string.format("/%s status {%06x}- Displays the status of all scripts and the autobind menu.", alias, clr.GREY))
-            formattedAddChatMessage(string.format("/%s reload {%06x}- Reloads the script.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s changelog {%06x}- Displays the changelog.", alias, clr.GREY))
+            formattedAddChatMessage(string.format("/%s betatesters {%06x}- Displays the betatesters.", alias, clr.GREY))
         else
             formattedAddChatMessage(string.format("USAGE: '/%s %s desc' for more information.", alias, cmd))
         end
     end,
     ["cmds"] = function(newParams, cmd, alias)
         if #newParams < 1 then
-            formattedAddChatMessage(string.format("Commands{%06x} | Type '/%s %s [desc|alts]' to display the description of all commands.", clr.WHITE, alias, cmd), clr.REALGREEN)
+            formattedAddChatMessage(string.format("%s | Type '/%s %s [desc|alts]' to display the description of all commands.", cmd:upperFirst(), alias, cmd))
             local commandsList = {}
             local commandCount = 0
             for _, command in pairs(clientCommands) do
@@ -3840,13 +4107,13 @@ local autobindCommands = {
         target = target and target:trim() or ""
 
         if action == "" then
-            formattedAddChatMessage(string.format("USAGE: '/%s %s [start|stop|restart] [function_name]'", alias, cmd), clr.GREY)
+            formattedAddChatMessage(string.format("USAGE: '/%s %s [start|stop|restart|status] [function_name]'", alias, cmd), clr.GREY)
 
             table.sort(functionsToRun, function(a, b) return a.id < b.id end)
 
             for _, item in ipairs(functionsToRun) do
                 local status = item.status or "unknown"
-                local state = item.enabled and "enabled" or "disabled"
+                local state = item.enabled and "started" or "idle"
 
                 local statusColor
                 if status == "running" then
@@ -3898,6 +4165,13 @@ local autobindCommands = {
                 functionManager.restart(target, function(name, status)
                     formattedAddChatMessage(string.format("Restarted function: {%06x}%s", clr.YELLOW, name))
                 end)
+            end
+            return
+        elseif action == "status" then
+            if target == "" then
+                formattedAddChatMessage(string.format("USAGE: '/%s %s status [function_name]'", alias, cmd), clr.GREY)
+            else
+                formattedAddChatMessage(string.format("Status %s: {%06x}%s", target:upperFirst(), clr.GREY, functionManager.getErrorStatus(target)))
             end
             return
         else
@@ -4141,6 +4415,8 @@ function handleCapture(mode)
     end
 end
 
+local factionChargeReporter = nil
+
 local messageHandlers = {
     {   -- Time Change (Auto Capture)
         pattern = "^The time is now (%d+):(%d+)%.$", -- The time is now 22:00.
@@ -4298,7 +4574,9 @@ local messageHandlers = {
         action = function(type, motdMsg)
             if type:match("Family") then
                 autobind.Settings.mode = type
-                saveConfigWithErrorHandling(Files.settings, autobind.Settings)
+
+                -- Disable wanted list until you get lawyer.
+                wanted.enabled = false
 
                 --[[local freq, allies = motdMsg:match("[Ff]req:?%s*(-?%d+)%s*[/%s]*[Aa]llies:?%s*([^,]+)")
                 if freq and allies then
@@ -4323,11 +4601,17 @@ local messageHandlers = {
 
                 end]]
 
+                saveConfigWithErrorHandling(Files.settings, autobind.Settings)
+                saveConfigWithErrorHandling(Files.family, autobind.Family)
+
                 return {clrRGBA["DEPTRADIO"], string.format("Family MOTD: %s", motdMsg)}
             elseif type:match("[LSPD|SASD|FBI|ARES|GOV]") then
                 autobind.Settings.mode = "Faction"
                 autobind.Faction.type = type
-                saveConfigWithErrorHandling(Files.settings, autobind.Settings)
+
+                -- Enable wanted list because you are now in faction mode.
+                wanted.enabled = true
+
                 if accepter.enable then
                     formattedAddChatMessage("Auto Accept is now disabled because you are now in Faction Mode.")
                     accepter.enable = false
@@ -4342,7 +4626,7 @@ local messageHandlers = {
                         ["Sniper"] = 5500
                     }
 
-                    for i, item in ipairs(lockers.factionlocker.Items) do
+                    for i, item in ipairs(lockers.FactionLocker.Items) do
                         if aresPriceMapping[item.label] then
                             item.price = aresPriceMapping[item.label]
                         end
@@ -4361,11 +4645,19 @@ local messageHandlers = {
                     return false
                 end]]
 
+                saveConfigWithErrorHandling(Files.settings, autobind.Settings)
+                saveConfigWithErrorHandling(Files.faction, autobind.Faction)
+
                 return {clrRGBA["DEPTRADIO"], string.format("%s MOTD: %s", type, motdMsg)}
             elseif type:match("LSFMD") then
                 autobind.Settings.mode = "Faction"
                 autobind.Faction.type = type
+
+                -- Enable wanted list because you are now in faction mode.
+                wanted.enabled = true
+
                 saveConfigWithErrorHandling(Files.settings, autobind.Settings)
+                saveConfigWithErrorHandling(Files.faction, autobind.Faction)
 
                 return {clrRGBA["DEPTRADIO"], string.format("%s MOTD: %s", type, motdMsg)}
             end
@@ -4627,9 +4919,9 @@ local messageHandlers = {
             formattedAddChatMessage("You can't use your lockers if you were recently shot. Timer extended by 5 seconds.")
             setTimer(5, timers.Heal)
 
-            lockers.factionlocker.isProcessing = false
-            lockers.factionlocker.thread = nil
-            resetLocker("factionlocker")
+            lockers.FactionLocker.isProcessing = false
+            lockers.FactionLocker.thread = nil
+            resetLocker("FactionLocker")
             return false
         end
     },
@@ -4654,9 +4946,9 @@ local messageHandlers = {
         pattern = "^You are not a Sapphire or Diamond Donator%!",
         color = clrRGBA["GREY"],
         action = function()
-            if lockers.blackmarket.getItemFrom > 0 then
-                lockers.blackmarket.getItemFrom = 0
-                lockers.blackmarket.gettingItem = false
+            if lockers.BlackMarket.getItemFrom > 0 then
+                lockers.BlackMarket.getItemFrom = 0
+                lockers.BlackMarket.gettingItem = false
             end
         end
     },
@@ -4664,9 +4956,9 @@ local messageHandlers = {
         pattern = "^%s*You are not at the black market%!",
         color = clrRGBA["GRAD2"],
         action = function()
-            if lockers.blackmarket.getItemFrom > 0 then
-                lockers.blackmarket.getItemFrom = 0
-                lockers.blackmarket.gettingItem = false
+            if lockers.BlackMarket.getItemFrom > 0 then
+                lockers.BlackMarket.getItemFrom = 0
+                lockers.BlackMarket.gettingItem = false
             end
         end
     },
@@ -5024,7 +5316,7 @@ local messageHandlers = {
             if autobind.Settings.autoFarm then
                 farmer.farming = true
             else
-                sampShowDialog(farmer.dialogId2, string.format("[%s] Auto Farming", shortName:upper()), "Do you want to enable auto farming?\nThis will automatically type /farm and /harvest for you.", "Close", "Enable", 0)
+                sampShowDialog(dialogs.farmer.id2, string.format("[%s] Auto Farming", shortName:upper()), "Do you want to enable auto farming?\nThis will automatically type /farm and /harvest for you.", "Close", "Enable", 0)
             end
         end
     },
@@ -5083,7 +5375,7 @@ local messageHandlers = {
                     farmer.harvestingCount = 8
 
                     -- Close the dialog
-                    if sampGetCurrentDialogId() == farmer.dialogId then
+                    if sampGetCurrentDialogId() == dialogs.farmer.id then
                         sampCloseCurrentDialogWithButton(1)
                     end
                 end)
@@ -5162,7 +5454,7 @@ local messageHandlers = {
         pattern = "^DIAMOND DONATOR: You have purchased an? (.-) for %$([%d,]+)%.$",
         color = clrRGBA["BLUE"],
         action = function(item, price)
-            if lockers.blackmarket.isProcessing then
+            if lockers.BlackMarket.isProcessing then
                 return false
             end
         end
@@ -5171,7 +5463,7 @@ local messageHandlers = {
         pattern = "^DIAMOND DONATOR: You have purchased full health and armor for %$350%.$",
         color = clrRGBA["BLUE"],
         action = function()
-            if lockers.blackmarket.isProcessing then
+            if lockers.BlackMarket.isProcessing then
                 return false
             end
         end
@@ -5180,9 +5472,296 @@ local messageHandlers = {
         pattern = "^You have purchased an? (.-) for %$([%d,]+)%.$",
         color = clrRGBA["WHITE"],
         action = function(item, price)
-            if lockers.factionlocker.isProcessing then
+            if lockers.FactionLocker.isProcessing then
                 return false
             end
+        end
+    },
+    {   -- HQ: All units APB - Reporter: Player Name
+        pattern = "^HQ:%s*All%s*units%s*APB%s*-%s*Reporter:%s*%{%x+%}(.-)$",
+        color = clrRGBA["TEAM_BLUE_COLOR"],
+        action = function(reporter)
+            if autobind.Faction.hideChargeReporter then
+                factionChargeReporter = nil
+                return
+            end
+
+            factionChargeReporter = reporter
+            if factionChargeReporter then
+                return false
+            end
+        end
+    },
+    {   -- HQ: Suspect: Player Name - Crime: Crime
+        pattern = "^HQ:%s*Suspect:%s*%{%x+%}(.-)%{%x+%}%s*-%s*Crime:%s*%{%x+%}(.-)$",
+        color = clrRGBA["TEAM_BLUE_COLOR"],
+        action = function(suspect, crime)
+            if autobind.Wanted.Enabled and wanted.enabled then
+                local id = sampGetPlayerIdByNickname(suspect:gsub(" ", "_"))
+                local currentTime = localClock()
+                local found = false
+                for i, entry in ipairs(autobind.Wanted.List) do
+                    if entry.name == suspect then
+                        if entry.charges ~= 6 then
+                            entry.charges = entry.charges + 1
+                        end
+                        entry.timestamp = currentTime
+                        entry.active = true
+                        entry.delayRestarted = false
+                        entry.updated = true
+                        found = true
+                        break
+                    end
+                end
+
+                if not found then
+                    table.insert(autobind.Wanted.List, {
+                        name = tostring(suspect),
+                        id = id,
+                        charges = 1,
+                        timestamp = currentTime,
+                        active = true,
+                        lawyer = false,
+                        processed = false,
+                        cleared = false,
+                        updated = true,
+                        delayRestarted = false,
+                        markedDeactivated = false
+                    })
+                end
+            end
+
+            if not autobind.Faction.hideChargeReporter then
+                return
+            end
+
+            if factionChargeReporter then
+                local reporter = factionChargeReporter
+                factionChargeReporter = nil
+                return {clrRGBA["TEAM_BLUE_COLOR"], string.format("HQ: LEO: {%06x}%s {%06x}- Suspect: {%06x}%s {%06x}- Crime: {%06x}%s", clr.WHITE, reporter, clr.TEAM_BLUE_COLOR, clr.WHITE, suspect, clr.TEAM_BLUE_COLOR, clr.WHITE, crime)}
+            end
+        end
+    },
+    {   -- HQ: Greg Ross has been processed, was arrested.
+        pattern = "^HQ:%s*(.+)%s*has been processed, was arrested%.$",
+        color = clrRGBA["ARRESTED"],
+        action = function(name)
+            if not autobind.Wanted.Enabled and not wanted.enabled then
+                return
+            end
+
+            for i, entry in ipairs(autobind.Wanted.List) do
+                if entry.name == name:trim() then
+                    entry.markedDeactivated = true
+                    entry.active = false
+                    entry.delayRestarted = true
+                    entry.updated = false
+                    entry.processed = true
+                    entry.charges = 0
+                    entry.timestamp = localClock()
+                    break
+                end
+            end
+        end
+    },
+    {   -- * LEO (.-) has cleared (.+)'s records and outstanding charges%.$
+        pattern = "^%*%s*LEO%s*(.+)%s*has%s*cleared%s*(.+)'s%s*records%s*and%s*outstanding%s*charges%.$",
+        color = clrRGBA["TEAM_BLUE_COLOR"],
+        action = function(name, suspect)
+            if not autobind.Wanted.Enabled and not wanted.enabled then
+                return
+            end
+
+            for i, entry in ipairs(autobind.Wanted.List) do
+                if entry.name == suspect then
+                    entry.markedDeactivated = true
+                    entry.active = false
+                    entry.delayRestarted = true
+                    entry.updated = false
+                    entry.cleared = true
+                    entry.charges = 0
+                    entry.timestamp = localClock()
+                    break
+                end
+            end
+        end
+    },
+    {   -- Beginning of wanted list
+        pattern = "^__________WANTED LIST__________$",
+        color = clrRGBA["ORANGE"],
+        action = function()
+            if not autobind.Wanted.Enabled and not wanted.enabled then
+                return
+            end
+
+            for i, entry in pairs(autobind.Wanted.List) do
+                local currentTime = localClock()
+                if (currentTime - entry.timestamp >= (autobind.Wanted.Expiry + timerOffset + 5)) then
+                    table.remove(autobind.Wanted.List, i)
+                end
+
+                if not entry.markedDeactivated then
+                    entry.updated = false
+                end
+            end
+
+            commandSent = false
+            return false
+        end
+    },
+    {   -- No current wanted suspects.
+        pattern = "^No current wanted suspects%.$",
+        color = clrRGBA["WHITE"],
+        action = function()
+            if not autobind.Wanted.Enabled and not wanted.enabled then
+                return
+            end
+
+            local currentTime = localClock()
+            local expiry = autobind.Wanted.Expiry or 10.0
+
+            for i, entry in pairs(autobind.Wanted.List) do
+                if not entry.updated then
+                    if entry.active and not entry.markedDeactivated then
+                        entry.delayRestarted = false
+                        entry.active = false
+                        entry.lawyer = true
+                        entry.markedDeactivated = true
+                    else
+                        if not entry.delayRestarted then
+                            entry.timestamp = currentTime
+                            entry.delayRestarted = true
+                            entry.charges = 0
+                            if not entry.processed and not entry.cleared then
+                                entry.lawyer = true
+                            end
+                        elseif (currentTime - entry.timestamp >= expiry) then
+                            table.remove(autobind.Wanted.List, i)
+                        elseif (currentTime - entry.timestamp <= -10) then
+                            entry.timestamp = currentTime
+                        end
+                    end
+                end
+            end
+            return false
+        end
+    },
+    {   -- Charged Players
+        pattern = "^(.+) %((%d+)%): %{%x+%}(%d+) outstanding charge[s]?%.$",
+        color = clrRGBA["WHITE"],
+        action = function(name, id, charges)
+            if not autobind.Wanted.Enabled and not wanted.enabled then
+                return
+            end
+
+            lua_thread.create(function()
+                autobind.Wanted.List = autobind.Wanted.List or {}
+                local currentTime = localClock()
+                local expiry = autobind.Wanted.Expiry or 10.0
+                local updated = false
+
+                for _, entry in pairs(autobind.Wanted.List) do
+                    if entry.name == name then
+                        --entry.name = tostring(name)
+                        if entry.id ~= tonumber(id) then
+                            print("id changed")
+                            entry.id = tonumber(id)
+                        end
+                        if entry.charges ~= tonumber(charges) then
+                            print("charges changed")
+                            entry.charges = tonumber(charges)
+                        end
+                        if entry.active ~= true then
+                            print("active changed")
+                            entry.active = true
+                        end
+                        entry.delayRestarted = false
+                        entry.updated = true
+                        entry.timestamp = currentTime
+                        updated = true
+                        break
+                    end
+                end
+
+                wait(100)
+
+                if not updated then
+                    table.insert(autobind.Wanted.List, {
+                        name = tostring(name),
+                        id = tonumber(id),
+                        charges = tonumber(charges),
+                        timestamp = currentTime,
+                        active = true,
+                        lawyer = false,
+                        processed = false,
+                        cleared = false,
+                        updated = true,
+                        delayRestarted = false,
+                        markedDeactivated = false
+                    })
+                    return
+                end
+
+                for i, entry in pairs(autobind.Wanted.List) do
+                    if not entry.updated then
+                        if entry.active and not entry.markedDeactivated then
+                            entry.delayRestarted = false
+                            entry.active = false
+                            entry.lawyer = true
+                            entry.markedDeactivated = true
+                        else
+                            if not entry.delayRestarted then
+                                entry.timestamp = currentTime
+                                entry.delayRestarted = true
+                                entry.charges = 0
+                                if not entry.processed and not entry.cleared then
+                                    entry.lawyer = true
+                                end
+                            elseif (currentTime - entry.timestamp >= expiry) then
+                                table.remove(autobind.Wanted.List, i)
+                            elseif (currentTime - entry.timestamp <= -10) then
+                                entry.timestamp = currentTime
+                            end
+                        end
+                    end
+                end
+                return
+            end)
+            return false
+        end
+    },
+    {   -- End of wanted list
+        pattern = "^________________________________$",
+        color = clrRGBA["ORANGE"],
+        action = function()
+            if not autobind.Wanted.Enabled and not wanted.enabled then
+                return
+            end
+            return false
+        end
+    },
+    {   -- You are now a Lawyer, type /help to see your new commands.
+        pattern = "^You are now a Lawyer, type /help to see your new commands%.$",
+        color = clrRGBA["LIGHTBLUE"],
+        action = function()
+            if autobind.Settings.mode == "Faction" then
+                return
+            end
+
+            print("Lawyer enabled")
+            wanted.enabled = true
+        end
+    },
+    {   -- You're not a Lawyer / Cop / FBI!
+        pattern = "^You're not a Lawyer / Cop / FBI!$",
+        color = clrRGBA["GREY"],
+        action = function()
+            if autobind.Settings.mode == "Faction" then
+                return
+            end
+
+            print("Lawyer disabled")
+            wanted.enabled = false
         end
     }
 }
@@ -5219,9 +5798,10 @@ function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
         return
     end
 
+
+    local currentTime = localClock()
 	if autobind.Settings.mode == "Family" then
 		if preventHeal then
-			local currentTime = localClock()
 			if currentTime - timers.Point.last >= timers.Point.timer then
 				preventHeal = false
 			else
@@ -5231,7 +5811,7 @@ function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
 		end
 	end
 
-	timers.Heal.last = localClock()
+    timers.Heal.last = currentTime
 end
 
 -- Dynamically update the locations of the black market and faction locker
@@ -5338,33 +5918,33 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
     end
     
     -- Black Market
-    if lockers.blackmarket.getItemFrom > 0 then
+    if lockers.BlackMarket.getItemFrom > 0 then
         if not title:find("Black Market") then 
-            lockers.blackmarket.getItemFrom = 0 
-            lockers.blackmarket.gettingItem = false
-            lockers.blackmarket.currentKey = nil
+            lockers.BlackMarket.getItemFrom = 0 
+            lockers.BlackMarket.gettingItem = false
+            lockers.BlackMarket.currentKey = nil
             return false 
         end
-        sampSendDialogResponse(id, 1, lockers.blackmarket.currentKey, nil)
-        lockers.blackmarket.gettingItem = false
+        sampSendDialogResponse(id, 1, lockers.BlackMarket.currentKey, nil)
+        lockers.BlackMarket.gettingItem = false
         return false
     end
 
     -- Faction Locker
-    if lockers.factionlocker.getItemFrom > 0 then
+    if lockers.FactionLocker.getItemFrom > 0 then
         if title:find('[LSPD|FBI|ARES] Menu') then
             sampSendDialogResponse(id, 1, 1, nil)
             return false
         end
 
         if not title:find("[LSPD|FBI|ARES] Equipment") then 
-            lockers.factionlocker.getItemFrom = 0 
-            lockers.factionlocker.gettingItem = false
-            lockers.factionlocker.currentKey = nil
+            lockers.FactionLocker.getItemFrom = 0 
+            lockers.FactionLocker.gettingItem = false
+            lockers.FactionLocker.currentKey = nil
             return false
         end
-        sampSendDialogResponse(id, 1, lockers.factionlocker.currentKey, nil)
-        lockers.factionlocker.gettingItem = false
+        sampSendDialogResponse(id, 1, lockers.FactionLocker.currentKey, nil)
+        lockers.FactionLocker.gettingItem = false
         return false
     end
 end
@@ -5447,6 +6027,16 @@ function sampev.onPlayAudioStream(url, position, radius, usePosition)
     elseif url:match("^https://hzgaming.net/zhao/sounds%/%w+.mp3$") and not autobind.Settings.LoginMusic then
         formattedAddChatMessage("You have login music disabled, type /loginmusic to enable it.")
         return false
+    end
+end
+
+function sampev.onShowTextDraw(id, data)
+    if data.text:match("~r~Objects loading...") then
+        isLoadingObjects = true
+    end
+
+    if data.text:match("~g~Objects loaded!") then
+        isLoadingObjects = false
     end
 end
 
@@ -5671,22 +6261,27 @@ end
 
 function onD3DPresent()
 	if not autobind.Settings or not autobind.Keybinds then
-		return
+		goto sprintBindSkip
 	end
 
-	-- Sprint Bind
-	if autobind.Settings.enable and autobind.Keybinds.SprintBind.Toggle and (isButtonPressed(h, gkeys.player.SPRINT) and (isCharOnFoot(ped) or isCharInWater(ped))) then
+    if not autobind.Settings.enable or not autobind.Keybinds.SprintBind.Toggle then
+        goto sprintBindSkip
+    end
+
+	if isButtonPressed(h, gkeys.player.SPRINT) and (isCharOnFoot(ped) or isCharInWater(ped)) then
 		setGameKeyState(gkeys.player.SPRINT, 0)
 	end
 
-    -- Check if the pause/scoreboard/chat is active or if the F10 key is pressed or if the autobind is disabled
+    ::sprintBindSkip::
+
     if isPauseMenuActive() or sampIsScoreboardOpen() or sampGetChatDisplayMode() == 0 or isKeyDown(VK_F10) or not autobind.Settings.enable then
-        return
+        goto elementsSkip
     end
 
-    -- Draw all elements and listen for drag events
     drawElements()
     dragElements()
+
+    ::elementsSkip::
 end
 
 imgui.OnInitialize(function()
@@ -5711,7 +6306,77 @@ imgui.OnInitialize(function()
 			end
 		end
 	end
+
+    local clrs = convertColor(clr.ARES, true, false, false)
+
+    apply_custom_style(clrs)
 end)
+
+function apply_custom_style(color)
+    imgui.SwitchContext()
+    local ImVec4 = imgui.ImVec4
+    local ImVec2 = imgui.ImVec2
+    local style = imgui.GetStyle()
+    style.WindowRounding = 0
+    style.WindowPadding = ImVec2(8, 8)
+    style.WindowTitleAlign = ImVec2(0.5, 0.5)
+    style.FrameRounding = 0
+    style.ItemSpacing = ImVec2(8, 4)
+    style.ScrollbarSize = 10
+    style.ScrollbarRounding = 3
+    style.GrabMinSize = 10
+    style.GrabRounding = 0
+    style.Alpha = 1
+    style.FramePadding = ImVec2(4, 3)
+    style.ItemInnerSpacing = ImVec2(4, 4)
+    style.TouchExtraPadding = ImVec2(0, 0)
+    style.IndentSpacing = 21
+    style.ColumnsMinSpacing = 6
+    style.ButtonTextAlign = ImVec2(0.5, 0.5)
+    style.DisplayWindowPadding = ImVec2(22, 22)
+    style.DisplaySafeAreaPadding = ImVec2(4, 4)
+    style.AntiAliasedLines = true
+    style.CurveTessellationTol = 1.25
+    local colors = style.Colors
+    local clr = imgui.Col
+    colors[clr.FrameBg]                = ImVec4(color.r, color.g, color.b, 0.7)
+	colors[clr.FrameBgHovered]         = ImVec4(color.r, color.g, color.b, 0.4)
+	colors[clr.FrameBgActive]          = ImVec4(color.r, color.g, color.b, 0.9)
+	colors[clr.TitleBg]                = ImVec4(color.r, color.g, color.b, 1.0)
+	colors[clr.TitleBgActive]          = ImVec4(color.r, color.g, color.b, 1.0)
+	colors[clr.TitleBgCollapsed]       = ImVec4(color.r, color.g, color.b, 0.79)
+    colors[clr.CheckMark]              = ImVec4(color.r + 0.13, color.g + 0.13, color.b + 0.13, 1.00)
+    colors[clr.SliderGrab]             = ImVec4(0.88, 0.26, 0.24, 1.00)
+    colors[clr.SliderGrabActive]       = ImVec4(0.98, 0.26, 0.26, 1.00)
+    colors[clr.Button]                 = ImVec4(color.r, color.g, color.b, 0.8)
+	colors[clr.ButtonHovered]          = ImVec4(color.r, color.g, color.b, 0.63)
+	colors[clr.ButtonActive]           = ImVec4(color.r, color.g, color.b, 1.0)
+	colors[clr.Header]                 = ImVec4(color.r, color.g, color.b, 0.6)
+	colors[clr.HeaderHovered]          = ImVec4(color.r, color.g, color.b, 0.43)
+	colors[clr.HeaderActive]           = ImVec4(color.r, color.g, color.b, 0.8)
+    colors[clr.Separator]              = colors[clr.Border]
+    colors[clr.SeparatorHovered]       = ImVec4(0.75, 0.10, 0.10, 0.78)
+    colors[clr.SeparatorActive]        = ImVec4(0.75, 0.10, 0.10, 1.00)
+    colors[clr.ResizeGrip]             = ImVec4(color.r, color.g, color.b, 0.8)
+	colors[clr.ResizeGripHovered]      = ImVec4(color.r, color.g, color.b, 0.63)
+	colors[clr.ResizeGripActive]       = ImVec4(color.r, color.g, color.b, 1.0)
+    colors[clr.TextSelectedBg]         = ImVec4(0.98, 0.26, 0.26, 0.35)
+    colors[clr.Text]                   = ImVec4(1.00, 1.00, 1.00, 1.00)
+    colors[clr.TextDisabled]           = ImVec4(0.50, 0.50, 0.50, 1.00)
+    colors[clr.WindowBg]               = ImVec4(0.06, 0.06, 0.06, 0.94)
+    colors[clr.PopupBg]                = ImVec4(0.08, 0.08, 0.08, 0.94)
+    colors[clr.Border]                 = ImVec4(color.r, color.g, color.b, 0.4)
+    colors[clr.BorderShadow]           = ImVec4(0.00, 0.00, 0.00, 0.00)
+    colors[clr.MenuBarBg]              = ImVec4(0.14, 0.14, 0.14, 1.00)
+    colors[clr.ScrollbarBg]            = ImVec4(0.02, 0.02, 0.02, 0.53)
+    colors[clr.ScrollbarGrab]          = ImVec4(color.r, color.g, color.b, 0.8)
+    colors[clr.ScrollbarGrabHovered]   = ImVec4(0.41, 0.41, 0.41, 1.00)
+    colors[clr.ScrollbarGrabActive]    = ImVec4(0.51, 0.51, 0.51, 1.00)
+    colors[clr.PlotLines]              = ImVec4(0.61, 0.61, 0.61, 1.00)
+    colors[clr.PlotLinesHovered]       = ImVec4(1.00, 0.43, 0.35, 1.00)
+    colors[clr.PlotHistogram]          = ImVec4(0.90, 0.70, 0.00, 1.00)
+    colors[clr.PlotHistogramHovered]   = ImVec4(1.00, 0.60, 0.00, 1.00)
+end
 
 local button_size_small = imgui.ImVec2(75, 75)
 local button_size_large = imgui.ImVec2(165, 75)
@@ -5804,8 +6469,9 @@ local buttons1 = {
 
             resetLockersKeyFunctions()
 
-            InitializeLockerKeyFunctions(autobind.BlackMarket.maxKits, "Black Market", "/bm")
-            InitializeLockerKeyFunctions(autobind.FactionLocker.maxKits, "Faction Locker", "/locker")
+            for _, name in pairs({"BlackMarket", "FactionLocker"}) do
+                InitializeLockerKeyFunctions(autobind[name].maxKits, lockers[name].name, lockers[name].command)
+            end
 
             vehicles.initialFetch = false
             vehicles.populating = true
@@ -5869,16 +6535,16 @@ local buttons2 = {
     {
         id = 1,
         icon = function()
-            return fa.ICON_FA_COG .. " Settings"
+            return fa.ICON_FA_COG .. " Autobind"
         end,
-        tooltip = "Open Settings"
+        tooltip = "Open Autobind"
     },
     {
         id = 2,
         icon = function()
-            return string.format("%s %s Skins", fa.ICON_FA_LIST, autobind.Settings.mode)
+            return fa.ICON_FA_COG .. " Autoguard"
         end,
-        tooltip = "Open Skins"
+        tooltip = "Open Autoguard"
     },
     {
         id = 3,
@@ -5886,6 +6552,69 @@ local buttons2 = {
             return fa.ICON_FA_LIST .. " Names"
         end,
         tooltip = "Open Names"
+    },
+    {
+        id = 4,
+        icon = function()
+            return fa.ICON_FA_KEYBOARD .. " Keybinds"
+        end,
+        tooltip = "Open Keybinds"
+    },
+    {
+        id = 5,
+        icon = function()
+            return fa.ICON_FA_FONT .. " Fonts"
+        end,
+        tooltip = "Open Fonts"
+    },
+    {
+        id = 6,
+        icon = function()
+            return fa.ICON_FA_SHOPPING_CART .. " BMS"
+        end,
+        tooltip = "Open Black Market"
+    },
+    {
+        id = 7,
+        icon = function()
+            return fa.ICON_FA_SHOPPING_CART .. " Locker"
+        end,
+        tooltip = "Open Faction Locker"
+    },
+    {
+        id = 8,
+        icon = function()
+            return fa.ICON_FA_SHOPPING_CART .. " Locker"
+        end,
+        tooltip = "Open Faction Locker"
+    },
+    {
+        id = 9,
+        icon = function()
+            return fa.ICON_FA_SHOPPING_CART .. " Locker"
+        end,
+        tooltip = "Open Faction Locker"
+    },
+    {
+        id = 10,
+        icon = function()
+            return fa.ICON_FA_SHOPPING_CART .. " Locker"
+        end,
+        tooltip = "Open Faction Locker"
+    },
+    {
+        id = 11,
+        icon = function()
+            return fa.ICON_FA_SHOPPING_CART .. " Locker"
+        end,
+        tooltip = "Open Faction Locker"
+    },
+    {
+        id = 12,
+        icon = function()
+            return fa.ICON_FA_SHOPPING_CART .. " Locker"
+        end,
+        tooltip = "Open Faction Locker"
     }
 }
 
@@ -5942,6 +6671,90 @@ function onWindowMessage(msg, wparam, lparam)
         end
     end
 end
+
+imgui.OnFrame(
+    function()
+        return menu.initialized[0]
+           and menu.wanted.window[0]
+           and autobind.Wanted.Enabled
+           and activeCheck(false, false, true, false, true)
+           and sampGetChatDisplayMode() > 0 
+           and not isKeyDown(VK_F10)
+    end,
+    function()
+        local textLines = {}
+        if autobind.Wanted.List and #autobind.Wanted.List > 0 then
+            for _, entry in ipairs(autobind.Wanted.List) do
+                table.insert(textLines, formatWantedString(entry, true, true))
+            end
+        else
+            textLines = {"No current wanted suspects."}
+        end
+
+        table.sort(autobind.Wanted.List, function(a, b)
+            return a.id > b.id
+        end)
+
+        local windowSize = imgui.calculateWindowSize(textLines, autobind.Wanted.Padding)
+        local newPos, isDragging = imgui.handleWindowDragging("WantedList", autobind.Wanted.Pos, windowSize, autobind.Wanted.Pivot, true)
+        if isDragging and menu.settings.window[0] then
+            autobind.Wanted.Pos = newPos
+        end
+        imgui.SetNextWindowPos(autobind.Wanted.Pos, imgui.Cond.Always, autobind.Wanted.Pivot)
+        imgui.SetNextWindowSize(windowSize, imgui.Cond.Always)
+
+        local bgColor = convertColor(autobind.Wanted.BackgroundColor, true, true, false)
+        local borderColor = convertColor(autobind.Wanted.BorderColor, true, true, false)
+        local borderSize = autobind.Wanted.BorderSize
+        local padding = autobind.Wanted.Padding
+
+        imgui.PushStyleColor(imgui.Col.WindowBg, imgui.ImVec4(bgColor.r, bgColor.g, bgColor.b, bgColor.a))
+        imgui.PushStyleColor(imgui.Col.Border, imgui.ImVec4(borderColor.r, borderColor.g, borderColor.b, borderColor.a))
+        imgui.PushStyleVarFloat(imgui.StyleVar.WindowBorderSize, borderSize)
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, padding)
+
+        if imgui.Begin(scriptName, menu.wanted.window, imgui.WindowFlags.NoDecoration) then
+            local lineHeight = imgui.GetTextLineHeightWithSpacing()
+            local totalTextHeight = #textLines * lineHeight
+            local startY = (windowSize.y - totalTextHeight) / 2
+            local offsetX = padding.x + borderSize * 0.25
+
+            if not isPlayerAFK or true then
+                for i, text in ipairs(textLines) do
+                    local textPosY = startY + (i - 1) * lineHeight + 1
+                    imgui.SetCursorPos(imgui.ImVec2(offsetX, textPosY))
+                    imgui.TextColoredRGB(text)
+                end
+            else
+                local afkText = string.format("{%06x}You are currently AFK.", clr.TWRED)
+                local textSize = imgui.calcTextSize(afkText)
+                local windowWidth = imgui.GetWindowWidth()
+                local iconPosX = (windowWidth - textSize.x) / 2
+                local textPosY = startY + 1
+                imgui.SetCursorPos(imgui.ImVec2(iconPosX, textPosY))
+                imgui.TextColoredRGB(afkText)
+            end
+
+            if autobind.Wanted.ShowRefresh then
+                local timeRemaining = autobind.Wanted.Timer - (localClock() - last_wanted)
+                if timeRemaining >= (autobind.Wanted.Timer - 1) and timeRemaining <= 11 then
+                    local icon = string.format("{%06x}%s", clr.TEAM_GROVE_COLOR, fa.ICON_FA_CHECK)
+                    local iconSize = imgui.calcTextSize(icon)
+                    local iconPosX = windowSize.x - iconSize.x - (borderSize * 0.25 - 2)
+                    local iconPosY = borderSize * 0.25 + 2
+                    imgui.SetCursorPos(imgui.ImVec2(iconPosX, iconPosY))
+                    imgui.PushFont(fontData.small.font)
+                    imgui.TextColoredRGB(icon)
+                    imgui.PopFont()
+                end
+            end
+
+            imgui.PopStyleVar(2)
+            imgui.PopStyleColor(2)
+            imgui.End()
+        end
+    end
+).HideCursor = true
 
 imgui.OnFrame(function() return menu.initialized[0] end,
 function(self)
@@ -6033,7 +6846,7 @@ function(self)
         setupWindowDraggingAndSize("Settings")
 
         -- Settings Window
-        if imgui.Begin(menu.settings.title, menu.settings.window, imgui_flags) then
+        if imgui.Begin(menu.settings.title(), menu.settings.window, imgui_flags) then
             -- First child (Side Buttons)
             imgui.PushFont(fontData.medium.font)
             imgui.BeginChild("##1", child_size1, false)
@@ -6063,21 +6876,52 @@ function(self)
             imgui.PopFont()
             imgui.SetCursorPos(imgui.ImVec2(85, 28))
 
-            -- Second child (Page Buttons)
+            -- Second child (Page Buttons) modified for grid layout with dynamic button sizes:
+            imgui.PushFont(fontData.medium.font)
             imgui.BeginChild("##2", child_size2, false)
+
+            local widthSpacing = 1
+            local heightSpacing = 1
+            local numColumns = 4
+            local numRows = 3
+
+            -- Calculate the button dimensions based on the child's size and spacing:
+            local buttonWidth = ((child_size2.x - (numColumns - 1) * widthSpacing) / numColumns) - 1
+            local buttonHeight = ((child_size2.y - (numRows - 1) * heightSpacing) / numRows) - 4.3
+            local buttonSize = imgui.ImVec2(buttonWidth, buttonHeight)
+
             for i, button in ipairs(buttons2) do
-                imgui.SetCursorPosX((i - 1) * 165)
-                imgui.SetCursorPosY(0)
+                if button.id == 1 then
+                    imgui.BeginGroup()
+                elseif button.id == numColumns + 1 then
+                    imgui.SetCursorPosY(buttonSize.y + heightSpacing)
+                    imgui.BeginGroup()
+                elseif button.id == numColumns * 2 + 1 then
+                    imgui.SetCursorPosY(buttonSize.y * 2 + heightSpacing * 2)
+                    imgui.BeginGroup()
+                end
+
                 local isActive = menu.settings.pageId == button.id
                 local color = isActive and imguiRGBA["RED"] or imguiRGBA["DARKGREY"]
-                if imgui.CustomButton(button.icon(), color, imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], button_size_large) then
+                
+                if imgui.CustomButton(button.icon() .. " " .. button.id, color, imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], buttonSize) then
                     menu.settings.pageId = button.id
                 end
+                
                 if not isActive then
                     imgui.CustomTooltip(button.tooltip)
                 end
+
+                if (button.id == numColumns or button.id == numColumns * 2) or button.id == #buttons2 then
+                    imgui.EndGroup()
+                end
+
+                if (i % numColumns) ~= 0 then
+                    imgui.SameLine(nil, widthSpacing)
+                end
             end
             imgui.EndChild()
+            imgui.PopFont()
 
             -- Third child (Pages)
             imgui.SetCursorPos(imgui.ImVec2(85, 110))
@@ -6179,7 +7023,7 @@ function(self)
             end
         end
 
-        if imgui.Begin(menu.vehiclestorage.title, menu.vehiclestorage.window, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.NoMove) then
+        if imgui.Begin(menu.vehiclestorage.title(), menu.vehiclestorage.window, imgui.WindowFlags.NoDecoration + imgui.WindowFlags.NoMove) then
             imgui.SetCursorPosX(imgui.GetWindowWidth() - 20)
             imgui.SetCursorPosY(5)
             imgui.PushFont(fontData.small.font)
@@ -6192,11 +7036,11 @@ function(self)
                 imgui.CustomTooltip(string.format("{%06X}Red{%06X} is pinned, {%06X}Green{%06X} is unpinned", clr["REALRED"], clr["WHITE"], clr["REALGREEN"], clr["WHITE"]))
             end
 
-            local textSize = imgui.CalcTextSize(menu.vehiclestorage.title)
+            local textSize = imgui.calcTextSize(menu.vehiclestorage.title())
             imgui.SetCursorPosX(imgui.GetWindowWidth() / 2 - textSize.x / 2)
             imgui.SetCursorPosY(5)
             imgui.PushFont(fontData.medium.font)
-            imgui.TextColoredRGB(menu.vehiclestorage.title)
+            imgui.TextColoredRGB(menu.vehiclestorage.title())
 
             imgui.SetCursorPosX(10)
             imgui.SetCursorPosY(25)
@@ -6240,7 +7084,7 @@ function(self)
                     
                     imgui.SetCursorPosY(imgui.GetCursorPosY() - 5)
 
-                    if imgui.Checkbox('Targeting', new.bool(autobind.Settings.mustTargetToFrisk)) then
+                    if imgui.Checkbox('Target', new.bool(autobind.Settings.mustTargetToFrisk)) then
                         autobind.Settings.mustTargetToFrisk = toggleBind("Targeting", autobind.Settings.mustTargetToFrisk)
                     end
                     imgui.CustomTooltip('Must be targeting a player to frisk. (Green Blip above the player)')
@@ -6369,7 +7213,7 @@ function(self)
         imgui.SetNextWindowPos(imgui.ImVec2(resX / 2, resY / 2), imgui.Cond.FirstUseEver, menu.confirm.pivot)
         imgui.SetNextWindowFocus()
 
-        if imgui.Begin(menu.settings.title .. ' - Update', menu.confirm.window, imgui_flags) then
+        if imgui.Begin(menu.confirm.title, menu.confirm.window, imgui_flags) then
             if menu.confirm.update[0] then
                 imgui.Text('Do you want to update this script?')
 
@@ -6414,7 +7258,7 @@ end).HideCursor = true
 function renderChangelogWindow()
     setupWindowDraggingAndSize("Changelog")
 
-    if imgui.Begin(string.format("%s - %s", scriptName:upperFirst(), scriptVersion), menu.changelog.window, imgui_flags) then
+    if imgui.Begin(menu.changelog.title(), menu.changelog.window, imgui_flags) then
         if changelog then
             -- Build an array of version keys from the changelog table.
             local sortedVersions = {}
@@ -6488,7 +7332,7 @@ function renderLockerWindow(label, name)
     setupWindowDraggingAndSize(name, false)
 
     -- Calculate total price
-    local totalPrice = calculateTotalPrice(autobind[name]["Kit" .. pageId], lockers[lowerName].Items)
+    local totalPrice = calculateTotalPrice(autobind[name]["Kit" .. pageId], lockers[name].Items)
 
     -- Define a table to map kitId to key and menu data
     local kits = {}
@@ -6497,10 +7341,7 @@ function renderLockerWindow(label, name)
     end
 
     -- Locker Window
-    local title = string.format("%s - Kit: %d - $%s", label, pageId, formatNumber(totalPrice))
-    if imgui.Begin(title, menu[lowerName].window, imgui_flags) then
-
-        -- Display the key editor and menu based on the selected kitId
+    if imgui.Begin(menu[lowerName].title(label, pageId, totalPrice), menu[lowerName].window, imgui_flags) then
         for id, kit in pairs(kits) do
             if pageId == id then
                 -- Keybind
@@ -6545,10 +7386,10 @@ function renderLockerWindow(label, name)
                 end
                 imgui.EndGroup()
 
-                local selectionTitle = string.format("Selection: [%d/%d]", #autobind[name]["Kit" .. pageId], lockers[lowerName].maxSelections)
+                local selectionTitle = string.format("Selection: [%d/%d]", #autobind[name]["Kit" .. pageId], lockers[name].maxSelections)
 
                 -- Create selection menu
-                createMenu(selectionTitle, lockers[lowerName].Items, kit.menu, lockers[lowerName].ExclusiveGroups, lockers[lowerName].maxSelections, {combineGroups = lockers[lowerName].combineGroups})
+                createMenu(selectionTitle, lockers[name].Items, kit.menu, lockers[name].ExclusiveGroups, lockers[name].maxSelections, {combineGroups = lockers[name].combineGroups})
             end
         end
     end
@@ -7201,7 +8042,7 @@ function keyEditor(title, index, description, callback)
 
     imgui.SameLine()
     local checkBoxColor = keyBinds.Toggle and clr.REALGREEN or clr.RED
-    local checkBoxText = keyBinds.Toggle and "Enabled" or "Disabled"
+    local checkBoxText = keyBinds.Toggle and "On" or "Off"
     if imgui.Checkbox(checkBoxText .. "##" .. index, new.bool(keyBinds.Toggle)) then
         keyBinds.Toggle = not keyBinds.Toggle
     end
@@ -7209,7 +8050,7 @@ function keyEditor(title, index, description, callback)
 
     for i, key in ipairs(keyBinds.Keys) do
         local buttonText = changeKey[index] and changeKey[index] == i and fa.ICON_FA_KEYBOARD or (key ~= 0 and correctKeyName(vk.id_to_name(key)) or fa.ICON_FA_KEYBOARD)
-        local buttonSize = imgui.CalcTextSize(buttonText) + padding
+        local buttonSize = imgui.calcTextSize(buttonText) + padding
 
         -- Button to change key
         imgui.AlignTextToFramePadding()
@@ -7304,7 +8145,7 @@ function keyEditor(title, index, description, callback)
     -- If there are no keys, show the "+" button
     if #keyBinds.Keys == 0 then
         imgui.AlignTextToFramePadding()
-        local plusButtonSize = imgui.CalcTextSize("+") + padding
+        local plusButtonSize = imgui.calcTextSize("+") + padding
         if imgui.Button("+##add" .. index, plusButtonSize) then
             table.insert(keyBinds.Keys, 0)
             if type(keyBinds.Type) ~= "table" then
@@ -7367,7 +8208,32 @@ end
 
 function createFarmerDialog()
     local dialogText = "You have arrived at your designated farming spot.\nAuto-Typing /harvest to harvest some crops.\n\nWarning: Pressing disable will turn off auto farming."
-    sampShowDialog(farmer.dialogId, ("[%s] Auto Farming"):format(shortName:upper()), dialogText, "Close", "Disable", 0)
+    sampShowDialog(dialogs.farmer.id, ("[%s] Auto Farming"):format(shortName:upper()), dialogText, "Close", "Disable", 0)
+end
+
+function formatWantedString(entry, allowPing, allowStars)
+    local result, playerid, name = findPlayer(entry.name:gsub(" ", "_"))
+    if not result then
+        return string.format("%s (%d) - DISCONNECTED", entry.name, entry.id)
+    elseif entry.charges == 0 and entry.lawyer then
+        return string.format("%s (%d) - LAWYERED", entry.name, entry.id)
+    elseif entry.charges == 0 and entry.processed then
+        return string.format("%s (%d) - PROCESSED", entry.name, entry.id)
+    elseif entry.charges == 0 and entry.cleared then
+        return string.format("%s (%d) - CLEARED", entry.name, entry.id)
+    else
+        local pingInfo = (allowPing and autobind.Wanted.Ping) and string.format(" (Ping: %d):", sampGetPlayerPing(entry.id)) or ""
+        local chargeColor = entry.charges == 6 and clr.TWRED or clr.LIGHTGREY
+        local chargeInfo = (allowStars and autobind.Wanted.Stars) and string.rep(fa.ICON_FA_STAR, entry.charges) or string.format("%d outstanding %s.", entry.charges, entry.charges == 1 and "charge" or "charges")
+    
+        return string.format("%s (%d):%s {%06x}%s", 
+            entry.name, 
+            entry.id, 
+            pingInfo, 
+            chargeColor, 
+            chargeInfo
+        )
+    end
 end
 
 function updateVehicleStorage(status, vehName)
@@ -7483,11 +8349,11 @@ function getVisiblePlayers(maxDist, type)
 end
 
 function activeCheck(chat, dialog, scoreboard, console, pause)
-	return (chat and not sampIsChatInputActive()) and 
-		   (dialog and not sampIsDialogActive()) and 
-		   (scoreboard and not sampIsScoreboardOpen()) and 
-		   (console and not isSampfuncsConsoleActive()) and 
-		   (pause and not isPauseMenuActive())
+	return (not chat or not sampIsChatInputActive()) and 
+	       (not dialog or not sampIsDialogActive()) and 
+	       (not scoreboard or not sampIsScoreboardOpen()) and 
+	       (not console or not isSampfuncsConsoleActive()) and 
+	       (not pause or not isPauseMenuActive())
 end
 
 -- Check if admin duty is active
@@ -7890,6 +8756,32 @@ function imgui.handleWindowDragging(menuId, pos, size, pivot, dragging)
     end
 
     return {x = pos.x, y = pos.y}, false
+end
+
+function imgui.calcTextSize(text)
+    local processedText = removeHexBrackets(text)
+    return imgui.CalcTextSize(processedText)
+end
+
+function imgui.calculateWindowSize(lines, padding)
+    local totalHeight = 0
+    local maxWidth = 0
+    local lineSpacing = imgui.GetTextLineHeightWithSpacing() - imgui.GetTextLineHeight()
+
+    for _, text in ipairs(lines) do
+        local textSize = imgui.calcTextSize(text)
+        totalHeight = totalHeight + textSize.y + lineSpacing
+        if textSize.x > maxWidth then
+            maxWidth = textSize.x
+        end
+    end
+    totalHeight = totalHeight - lineSpacing
+
+    local windowSize = imgui.ImVec2(
+        maxWidth + padding.x * 2,
+        totalHeight + padding.y * 2
+    )
+    return windowSize
 end
 
 function imgui.TextColoredRGB(text)
