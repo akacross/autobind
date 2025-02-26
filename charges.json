@@ -1,0 +1,436 @@
+{
+  "Charges": [
+    {
+      "name": "Aiding and Abetting",
+      "id": 1,
+      "stacks": ["Prison Break", "Aiding a Prison Break", "Obstructing a Government Employee", "Conspiracy"],
+      "fine": 5000,
+      "time": 5,
+      "active": false,
+      "description": "Joint commission or participation in the same crime."
+    },
+    {
+      "name": "Aiding a Prison Break",
+      "id": 2,
+      "stacks": ["Aiding and Abetting", "Attempted Murder", "Prison Break", "Assault", "Battery", "Attempted Murder", "Murder", "Riot", "Unlawful Assembly", "Destruction of Public Property", "Kidnapping", "Extortion", "Conspiracy"],
+      "fine": 7500,
+      "time": 30,
+      "active": false,
+      "description": "Succeeding in helping, or attempting to help, a prisoner break out of the Castille Correction Facility."
+    },
+    {
+      "name": "Assault",
+      "id": 3,
+      "stacks": ["Aiding a Prison Break", "Prison Break", "Battery", "Mutual Combat", "Torture", "Disturbance of Peace", "Terrorism", "Murder", "Attempted Murder", "Conspiracy"],
+      "fine": 1500,
+      "time": 3,
+      "active": false,
+      "description": "An unlawful threat by word or act against another with the apparent ability to do so."
+    },
+    {
+      "name": "Attempted Murder",
+      "id": 4,
+      "stacks": ["Aiding a Prison Break", "Prison Break", "Murder", "Brandishing a Weapon in Public", "Torture", "Terrorism", "Assault", "Vehicular Assault", "Conspiracy"],
+      "fine": 3500,
+      "time": 10,
+      "active": false,
+      "description": "Attempting to cause life threatening harm with such intent or deliberation to another person."
+    },
+    {
+      "name": "Battery",
+      "id": 5,
+      "stacks": ["Assault", "Mutual Combat", "Torture", "Terrorism", "Prison Break", "Aiding a Prison Break", "Conspiracy"],
+      "fine": 3500,
+      "time": 7,
+      "active": false,
+      "description": "Intentionally touching, striking, or causing bodily harm to another person."
+    },
+    {
+      "name": "Brandishing a Weapon in Public",
+      "id": 6,
+      "stacks": ["Discharge Of a Firearm in Public", "Attempted Murder", "Murder", "Conspiracy"],
+      "fine": 1000,
+      "time": 1,
+      "active": false,
+      "description": "Walking around with a Prohibited Melee Weapon, or aiming any Firearm in an area accessible to the general public without lawful justification. Prohibited melee weapons: Knife, Katana, Knuckles"
+    },
+    {
+      "name": "Bribery",
+      "id": 7,
+      "stacks": ["Conspiracy"],
+      "fine": 10000,
+      "time": 5,
+      "active": false,
+      "description": "Attempting to bribe a Law Enforcement Officer for freedom."
+    },
+    {
+      "name": "Conspiracy",
+      "id": 8,
+      "stacks": ["Aiding and Abetting", "Aiding a Prison Break", "Assault", "Attempted Murder", "Battery", "Brandishing a Weapon in Public", "Bribery", "Criminal Trespassing", "Destruction of Public Property", "Discharge Of a Firearm in Public", "Disturbance of Peace", "Driving Over the Speed Limit", "Evading a Law Enforcement Officer", "Extortion", "Failure to Identify", "Failure to Pay a Ticket", "Flight Protocol Violation", "Fraud", "Grand Theft Auto", "Impersonating a Government Employee", "Indecency", "Kidnapping", "Misuse of Emergency Hotline", "Mutual Combat", "Murder", "Obstructing a Government Employee", "Operating a Vehicle Without a License", "Pandering/Pimping", "Possession Of a Controlled Substance", "Possession Of an Illegal Firearm", "Prison Break", "Prostitution", "Reckless Driving", "Resisting a Law Enforcement Officer", "Riot", "Robbery", "Sexual Assault", "Sexual Battery", "Terrorism", "Torture", "Transporting Illegal Goods", "Trespassing", "Unlawful Assembly", "Unlawful Distribution Of a Weapon", "Vandalism", "Vehicular Assault", "Vigilantism"],
+      "fine": 2500,
+      "time": 5,
+      "active": false,
+      "description": "A mutual agreement between two or more people to commit an illegal act."
+    },
+    {
+      "name": "Criminal Trespassing",
+      "id": 9,
+      "stacks": ["Trespassing", "Unlawful Assembly", "Conspiracy"],
+      "fine": 2500,
+      "time": 5,
+      "active": false,
+      "description": "Entering a Government Facility or a restricted area without permission."
+    },
+    {
+      "name": "Destruction of Public Property",
+      "id": 10,
+      "stacks": ["Vandalism", "Prison Break", "Aiding a Prison Break", "Conspiracy"],
+      "fine": 2000,
+      "time": 2,
+      "active": false,
+      "description": "Vandalizing any public/government property (i.e. fences, traffic lights, cones, trash cans)"
+    },
+    {
+      "name": "Discharge Of a Firearm in Public",
+      "id": 11,
+      "stacks": ["Brandishing a Weapon in Public", "Conspiracy"],
+      "fine": 3000,
+      "time": 5,
+      "active": false,
+      "description": "Shooting a Firearm in Public without due care and authorization."
+    },
+    {
+      "name": "Disturbance of Peace",
+      "id": 12,
+      "stacks": ["Assault", "Unlawful Assembly", "Riot", "Terrorism", "Mutual Combat", "Conspiracy"],
+      "fine": 250,
+      "time": 0,
+      "active": false,
+      "description": "Engaging in unruly behaviour, Creating dangerous situations in a public place."
+    },
+    {
+      "name": "Driving Over the Speed Limit",
+      "id": 13,
+      "stacks": ["Reckless Driving", "Conspiracy"],
+      "fine": 500,
+      "time": 0,
+      "active": false,
+      "description": "Driving in excess of the speed limit."
+    },
+    {
+      "name": "Evading a Law Enforcement Officer",
+      "id": 14,
+      "stacks": ["Resisting a Law Enforcement Officer", "Obstructing a Government Employee", "Conspiracy", "Riot"],
+      "fine": 5000,
+      "time": 10,
+      "active": false,
+      "description": "Preventing, or attempting to prevent, a Law Enforcement Officer from effecting an arrest or search using a vehicle."
+    },
+    {
+      "name": "Extortion",
+      "id": 15,
+      "stacks": ["Fraud", "Kidnapping", "Robbery", "Prison Break", "Aiding a Prison Break", "Conspiracy"],
+      "fine": 1500,
+      "time": 5,
+      "active": false,
+      "description": "Intimidating, influencing, or forcing someone to hand over any property or render services."
+    },
+    {
+      "name": "Failure to Identify",
+      "id": 16,
+      "stacks": ["Obstructing a Government Employee", "Conspiracy"],
+      "fine": 500,
+      "time": 2,
+      "active": false,
+      "description": "Failure to provide a Law Enforcement Officer with the full name and proper identification when asked."
+    },
+    {
+      "name": "Failure to Pay a Ticket",
+      "id": 17,
+      "stacks": ["Conspiracy"],
+      "fine": 500,
+      "time": 1,
+      "active": false,
+      "description": "Failure to pay a ticket issued by a Law Enforcement Officer."
+    },
+    {
+      "name": "Flight Protocol Violation",
+      "id": 18,
+      "stacks": ["Conspiracy"],
+      "fine": 5000,
+      "time": 5,
+      "active": false,
+      "description": "Violating provisions of the Flight Code as provided in the Penal Code: An aircraft may not hover over a government facility or residential/commercial areas at a low altitude. The airstrips at the Los Santos, Las Venturas and San Fierro Airports may not be used for any other purpose other than its designated use for facilitating aircrafts. The airstrip at Abandoned Airport may be used to host events or sanctioned races subject to restrictions imposed by the Ares Defence Solutions"
+    },
+    {
+      "name": "Fraud",
+      "id": 19,
+      "stacks": ["Extortion", "Robbery", "Conspiracy"],
+      "fine": 0,
+      "time": 15,
+      "active": false,
+      "description": "Causing personal gain or loss to another by deception."
+    },
+    {
+      "name": "Grand Theft Auto",
+      "id": 20,
+      "stacks": ["Vandalism", "Conspiracy"],
+      "fine": 1000,
+      "time": 2,
+      "active": false,
+      "description": "Attempting to or succeeding in stealing another vehicle."
+    },
+    {
+      "name": "Impersonating a Government Employee",
+      "id": 21,
+      "stacks": ["Conspiracy"],
+      "fine": 3000,
+      "time": 10,
+      "active": false,
+      "description": "Falsely representing oneself as a government employee."
+    },
+    {
+      "name": "Indecency",
+      "id": 22,
+      "stacks": ["Sexual Assault", "Sexual Battery", "Conspiracy"],
+      "fine": 500,
+      "time": 1,
+      "active": false,
+      "description": "Exposing one's naked body, or genitals, in public view."
+    },
+    {
+      "name": "Kidnapping",
+      "id": 23,
+      "stacks": ["Extortion", "Prison Break", "Aiding a Prison Break", "Conspiracy"],
+      "fine": 5000,
+      "time": 5,
+      "active": false,
+      "description": "Forcibly abducting or imprisoning another person against their will."
+    },
+    {
+      "name": "Misuse of Emergency Hotline",
+      "id": 24,
+      "stacks": ["Conspiracy"],
+      "fine": 2500,
+      "time": 1,
+      "active": false,
+      "description": "A prank or false call to the the emergency services line (911)."
+    },
+    {
+      "name": "Mutual Combat",
+      "id": 25,
+      "stacks": ["Assault", "Battery", "Disturbance of Peace", "Conspiracy"],
+      "fine": 2500,
+      "time": 5,
+      "active": false,
+      "description": "Engaging in a consensual fight in an area accessible to public or in the public view."
+    },
+    {
+      "name": "Murder",
+      "id": 26,
+      "stacks": ["Aiding a Prison Break", "Prison Break", "Attempted Murder", "Brandishing a Weapon in Public", "Torture", "Terrorism", "Assault", "Vehicular Assault", "Conspiracy"],
+      "fine": 7000,
+      "time": 20,
+      "active": false,
+      "description": "Unlawful killing of another person with premeditation."
+    },
+    {
+      "name": "Obstructing a Government Employee",
+      "id": 27,
+      "stacks": ["Failure to Identify", "Aiding and Abetting", "Evading a Law Enforcement Officer", "Resisting a Law Enforcement Officer", "Conspiracy"],
+      "fine": 3500,
+      "time": 10,
+      "active": false,
+      "description": "Any attempt at preventing a Government Employee from performing their lawful duties or influencing any proceedings by unlawful means."
+    },
+    {
+      "name": "Operating a Vehicle Without a License",
+      "id": 28,
+      "stacks": ["Conspiracy"],
+      "fine": 2500,
+      "time": 1,
+      "active": false,
+      "description": "Operating a vehicle or sitting in the driver seat of a vehicle without a state-issued driving license."
+    },
+    {
+      "name": "Pandering/Pimping",
+      "id": 29,
+      "stacks": ["Prostitution", "Conspiracy"],
+      "fine": 4500,
+      "time": 3,
+      "active": false,
+      "description": "Soliciting a person or persons services as a prostitute."
+    },
+    {
+      "name": "Possession Of a Controlled Substance",
+      "id": 30,
+      "stacks": ["Conspiracy"],
+      "fine": 2500,
+      "time": 5,
+      "active": false,
+      "description": "Having on one's person or property: Any amount of Crack, 51 or more grams of Pot"
+    },
+    {
+      "name": "Possession Of an Illegal Firearm",
+      "id": 31,
+      "stacks": ["Unlawful Distribution Of a Weapon", "Conspiracy"],
+      "fine": 3500,
+      "time": 3,
+      "active": false,
+      "description": "Having in one's possession an Illegal Firearm: Silenced Pistol, Desert Eagle, SPAS-12, MP5, M4, AK-47, Tec9, Mac-10, Sniper Rifle"
+    },
+    {
+      "name": "Prison Break",
+      "id": 32,
+      "stacks": ["Aiding a Prison Break", "Assault", "Battery", "Attempted Murder", "Murder", "Riot", "Unlawful Assembly", "Destruction of Public Property", "Kidnapping", "Extortion", "Aiding and Abetting", "Conspiracy"],
+      "fine": 5000,
+      "time": 30,
+      "active": false,
+      "description": "Breaking out of the Castille Correction Facility."
+    },
+    {
+      "name": "Prostitution",
+      "id": 33,
+      "stacks": ["Pandering/Pimping", "Conspiracy"],
+      "fine": 9000,
+      "time": 6,
+      "active": false,
+      "description": "Offering or exchanging sexual favours for any personal gain."
+    },
+    {
+      "name": "Reckless Driving",
+      "id": 34,
+      "stacks": ["Driving Over the Speed Limit", "Vehicular Assault", "Conspiracy"],
+      "fine": 2500,
+      "time": 5,
+      "active": false,
+      "description": "Driving with a general disregard for road safety of oneself and of others."
+    },
+    {
+      "name": "Resisting a Law Enforcement Officer",
+      "id": 35,
+      "stacks": ["Obstructing a Government Employee", "Evading a Law Enforcement Officer", "Unlawful Assembly", "Conspiracy", "Riot"],
+      "fine": 2500,
+      "time": 5,
+      "active": false,
+      "description": "Preventing, or attempting to prevent, a Law Enforcement Officer from effecting an arrest or search by non-vehicular means."
+    },
+    {
+      "name": "Riot",
+      "id": 36,
+      "stacks": ["Aiding a Prison Break", "Prison Break", "Unlawful Assembly", "Resisting a Law Enforcement Officer", "Evading a Law Enforcement Officer", "Disturbance of Peace", "Conspiracy"],
+      "fine": 2500,
+      "time": 3,
+      "active": false,
+      "description": "Two or more people, acting without legal authority, disturb the peace, encourage violence, or cause civil unrest in a public area."
+    },
+    {
+      "name": "Robbery",
+      "id": 37,
+      "stacks": ["Fraud", "Extortion", "Conspiracy"],
+      "fine": 3500,
+      "time": 10,
+      "active": false,
+      "description": "Using intimidation, threats, or weapons to take property the possession of another person."
+    },
+    {
+      "name": "Sexual Assault",
+      "id": 38,
+      "stacks": ["Sexual Battery", "Indecency", "Conspiracy"],
+      "fine": 10000,
+      "time": 10,
+      "active": false,
+      "description": "Attempting to or succeeding at having forceable sexual intercourse with another person."
+    },
+    {
+      "name": "Sexual Battery",
+      "id": 39,
+      "stacks": ["Sexual Assault", "Indecency", "Conspiracy"],
+      "fine": 2500,
+      "time": 5,
+      "active": false,
+      "description": "Touching the intimate parts of another person unlawfully and without their consent."
+    },
+    {
+      "name": "Terrorism",
+      "id": 40,
+      "stacks": ["Assault", "Battery", "Attempted Murder", "Murder", "Torture", "Disturbance of Peace", "Conspiracy"],
+      "fine": 2000,
+      "time": 15,
+      "active": false,
+      "description": "A person who uses threats or actions against the public to cause fear and intimidation at a large scale."
+    },
+    {
+      "name": "Torture",
+      "id": 41,
+      "stacks": ["Assault", "Battery", "Attempted Murder", "Murder", "Terrorism", "Conspiracy"],
+      "fine": 3500,
+      "time": 15,
+      "active": false,
+      "description": "Any act carried out with the intention to cause severe physical or mental pain or suffering."
+    },
+    {
+      "name": "Transporting Illegal Goods",
+      "id": 42,
+      "stacks": ["Conspiracy"],
+      "fine": 5000,
+      "time": 10,
+      "active": false,
+      "description": "Delivering illegal goods including controlled substances, weapons and illegal materials."
+    },
+    {
+      "name": "Trespassing",
+      "id": 43,
+      "stacks": ["Criminal Trespassing", "Unlawful Assembly", "Conspiracy"],
+      "fine": 500,
+      "time": 0,
+      "active": false,
+      "description": "Entering private property without explicit permission from the property owner."
+    },
+    {
+      "name": "Unlawful Assembly",
+      "id": 44,
+      "stacks": ["Aiding a Prison Break", "Prison Break", "Conspiracy", "Criminal Trespassing", "Disturbance of Peace", "Resisting a Law Enforcement Officer", "Riot", "Trespassing"],
+      "fine": 500,
+      "time": 0,
+      "active": false,
+      "description": "Refusing to leave a public property upon lawful orders by a Law Enforcement Officer."
+    },
+    {
+      "name": "Unlawful Distribution Of a Weapon",
+      "id": 45,
+      "stacks": ["Possession Of an Illegal Firearm", "Conspiracy"],
+      "fine": 5000,
+      "time": 2,
+      "active": false,
+      "description": "The sale, distribution, manufacture or procurement of a Weapon other than through a registered Arms and Ammunition Store."
+    },
+    {
+      "name": "Vandalism",
+      "id": 46,
+      "stacks": ["Grand Theft Auto", "Destruction of Public Property", "Conspiracy"],
+      "fine": 500,
+      "time": 1,
+      "active": false,
+      "description": "Intentional damage to another's property."
+    },
+    {
+      "name": "Vehicular Assault",
+      "id": 47,
+      "stacks": ["Reckless Driving", "Murder", "Attempted Murder", "Conspiracy"],
+      "fine": 2000,
+      "time": 7,
+      "active": false,
+      "description": "Reckless operation of a vehicle followed by an attempt to cause any injury or succeeding in causing any injury to a pedestrian."
+    },
+    {
+      "name": "Vigilantism",
+      "id": 48,
+      "stacks": ["Conspiracy"],
+      "fine": 5000,
+      "time": 10,
+      "active": false,
+      "description": "Preventing, investigating, and punishing offenses and crimes without lawful authority."
+    }
+  ]
+}
