@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.25a")
+script_version("1.8.25a2")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -605,7 +605,8 @@ local autobind_defaultSettings = {
     },
     CurrentPlayer = {
         name = "",
-        id = -1
+        id = -1,
+        welcomeMessage = false
     },
 	WindowPos = {
 		Settings = {x = resX / 2, y = resY / 2},
@@ -637,11 +638,14 @@ local autobind_defaultSettings = {
         menu = false,
         chatInput = false,
         chatInputText = false,
+        ShowBackground = true,
         BackgroundColor = colors.changeAlpha(clr_BLACK, 225),
+        ShowBorder = true,
         BorderColor = colors.changeAlpha(clr_WHITE, 255),
         BorderSize = 2.0,
         Pivot = {x = 0.5, y = 0.0},
         Padding = {x = 8.0, y = 8.0},
+        Rounding = 5.0
     },
     TimeAndWeather = {
         hour = 12,
@@ -1082,7 +1086,6 @@ local menu = {
         flags = imgui.WindowFlags.NoDecoration + imgui.WindowFlags.NoMove,
 		window = new.bool(false),
         size = {x = 338, y = 165},
-        pivot = {x = 0.5, y = 0.5},
         dragging = new.bool(false)
     },
     Charges = {
@@ -1114,7 +1117,7 @@ local menu = {
         flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar,
         title = function(label, pageId, totalPrice) return string.format("%s - Kit: %d - $%s", label, pageId, formatNumber(totalPrice)) end,
 		window = new.bool(false),
-        size = {x = 226, y = 290},
+        size = {x = 226, y = 285},
         pivot = {x = 0.5, y = 0.5},
         pageId = 1,
         dragging = new.bool(true)
@@ -1123,7 +1126,7 @@ local menu = {
         flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar,
         title = function(label, pageId, totalPrice) return string.format("%s - Kit: %d - $%s", label, pageId, formatNumber(totalPrice)) end,
 		window = new.bool(false),
-        size = {x = 226, y = 290},
+        size = {x = 226, y = 285},
         pivot = {x = 0.5, y = 0.5},
         pageId = 1,
         dragging = new.bool(true)
@@ -1385,6 +1388,10 @@ function initializeComponents()
         setTime(autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute)
     end
 
+    if autobind.CurrentPlayer.welcomeMessage then
+        initializeVehicleStorage()
+    end
+
     -- Initialize Menu
     menu.Initialized[0] = true
 end
@@ -1439,13 +1446,15 @@ function main()
     
     while true do wait(0)
         if sampGetGamestate() ~= 3 then
-            resetAccepterAndBodyguard()
-
-            clearWantedList()
-
             if hasPlayerLoaded then
-                hasPlayerLoaded = false
+                resetAccepterAndBodyguard()
+
+                clearWantedList()
+
+                autobind.CurrentPlayer.welcomeMessage = false
                 print("Player has disconnected")
+
+                hasPlayerLoaded = false
             end
         end
 
@@ -1469,9 +1478,18 @@ function main()
         cursorActive = sampIsCursorActive()
         chatInputActive = sampIsChatInputActive()
 
-        -- Vehicle Storage
-        if autobind.VehicleStorage.menu then
-            menu.VehicleStorage.window[0] = ((sampGetChatInputText():find("/v") and autobind.VehicleStorage.chatInputText) or chatInputActive) and true or false
+        if autobind.VehicleStorage.enable and autobind.VehicleStorage.menu and (autobind.VehicleStorage.chatInputText or autobind.VehicleStorage.chatInput) then
+            local showVehicleStorage = false
+            
+            if autobind.VehicleStorage.chatInputText and sampGetChatInputText():find("/v") then
+                showVehicleStorage = true
+            end
+            
+            if autobind.VehicleStorage.chatInput and chatInputActive then
+                showVehicleStorage = true
+            end
+            
+            menu.VehicleStorage.window[0] = showVehicleStorage
         end
 
         functionsLoop(function(success)
@@ -1790,8 +1808,8 @@ function handleLocker(kitNumber, name, label, command)
 
             if i == 1 then
                 formattedAddChatMessage(string.format(
-                    "Getting items from %s using kit %d. {%06x}Please stop moving and do not use any other commands.",
-                    label:lower(),
+                    "Getting items from %s (Kit #%d). {%06x}Please stop moving and do not use any other commands.",
+                    label,
                     kitNumber,
                     clr_YELLOW
                 ), clr_WHITE)
@@ -2865,19 +2883,19 @@ local clientCommands = {
 
             -- If no params are provided, just display usage and open /vst dialog
             if not params or params == "" then
-                sampSendChat("/vst")
+                if autobind.VehicleStorage.menu and (not autobind.VehicleStorage.chatInputText and not autobind.VehicleStorage.chatInput) then
+                    menu.VehicleStorage.window[0] = not menu.VehicleStorage.window[0]
+                else
+                    sampSendChat("/vst")
+                end
                 formattedAddChatMessage(string.format("USAGE: /%s [slot ID or partial vehicle name]", cmd))
                 return
             end
     
-            local playerName = autobind.CurrentPlayer.name
-            if not playerName or playerName == "" then
-                local _, playerId = sampGetPlayerIdByCharHandle(ped)
-                if not playerId then
-                    formattedAddChatMessage("Current player not found!")
-                    return
-                end
-                playerName = sampGetPlayerNickname(playerId)
+            local playerName = getCurrentPlayingPlayer()
+            if not playerName then
+                formattedAddChatMessage("Current playing player not found!")
+                return
             end
     
             -- Ensure the table exists
@@ -2959,22 +2977,7 @@ local clientCommands = {
         desc = "Resets your vehicle storage, will populate vehicles again for the menu",
         id = 14,
         func = function(cmd)
-            local playerName = autobind.CurrentPlayer.name
-            if not playerName or playerName == "" then
-                local _, playerId = sampGetPlayerIdByCharHandle(ped)
-                if not playerId then
-                    formattedAddChatMessage("Current player not found!")
-                    return
-                end
-
-                playerName = sampGetPlayerNickname(playerId)
-            end
-
-            autobind.VehicleStorage.Vehicles[playerName] = {}
-            formattedAddChatMessage("Your vehicle storage has been reset, populating vehicles...")
-            vehicles.initialFetch = false
-            vehicles.populating = true
-            sampSendChat("/vst")
+            resetVehicleStorage()
         end
     },
     autofarm = {
@@ -3770,25 +3773,7 @@ local messageHandlers = {
                 autobind.CurrentPlayer.id = sampGetPlayerIdByNickname(autobind.CurrentPlayer.name)
 
                 -- Reset vehicle storage status
-                local playerName = autobind.CurrentPlayer.name
-                if playerName and playerName ~= "" then
-                    autobind.VehicleStorage.Vehicles = autobind.VehicleStorage.Vehicles or {}
-                    autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
-
-                    if autobind.VehicleStorage.Vehicles[playerName] and #autobind.VehicleStorage.Vehicles[playerName] < 1 then
-                        formattedAddChatMessage("Populating vehicle storage list.")
-                        -- Reset vehicle initial fetch
-                        vehicles.initialFetch = false
-                        vehicles.populating = true
-                        sampSendChat("/vst")
-                    end
-
-                    for _, vehicle in pairs(autobind.VehicleStorage.Vehicles[playerName]) do
-                        if vehicle.status and vehicle.status ~= "Stored" and vehicle.status ~= "Disabled" and vehicle.status ~= "Impounded" then
-                            vehicle.status = "Stored"
-                        end
-                    end
-                end
+                initializeVehicleStorage()
 
                 if currentContent and autobind.Settings.checkForUpdates then
                     if updateStatus == "new_version" then
@@ -3798,13 +3783,15 @@ local messageHandlers = {
                     end
                 end
 
+                autobind.CurrentPlayer.welcomeMessage = true
+
                 -- Save settings
                 configs.saveConfigWithErrorHandling(Files.currentplayer, autobind.CurrentPlayer)
                 configs.saveConfigWithErrorHandling(Files.vehiclestorage, autobind.VehicleStorage)
 
                 print("Welcome to Horizon Roleplay, " .. name .. ".")
 
-                return {clrRGBA["NEWS"], string.format("Welcome to Horizon Roleplay, %s.", name)}
+                return {clrRGBA["NEWS"], string.format("Welcome to Horizon Roleplay, {%06x}%s", clr_GREY, name)}
             end
         end
     },
@@ -5122,6 +5109,60 @@ function checkWantedList(updateType, playerName, playerId)
     end
 end
 
+function getCurrentPlayingPlayer()
+    local playerName = autobind.CurrentPlayer.name
+    if not playerName or playerName == "" then
+        local _, playerId = sampGetPlayerIdByCharHandle(ped)
+        if not playerId then
+            return nil
+        end
+        playerName = sampGetPlayerNickname(playerId)
+    end
+
+    return playerName
+end
+
+local function fetchVehicleStorage()
+    formattedAddChatMessage("Your vehicle storage has been reset, populating vehicles...")
+    vehicles.initialFetch = false
+    vehicles.populating = true
+    sampSendChat("/vst")
+end
+
+function initializeVehicleStorage()
+    local playerName = getCurrentPlayingPlayer()
+    if not playerName then
+        formattedAddChatMessage("Current playing player not found!")
+        return
+    end
+
+    autobind.VehicleStorage.Vehicles = autobind.VehicleStorage.Vehicles or {}
+    autobind.VehicleStorage.Vehicles[playerName] = autobind.VehicleStorage.Vehicles[playerName] or {}
+
+    if autobind.VehicleStorage.Vehicles[playerName] and #autobind.VehicleStorage.Vehicles[playerName] < 1 then
+        fetchVehicleStorage()
+    end
+
+    if not autobind.CurrentPlayer.welcomeMessage then
+        for _, vehicle in pairs(autobind.VehicleStorage.Vehicles[playerName]) do
+            if vehicle.status and vehicle.status ~= "Stored" and vehicle.status ~= "Disabled" and vehicle.status ~= "Impounded" then
+                vehicle.status = "Stored"
+            end
+        end
+    end
+end
+
+function resetVehicleStorage()
+    local playerName = getCurrentPlayingPlayer()
+    if not playerName then
+        formattedAddChatMessage("Current playing player not found!")
+        return
+    end
+
+    autobind.VehicleStorage.Vehicles[playerName] = {}
+    fetchVehicleStorage()
+end
+
 function sampev.onServerMessage(color, text)
     if isPlayerPaused then
         goto skipServerMessage
@@ -5228,15 +5269,10 @@ end
 function sampev.onShowDialog(id, style, title, button1, button2, text)
     if title:find("Vehicle storage") and style == 2 then
         if not vehicles.initialFetch then
-            local playerName = autobind.CurrentPlayer.name
-            if not playerName or playerName == "" then
-                local _, playerId = sampGetPlayerIdByCharHandle(ped)
-                if not playerId then
-                    formattedAddChatMessage("Current player not found!")
-                    return
-                end
-    
-                playerName = sampGetPlayerNickname(playerId)
+            local playerName = getCurrentPlayingPlayer()
+            if not playerName then
+                formattedAddChatMessage("Current playing player not found!")
+                return
             end
 
             -- Ensure the playerName key exists as a table in vehicles
@@ -6033,7 +6069,7 @@ local buttons2 = {
         icon = function()
             return fa.ICON_FA_CAR .. " VStorage"
         end,
-        tooltip = "Open VStorage",
+        tooltip = "Open Vehicle Storage",
         render = function() renderVehicleStorage() end
     }
 }
@@ -6186,8 +6222,20 @@ function(self)
 
     if escapePressed then
         for key, state in pairs(menuStates) do
-            if state[0] then
+            if state[0] and key ~= "Confirm" then
                 state[0] = false
+
+                if key == "Names" then
+                    autobind.AutoVest.names = table.setToList(names)
+                end
+
+                if key == "Skins" then
+                    autobind.AutoVest.skins = table.setToList(family.skins)
+                end
+
+                if key == "VehicleStorage" then
+                    menu[key].dragging[0] = false
+                end
             end
             -- Update previous state to reflect that the menu is now closed
             previousMenuStates[key] = false
@@ -6200,7 +6248,6 @@ function(self)
             -- Check if the menu has just been closed
             if previousMenuStates[key] and not state[0] then
                 if key == "Settings" then
-                    autobind.AutoVest.names = table.setToList(names)
                     saveAllConfigs()
                 end
 
@@ -6217,11 +6264,11 @@ function(self)
                 end
 
                 if key == "Charges" then
-                    --configs.saveConfigWithErrorHandling(Files[key:lower()], autobind[key])
+
                 end
 
                 if key == "Names" then
-                    --configs.saveConfigWithErrorHandling(Files.elements, autobind.Elements)
+                    autobind.AutoVest.names = table.setToList(names)
                 end
 
                 if key == "Skins" then
@@ -6309,7 +6356,7 @@ function(self)
             local buttonWidth = ((child_size2.x - (numColumns - 1) * widthSpacing) / numColumns) - 1
             local buttonHeight = ((child_size2.y - (numRows - 1) * heightSpacing) / numRows) - 6.5
             local buttonSize = imgui.ImVec2(buttonWidth, buttonHeight)
-            
+
             if imgui.BeginChild("##Pages", child_size2, false) then
                 for i, button in ipairs(buttons2) do
                     if button.id == 1 then
@@ -6360,7 +6407,7 @@ function(self)
             imgui.PushFont(fontData.medium.font)
             if imgui.BeginChild("##BottomSettings", child_size_bottom, false) then
                 imgui.SetCursorPos(imgui.ImVec2(0, 2))
-                if imgui.Button(fa.ICON_FA_KEYBOARD .. " Charges") then
+                if imgui.Button(fa.ICON_FA_KEYBOARD .. " Charges [WIP]") then
                     menu.Charges.window[0] = not menu.Charges.window[0]
                 end
                 imgui_funcs.CustomTooltip("Opens charges settings.")
@@ -6392,24 +6439,25 @@ function(self)
     if menu[vsKey].window[0] then
         setupWindowDraggingAndSize(vsKey)
 
-        -- Set window rounding
-        imgui.PushStyleVarFloat(imgui.StyleVar.WindowRounding, 5)
-        imgui.PushStyleVarFloat(imgui.StyleVar.FrameRounding, 5)
-        imgui.PushStyleVarFloat(imgui.StyleVar.WindowBorderSize, 0)
-        imgui.PushStyleVarFloat(imgui.StyleVar.ScrollbarSize, 10)        
+        local bgColor = colors.convertColor(autobind[vsKey].BackgroundColor, true, true, false)
+        local borderColor = colors.convertColor(autobind[vsKey].BorderColor, true, true, false)
+        local borderSize = autobind[vsKey].BorderSize
+        local rounding = autobind[vsKey].Rounding
+
+        imgui.PushStyleColor(imgui.Col.WindowBg, imgui.ImVec4(bgColor.r, bgColor.g, bgColor.b, autobind[vsKey].ShowBackground and bgColor.a or 0))
+        imgui.PushStyleColor(imgui.Col.Border, imgui.ImVec4(borderColor.r, borderColor.g, borderColor.b, autobind[vsKey].ShowBorder and borderColor.a or 0))
+        imgui.PushStyleVarFloat(imgui.StyleVar.WindowBorderSize, borderSize)
+        imgui.PushStyleVarFloat(imgui.StyleVar.WindowRounding, rounding)
+        imgui.PushStyleVarFloat(imgui.StyleVar.FrameRounding, rounding)
+        imgui.PushStyleVarFloat(imgui.StyleVar.ScrollbarSize, 10)  
 
         local vehText = {vehicle = {[0] = "Vehicle:"}, location = {[0] = "Location:"}, status = {[0] = "Status:"}, id = {[0] = "ID:"}}
 
-        local playerName = autobind.CurrentPlayer.name
-        if not playerName or playerName == "" then
-            local _, playerId = sampGetPlayerIdByCharHandle(ped)
-            if not playerId then
-                formattedAddChatMessage("Current player not found!")
-                menu[vsKey].window[0] = false
-                goto skipVehicleStorage
-            end
-
-            playerName = sampGetPlayerNickname(playerId)
+        local playerName = getCurrentPlayingPlayer()
+        if not playerName then
+            formattedAddChatMessage("Current playing player not found!")
+            menu[vsKey].window[0] = false
+            goto skipVehicleStorage
         end
 
         autobind[vsKey].Vehicles[playerName] = autobind[vsKey].Vehicles[playerName] or {}
@@ -6476,6 +6524,7 @@ function(self)
             imgui.PopFont()
         end
         imgui.PopStyleVar(4)
+        imgui.PopStyleColor(2)
         imgui.End()
     end
 
@@ -7029,6 +7078,7 @@ function renderKeybinds()
     local numColumns = 3
     imgui.Columns(numColumns, "##keybinds", false)
     
+    imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 4))
     imgui.PushFont(fontData.medium.font)
     for index, editor in ipairs(keyEditors) do
         keyEditor(editor.label, editor.key, editor.description, function(action, name)
@@ -7048,6 +7098,7 @@ function renderKeybinds()
     end
     
     imgui.PopFont()
+    imgui.PopStyleVar()
     imgui.Columns(1)
     imgui.EndGroup()
 end
@@ -7357,12 +7408,141 @@ function renderVehicleStorage()
     imgui.BeginGroup()
     imgui.PushFont(fontData.medium.font)
 
-    imgui.Text("Vehicle Storage")
+    imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 4))
+
+    -- Enabled
+    if imgui.Checkbox(string.format('Vehicle Storage %s', autobind.VehicleStorage.enable and "Enabled" or "Disabled"), new.bool(autobind.VehicleStorage.enable)) then
+        autobind.VehicleStorage.enable = not autobind.VehicleStorage.enable
+        if not autobind.VehicleStorage.enable then
+            menu.VehicleStorage.window[0] = false
+        end
+    end
+    imgui.SameLine()
+    if imgui.Button("Defaults") then
+        autobind.VehicleStorage = configs.deepCopy(autobind_defaultSettings.VehicleStorage)
+    end
+    imgui.SameLine()
+    if imgui.Button("Reset Vehicle Storage") then
+        resetVehicleStorage()
+    end
+
+    -- Refresh Settings
+    imgui.Text("Menu Settings")
     imgui.Indent()
-    imgui.Text("Hello")
+    if imgui.Checkbox('Show Menu', new.bool(autobind.VehicleStorage.menu)) then
+        autobind.VehicleStorage.menu = not autobind.VehicleStorage.menu
+        if not autobind.VehicleStorage.menu then
+            menu.VehicleStorage.window[0] = false
+        end
+    end
+
+    imgui.SameLine()
+    if imgui.Checkbox('Chat Open', new.bool(autobind.VehicleStorage.chatInput)) then
+        autobind.VehicleStorage.chatInput = not autobind.VehicleStorage.chatInput
+    end
+    imgui.SameLine()
+    if imgui.Checkbox('Chat Text', new.bool(autobind.VehicleStorage.chatInputText)) then
+        autobind.VehicleStorage.chatInputText = not autobind.VehicleStorage.chatInputText
+    end
+    imgui.Unindent()
+
+    -- Border/Padding and Alignment
+    imgui.PushItemWidth(20)
+    imgui.Text("Appearance")
+    imgui.Indent()
+    local border = new.float[1](autobind.VehicleStorage.BorderSize)
+    if imgui.DragFloat('Border Size##Vstorage', border, 1, 1, 5, "%.f") then
+        if border[0] >= 1 and border[0] <= 5 then
+            autobind.VehicleStorage.BorderSize = border[0]
+        end
+    end
+    imgui.PopItemWidth()
+    imgui.SameLine()
+    -- Rounding
+    imgui.PushItemWidth(20)
+    local rounding = new.float[1](autobind.VehicleStorage.Rounding)
+    if imgui.DragFloat('Rounding##Vstorage', rounding, 1, 1, 5, "%.f") then
+        if rounding[0] >= 1 and rounding[0] <= 5 then
+            autobind.VehicleStorage.Rounding = rounding[0]
+        end
+    end
+    imgui.PopItemWidth()
+    --[[imgui.SameLine()
+    imgui.PushItemWidth(35)
+    local padding = new.float[1](autobind.VehicleStorage.Padding.x)
+    if imgui.DragFloat('Padding##Vstorage', padding, 0.1, 1, 10, "%.1f") then
+        if padding[0] >= 1 and padding[0] <= 10 then
+            autobind.VehicleStorage.Padding = {x = padding[0], y = padding[0]}
+        end
+    end
+    imgui.PopItemWidth()]]
+    imgui.SameLine()
+    imgui.PushItemWidth(125)
+    if imgui.BeginCombo("Align##Vstorage", findPivotIndex(autobind.VehicleStorage.Pivot)) then
+        for i = 1, #pivots do
+            local pivot = pivots[i]
+            if imgui.Selectable(pivot.name .. " " .. pivot.icon, comparePivots(autobind.VehicleStorage.Pivot, pivot.value)) then
+                autobind.VehicleStorage.Pivot = pivot.value
+            end
+        end
+        imgui.EndCombo()
+    end
+    imgui.PopItemWidth()
+
+    imgui.Unindent()
+
+    -- Background and Border Color
+    imgui.Text("Colors")
+    imgui.Indent()
+
+    -- Background Color
+    if imgui.Checkbox(string.format('%s##VehicleStorageBackground', autobind.VehicleStorage.ShowBackground and "On" or "Off"), new.bool(autobind.VehicleStorage.ShowBackground)) then
+        autobind.VehicleStorage.ShowBackground = not autobind.VehicleStorage.ShowBackground
+    end
+    imgui.SameLine()
+    local bgClr = colors.convertColor(autobind.VehicleStorage.BackgroundColor, true, true)
+    local bgColor = new.float[4](bgClr.r, bgClr.g, bgClr.b, bgClr.a)
+    if imgui.ColorEdit4('##Background Color Vehicle Storage', bgColor, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel + imgui.ColorEditFlags.AlphaBar) then
+        autobind.VehicleStorage.BackgroundColor = colors.joinARGB(bgColor[3], bgColor[0], bgColor[1], bgColor[2], true)
+    end
+    imgui.SameLine()
+    imgui.Text("Background")
+    imgui.SameLine()
+    -- Background Alpha Slider
+    imgui.PushItemWidth(70)
+    local bgAlpha = new.float[1](bgColor[3] * 100)  -- Convert alpha to percentage
+    if imgui.SliderFloat('##Background Alpha', bgAlpha, 1, 100, "Alpha: %.0f%%") then
+        bgColor[3] = bgAlpha[0] / 100  -- Convert back to 0-1 range
+        autobind.VehicleStorage.BackgroundColor = colors.joinARGB(bgColor[3], bgColor[0], bgColor[1], bgColor[2], true)
+    end
+    imgui.PopItemWidth()
+
+    -- Border Color
+    if imgui.Checkbox(string.format('%s##VehicleStorageBorder', autobind.VehicleStorage.ShowBorder and "On" or "Off"), new.bool(autobind.VehicleStorage.ShowBorder)) then
+        autobind.VehicleStorage.ShowBorder = not autobind.VehicleStorage.ShowBorder
+    end
+    imgui.SameLine()
+    local borderClr = colors.convertColor(autobind.VehicleStorage.BorderColor, true, true)
+    local borderColor = new.float[4](borderClr.r, borderClr.g, borderClr.b, borderClr.a)
+    if imgui.ColorEdit4('##Border Color Vehicle Storage', borderColor, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel + imgui.ColorEditFlags.AlphaBar) then
+        autobind.VehicleStorage.BorderColor = colors.joinARGB(borderColor[3], borderColor[0], borderColor[1], borderColor[2], true)
+    end
+    imgui.SameLine()
+    imgui.Text("Border")
+    imgui.SameLine()
+    -- Border Alpha Slider
+    imgui.PushItemWidth(70)
+    local borderAlpha = new.float[1](borderColor[3] * 100)  -- Convert alpha to percentage
+    if imgui.SliderFloat('##Border Alpha', borderAlpha, 1, 100, "Alpha: %.0f%%") then
+        borderColor[3] = borderAlpha[0] / 100  -- Convert back to 0-1 range
+        autobind.VehicleStorage.BorderColor = colors.joinARGB(borderColor[3], borderColor[0], borderColor[1], borderColor[2], true)
+    end
+    imgui.PopItemWidth()
+
     imgui.Unindent()
 
     imgui.PopFont()
+    imgui.PopStyleVar(1)
     imgui.EndGroup()
 end
 
@@ -7485,84 +7665,67 @@ function renderChargeMenu()
 end
 
 function renderLockerWindow(label, name)
+    setupWindowDraggingAndSize(name)
+
     local pageId = menu[name].pageId
-
-    if #autobind.Keybinds[name .. pageId].Keys == 1 then
-        menu[name].size.y = 250
-    elseif #autobind.Keybinds[name .. pageId].Keys == 2 then
-        menu[name].size.y = 270
-    elseif #autobind.Keybinds[name .. pageId].Keys == 3 then
-        menu[name].size.y = 290
-    end
-
-    setupWindowDraggingAndSize(name, false)
-
-    -- Calculate total price
     local totalPrice = calculateTotalPrice(autobind[name]["Kit" .. pageId], lockers[name].Items)
-
-    -- Define a table to map kitId to key and menu data
     local kits = {}
     for i = 1, autobind[name].maxKits do
         kits[i] = {key = name .. i, menu = autobind[name]["Kit" .. i]}
     end
 
-    -- Locker Window
     if imgui.Begin(name, menu[name].window, menu[name].flags) then
         customTitleBar(name, menu[name].title(label, pageId, totalPrice))
 
-        imgui.SetCursorPos(imgui.ImVec2(7, 35))
-        imgui.BeginChild("##locker", imgui.ImVec2(menu[name].size.x, menu[name].size.y - 35), false)
-        for id, kit in pairs(kits) do
-            if pageId == id then
-                -- Keybind
-                keyEditor("Keybind", kit.key, nil, function(action, index)
-                    local keyCount = #autobind.Keybinds[name .. pageId].Keys
-                    if keyCount >= 1 and keyCount <= 3 then
-                        local sizeY = 250 + (keyCount - 1) * 20
-                        local yOffset = action == "add" and -10 or 10
-                
-                        imgui.SetWindowSizeVec2(imgui.ImVec2(226, sizeY), imgui.Cond.Always)
-                
-                        local x = imgui.GetWindowPos().x
-                        local y = imgui.GetWindowPos().y
-                        imgui.SetWindowPosVec2(imgui.ImVec2(x, y + yOffset), imgui.Cond.Always, menu[name].pivot)
-                    end
-                end)
+        imgui.PushFont(fontData.medium.font)
+        imgui.SetCursorPosX(7)
+        if imgui.BeginChild("##locker"..name, imgui.ImVec2(menu[name].size.x , menu[name].size.y - 35), false) then
+            imgui.SetCursorPosY(4)
 
-                -- Preview Kit
-                imgui.SameLine()
-                imgui.BeginGroup()
-                imgui.PushItemWidth(82)
-                if imgui.BeginCombo("##" .. name .. "_preview", fa.ICON_FA_SHOPPING_CART .. " Kit " .. id) then
-                    for i = 1, autobind[name].maxKits do
-                        if imgui.Selectable(fa.ICON_FA_SHOPPING_CART .. " Kit " .. i .. (i == id and ' [x]' or ''), pageId == i) then
-                            menu[name].pageId = i
+            imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 4))
+            for id, kit in pairs(kits) do
+                if pageId == id then
+                    keyEditor("Keybind", kit.key, nil, function(action, index)
+                        
+                    end)
+
+                    -- Preview Kit
+                    imgui.SameLine(imgui.GetWindowWidth() - 96)
+                    imgui.BeginGroup()
+                    imgui.PushItemWidth(82)
+                    if imgui.BeginCombo("##" .. name .. "_preview", fa.ICON_FA_SHOPPING_CART .. " Kit " .. id) then
+                        for i = 1, autobind[name].maxKits do
+                            if imgui.Selectable(fa.ICON_FA_SHOPPING_CART .. " Kit " .. i .. (i == id and ' [x]' or ''), pageId == i) then
+                                menu[name].pageId = i
+                            end
+                        end
+                        imgui.EndCombo()
+                    end
+                    imgui.PopItemWidth()
+
+                    -- Create new kit
+                    if imgui.Button("Add New Kit", imgui.ImVec2(82, 20)) then
+                        if autobind[name].maxKits < lockers.maxKits then
+                            autobind[name].maxKits = autobind[name].maxKits + 1
+                            autobind[name]["Kit" .. autobind[name].maxKits] = {1, 2, 10, 11}
+
+                            menu[name].pageId = autobind[name].maxKits
+
+                            autobind.Keybinds[name .. autobind[name].maxKits] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
                         end
                     end
-                    imgui.EndCombo()
+                    imgui.EndGroup()
+
+                    local selectionTitle = string.format("Selection: [%d/%d]", #autobind[name]["Kit" .. pageId], lockers[name].maxSelections)
+
+                    -- Create selection menu
+                    createMenu(selectionTitle, lockers[name].Items, kit.menu, lockers[name].ExclusiveGroups, lockers[name].maxSelections, {combineGroups = lockers[name].combineGroups})
                 end
-                imgui.PopItemWidth()
-
-                -- Create new kit
-                if imgui.Button("Add New Kit", imgui.ImVec2(82, 20)) then
-                    if autobind[name].maxKits < lockers.maxKits then
-                        autobind[name].maxKits = autobind[name].maxKits + 1
-                        autobind[name]["Kit" .. autobind[name].maxKits] = {1, 2, 10, 11}
-
-                        menu[name].pageId = autobind[name].maxKits
-
-                        autobind.Keybinds[name .. autobind[name].maxKits] = {Toggle = false, Keys = {VK_MENU, VK_V}, Type = {'KeyDown', 'KeyPressed'}}
-                    end
-                end
-                imgui.EndGroup()
-
-                local selectionTitle = string.format("Selection: [%d/%d]", #autobind[name]["Kit" .. pageId], lockers[name].maxSelections)
-
-                -- Create selection menu
-                createMenu(selectionTitle, lockers[name].Items, kit.menu, lockers[name].ExclusiveGroups, lockers[name].maxSelections, {combineGroups = lockers[name].combineGroups})
             end
+            imgui.PopStyleVar()
         end
         imgui.EndChild()
+        imgui.PopFont()
     end
     imgui.End()
 end
@@ -7661,20 +7824,17 @@ function customTitleBar(key, title)
     imgui.PopStyleColor(1)
 end
 
-function setupWindowDraggingAndSize(label, allowSize)
-    allowSize = allowSize or true
-
-    local newPos, status = imgui_funcs.handleWindowDragging(label, autobind.WindowPos[label], menu[label].size, menu[label].pivot, menu[label].dragging[0])
-    if status then
+function setupWindowDraggingAndSize(label)
+    local Pivot = menu[label].pivot and menu[label].pivot or autobind[label].Pivot
+    local newPos, isDragging = imgui_funcs.handleWindowDragging(label, autobind.WindowPos[label], menu[label].size, Pivot, menu[label].dragging[0])
+    if isDragging then
         autobind.WindowPos[label] = newPos
-        imgui.SetNextWindowPos(autobind.WindowPos[label], imgui.Cond.Always, menu[label].pivot)
+        imgui.SetNextWindowPos(autobind.WindowPos[label], imgui.Cond.Always, Pivot)
     else
-        imgui.SetNextWindowPos(autobind.WindowPos[label], imgui.Cond.FirstUseEver, menu[label].pivot)
+        imgui.SetNextWindowPos(autobind.WindowPos[label], imgui.Cond.Always, Pivot)
     end
 
-    if allowSize then
-        imgui.SetNextWindowSize(menu[label].size, imgui.Cond.FirstUseEver)
-    end
+    imgui.SetNextWindowSize(menu[label].size, imgui.Cond.Always)
 end
 
 function drawSkinImages(skins, columns, imageSize, spacing, startPos)
@@ -7929,11 +8089,10 @@ function keyEditor(title, index, description, callback)
 
     -- Adjustable parameters
     local padding = imgui.ImVec2(8, 6)  -- Padding around buttons
-    local comboWidth = 70  -- Width of the combo box
+    local comboWidth = 50  -- Width of the combo box
     local verticalSpacing = 2  -- Vertical spacing after the last key entry
 
-    -- Load the font with the desired size
-    imgui.PushFont(fontData.medium.font)
+    --imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(8, 4))
 
     -- Begin Group
     imgui.BeginGroup()
@@ -7948,7 +8107,7 @@ function keyEditor(title, index, description, callback)
     end
     imgui_funcs.CustomTooltip(string.format("Toggle this key binding. {%06x}(%s)", checkBoxColor, checkBoxText))
 
-    imgui.SameLine()
+    imgui.SameLine(42)
 
     -- Title and description
     imgui.AlignTextToFramePadding()
@@ -7995,9 +8154,9 @@ function keyEditor(title, index, description, callback)
             end
             
             imgui.PushItemWidth(comboWidth)
-            if imgui.BeginCombo("##KeyType"..index..i, currentType:gsub("Key", "")) then
+            if imgui.BeginCombo("##KeyType"..index..i, currentType:gsub("KeyPressed", "Tap"):gsub("KeyDown", "Hold")) then
                 for _, keyType in ipairs(keyTypes) do
-                    if imgui.Selectable(keyType:gsub("Key", ""), currentType == keyType) then
+                    if imgui.Selectable(keyType:gsub("KeyPressed", "Tap"):gsub("KeyDown", "Hold"), currentType == keyType) then
                         if type(keyBinds.Type) ~= "table" then
                             keyBinds.Type = {keyBinds.Type or "KeyDown"}
                         end
@@ -8028,8 +8187,8 @@ function keyEditor(title, index, description, callback)
         else
             -- Empty slot with "+" button for adding a new key
             imgui.AlignTextToFramePadding()
-            local addButtonText = "+"
-            local addButtonSize = imgui_funcs.calcTextSize(addButtonText) + padding
+            local addButtonText = string.format("Add Key #%d", i)
+            local addButtonSize = imgui_funcs.calcTextSize(addButtonText) + padding + imgui.ImVec2(35, 0)
             
             if imgui.Button(addButtonText .. "##add" .. index .. i, addButtonSize) then
                 table.insert(keyBinds.Keys, 0)
@@ -8058,7 +8217,8 @@ function keyEditor(title, index, description, callback)
     imgui.Dummy(imgui.ImVec2(0, verticalSpacing))
 
     imgui.EndGroup()
-    imgui.PopFont()
+
+    --imgui.PopStyleVar()
 end
 
 function updateCheck()
