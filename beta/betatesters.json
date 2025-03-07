@@ -34,5 +34,11 @@
         "bugFinds": 1,
         "hoursWasted": 0.355,
         "discord": "woo_0_9_2"
+    },
+    {
+        "nickName": "Rocco",
+        "bugFinds": 3,
+        "hoursWasted": 0.655,
+        "discord": "hulpofficier"
     }
 ]
