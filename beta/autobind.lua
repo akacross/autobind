@@ -805,6 +805,7 @@ local accepter = {
 	received = false,
 	playerName = "",
 	playerId = -1,
+    distance = 0,
     price = 0,
     thread = nil
 }
@@ -1657,7 +1658,7 @@ function checkAndSendVest(skipArmorCheck)
     end
 
     if not bodyguard.received then
-        for _, player in ipairs(getVisiblePlayers(7, skipArmorCheck and "all" or "armor", false)) do
+        for _, player in ipairs(getVisiblePlayers(7, skipArmorCheck and "all" or "armor")) do
             if checkAnimationCondition(player.playerId) and vestModeConditions(player.playerId, player.playerName, player.playerColor, player.skinId) then
                 debugMessage(string.format("Player: %s (ID: %d) - Color: 0x%X - Skin: %d", player.playerName, player.playerId, player.playerColor, player.skinId), true, true)
                 sampSendChat(autobind.AutoVest.donor and '/guardnear' or string.format("/guard %d %d", player.playerId, autobind.AutoVest.price))
@@ -1698,9 +1699,9 @@ function checkAndAcceptVest(allowAutoAccept)
 	end
 
 	if getCharArmour(ped) < 49 and sampGetPlayerAnimationId(ped) ~= 746 then
-		for _, player in ipairs(getVisiblePlayers(5, "all", false)) do
+		for _, player in ipairs(getVisiblePlayers(5, "all")) do
 			if allowAutoAccept and accepter.received then
-				if sampGetPlayerNickname(player.playerId) == accepter.playerName then
+				if player.playerName == accepter.playerName then
 					sampSendChat("/accept bodyguard")
 					timers.Accept.last = currentTime
 					return true
@@ -1708,12 +1709,21 @@ function checkAndAcceptVest(allowAutoAccept)
 			end
 		end
 
-        local message
+        local message = "No one has offered you bodyguard."
+        local sameZone = false
         if accepter.received and accepter.playerName and accepter.playerId then
-            message = string.format("You are not close enough to %s (ID: %d).", accepter.playerName:gsub("_", " "), accepter.playerId)
+            for _, player in ipairs(getVisiblePlayers(40.0, "all")) do
+                if player.playerName == accepter.playerName then
+                    accepter.distance = player.distance
+                    sameZone = true
+                    break
+                end
+            end
+            local zoneMessage = sameZone and string.format(" - Dist: %d.", accepter.distance) or ""
+            message = string.format("You are not close enough to %s (%d).%s", accepter.playerName:gsub("_", " "), accepter.playerId, zoneMessage)
         end
 
-        return false, message or "No one has offered you bodyguard."
+        return false, message
 	else
 		return false, "You are already have a vest."
 	end
@@ -2001,7 +2011,7 @@ local keyFunctions = {
         end
 
         local targeting = getCharPlayerIsTargeting(h)
-        for _, player in ipairs(getVisiblePlayers(5, "all", false)) do
+        for _, player in ipairs(getVisiblePlayers(5, "all")) do
             if (isButtonPressed(h, gkeys.player.LOCKTARGET) and autobind.Settings.mustAimToFrisk) or not autobind.Settings.mustAimToFrisk then
                 if (targeting and autobind.Settings.mustTargetToFrisk) or not autobind.Settings.mustTargetToFrisk then
                     sampSendChat(string.format("/frisk %d", player.playerId))
@@ -2785,7 +2795,7 @@ local clientCommands = {
         id = 2,
         func = function(cmd)
             local found = false
-            for _, player in ipairs(getVisiblePlayers(5, "car", false)) do
+            for _, player in ipairs(getVisiblePlayers(5, "car")) do
                 sampSendChat(string.format("/repair %d 1", player.playerId))
                 found = true
                 break
@@ -5183,7 +5193,7 @@ local messageHandlers = {
             end
 
             if autobind.Faction.showCadesLocal then
-                for _, player in ipairs(getVisiblePlayers(150.0, "all", false)) do
+                for _, player in ipairs(getVisiblePlayers(150.0, "all")) do
                     if player.playerName == name:gsub(" ", "_") then
                         sampAddChatMessage(string.format("HQ: A cade has been deployed by %s at %s (Cade: %s)", name, location, cade), clr_TEAM_BLUE_COLOR)
                         sampAddChatMessage("You can remove a cade by typing /destroycade.", clr_YELLOW)
@@ -5210,7 +5220,7 @@ local messageHandlers = {
             end
 
             if autobind.Faction.showCadesLocal then
-                for _, player in ipairs(getVisiblePlayers(150.0, "all", false)) do
+                for _, player in ipairs(getVisiblePlayers(150.0, "all")) do
                     if player.playerName == name:gsub(" ", "_") then
                         sampAddChatMessage(string.format("HQ: A cade has been destroyed by %s at %s", name, location), clr_TEAM_BLUE_COLOR)
                         debugMessage(string.format("Cade destroyed by %s (Dist: %d)", name, player.distance), true, true)
@@ -5239,7 +5249,7 @@ local messageHandlers = {
             end
 
             if autobind.Faction.showSpikesLocal then
-                for _, player in ipairs(getVisiblePlayers(150.0, "all", false)) do
+                for _, player in ipairs(getVisiblePlayers(150.0, "all")) do
                     if player.playerName == name:gsub(" ", "_") then
                         sampAddChatMessage(string.format("HQ: A spike has been %s by %s at %s", type, name, location), clr_TEAM_BLUE_COLOR)
                         if type == "deployed" then
@@ -9031,13 +9041,13 @@ function getKeybindKeys(bind)
     return table.concat(keys, " + ")
 end
 
-function getVisiblePlayers(maxDist, type, includeLocalPlayer)
+function getVisiblePlayers(maxDist, type)
     local visiblePlayers = {}
     local myX, myY, myZ = getCharCoordinates(ped)
 
     for _, peds in pairs(getAllChars()) do
         -- Skip the local player
-        if peds == ped and not includeLocalPlayer then
+        if peds == ped then
             goto continue
         end
 
