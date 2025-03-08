@@ -25,8 +25,8 @@
     },
     {
         "nickName": "Dwayne",
-        "bugFinds": 2,
-        "hoursWasted": 0.985,
+        "bugFinds": 3,
+        "hoursWasted": 1.01,
         "discord": "dickshaft"
     },
     {
@@ -40,5 +40,11 @@
         "bugFinds": 3,
         "hoursWasted": 0.655,
         "discord": "hulpofficier"
+    },
+    {
+        "nickName": "Athos",
+        "bugFinds": 1,
+        "hoursWasted": 0.325,
+        "discord": "athos3763"
     }
 ]
