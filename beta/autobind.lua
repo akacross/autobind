@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.25a5")
+script_version("1.8.25a6")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -328,7 +328,9 @@ for _, pointName in ipairs({
     "Crack Lab",
     "Materials Factory 2",
     "Auto Export Company",
-    "Materials Pickup 3"
+    "Materials Pickup 3",
+    "Sprunk Factory",
+    "Materials Factory 3"
 }) do
     locationTypes[pointName] = "point"
 end
@@ -363,7 +365,11 @@ for _, turfName in ipairs({
     "Verona Beach",
     "Richman",
     "Rodeo",
-    "Santa Maria Beach"
+    "Santa Maria Beach",
+    "Dillimore",
+    "Blueberry",
+    "Montgomery",
+    "Palomino Creek"
 }) do
     locationTypes[turfName] = "turf"
 end
@@ -531,25 +537,17 @@ local chargeList = nil
 local changelog = nil
 local betatesters = nil
 
-local resX, resY = getScreenResolution()
-
 local isLoadingObjects = false
 local cursorActive = false
 local chatInputActive = false
 local isGameFocused = true
 local isPlayerAFK = false
+local isPlayerSpectating = false
+local hasPlayerLoaded = false
+local functionsLoop_Callback = false
+local resX, resY = getScreenResolution()
 
-local specData = {
-	id = -1,
-    name = "",
-	state = false
-}
-
-local funcsLoop = {
-    callbackCalled = false
-}
-
-local autobind_defaultSettings = {
+local autobind_defaults = {
 	Settings = {
         enableDebugMessages = false,
         checkForUpdates = true,
@@ -769,11 +767,12 @@ local autobind_defaultSettings = {
         Reconnect = {Toggle = true, Keys = {VK_SHIFT, VK_0}, Type = {'KeyDown', 'KeyPressed'}},
         UsePot = {Toggle = true, Keys = {VK_F2}, Type = {'KeyPressed'}},
         UseCrack = {Toggle = true, Keys = {VK_F3}, Type = {'KeyPressed'}},
-        ReloadWeapon = {Toggle = false, Keys = {VK_R}, Type = {'KeyPressed'}}
+        ReloadWeapon = {Toggle = false, Keys = {VK_R}, Type = {'KeyPressed'}},
+        FirstAid = {Toggle = true, Keys = {VK_F1}, Type = {'KeyPressed'}}
     }
 }
 
-local autobind = configs.deepCopy(autobind_defaultSettings)
+local autobind = configs.deepCopy(autobind_defaults)
 
 -- Horizon Server Health
 local hzrpHealth = 5000000
@@ -1287,7 +1286,8 @@ local keyEditors = {
     {label = "Sprint-Bind", key = "SprintBind", description = "Makes you sprint faster by holding the bind key while sprinting. (This is only the toggle)"},
     {label = "Frisk", key = "Frisk", description = "Frisks a player. (Options are in Autobind Tab)"},
     {label = "Take-Pills", key = "TakePills", description = "Types /takepills."},
-    {label = "Reload Weapon", key = "ReloadWeapon", description = "Reloads your weapon."}
+    {label = "Reload Weapon", key = "ReloadWeapon", description = "Reloads your weapon."},
+    {label = "First Aid", key = "FirstAid", description = "Types /faid."}
 }
 
 local ignoreKeysMap = {
@@ -1320,16 +1320,18 @@ for _, section in pairs(sections) do
     Files[name] = Paths.settings .. name .. '.json'
 end
 
+local hasConfigLoaded = false
 function loadAllConfigs()
     for _, section in ipairs(sections) do
         local ignoreKeys = ignoreKeysMap[section] or {}
-        local success, config, err = configs.handleConfigFile(Files[section:lower()], autobind_defaultSettings[section], autobind[section], ignoreKeys)
+        local success, config, err = configs.handleConfigFile(Files[section:lower()], autobind_defaults[section], autobind[section], ignoreKeys)
         if not success then
             print("Failed to handle config file for " .. section .. ": " .. err)
-            return
         end
         autobind[section] = configs.deepCopy(config)
     end
+
+    hasConfigLoaded = true
 end
 
 function saveAllConfigs()
@@ -1470,20 +1472,6 @@ function initializeComponents()
     menu.Initialized[0] = true
 end
 
-function debugMessage(message, showChat, showPrint)
-    if autobind.Settings.enableDebugMessages then
-        if showChat then
-            formattedAddChatMessage(message)
-        end
-
-        if showPrint then
-            print(message)
-        end
-    end
-end
-
-local hasPlayerLoaded = false
-
 function main()
 	if not isSampLoaded() or not isSampfuncsLoaded() then return end
 
@@ -1494,29 +1482,14 @@ function main()
 
 	loadAllConfigs()
 
-    while not isSampAvailable() do wait(100) end
+    while not hasConfigLoaded do wait(500) end
+
+    while not isSampAvailable() do wait(500) end
 
     -- Create Chat Commands and Fonts
     registerAutobindCommands()
     registerClientCommands()
     createFonts()
-
-    sampRegisterChatCommand("checkafk", function()
-        formattedAddChatMessage(string.format("You were afk for %0.2f seconds.", PausedLength))
-    end)
-
-    sampRegisterChatCommand("spectest", function()
-        if specData.id ~= -1 and specData.name ~= "" and specData.state then
-            formattedAddChatMessage(string.format("Spectating %s (ID: %d)", specData.name, specData.id))
-        else
-            formattedAddChatMessage("Not spectating anyone.")
-        end
-    end)
-
-    sampRegisterChatCommand("test", function()
-        menu.Confirm.update[0] = true
-        menu.Confirm.window[0] = true
-    end)
     
     while true do wait(0)
         if sampGetGamestate() ~= 3 then
@@ -1526,8 +1499,6 @@ function main()
                 clearWantedList()
 
                 autobind.CurrentPlayer.welcomeMessage = false
-                print("Player has disconnected")
-
                 hasPlayerLoaded = true
             end
         end
@@ -1535,7 +1506,6 @@ function main()
         if sampGetGamestate() == 3 and (isCharOnFoot(ped) or isCharInWater(ped) or isCharInAnyCar(ped)) then
             if hasPlayerLoaded then
                 hasPlayerLoaded = false
-                print("Player is on foot or in water and in game")
             end
         end
 
@@ -1795,7 +1765,7 @@ end
 function resetLockerProcessing(name, locations)
     if lockers[name].isProcessing and not isPlayerInLocation(locations) then
         lockers[name].isProcessing = false
-        formattedAddChatMessage(string.format("You left the %s area while getting items. Please retrieve items again.", lockers[name].name:lower()))
+        formattedAddChatMessage(string.format("You left the %s area while getting items. You can retrieve items again.", lockers[name].name:lower()))
 
         if lockers[name].thread then
             lockers[name].thread:terminate()
@@ -1809,6 +1779,12 @@ function resetLockerProcessing(name, locations)
 end
 
 function handleLocker(kitNumber, name, label, command)
+    if name == "FactionLocker" then
+        if autobind.Settings.mode ~= "Faction" then
+           return false
+        end
+    end
+
     if lockers[name].isBindActive then
         return false
     end
@@ -1938,12 +1914,12 @@ function handleLocker(kitNumber, name, label, command)
             formattedAddChatMessage(string.format("Skipped items: {%06x}%s.", clr_WHITE, table.concat(skippedItems, ", ")), clr_REALRED)
         end
 
+        wait(500)
+
         -- Reset processing and locker
         lockers[name].isProcessing = false
         lockers[name].isBindActive = false
         resetLocker(name)
-
-        wait(1500)
 
         -- Verify items are actually in the player's possession now
         local notObtained = {}
@@ -2076,6 +2052,9 @@ local keyFunctions = {
     end,
     ReloadWeapon = function()
         reloadWeapon()
+    end,
+    FirstAid = function()
+        sampSendChat("/faid")
     end
 }
 
@@ -2307,12 +2286,18 @@ local afkKeys = {
 
 local initialAFKStart = true
 
+local function setAFKInactive(time)
+    isPlayerAFK = false
+    timers.AFK.last = time
+    timers.AFK.sentTime = time
+end
+
 function createAFKCheck()
     local currentTime = os.clock()
 
     -- Check if the initial AFK start condition is true
     if initialAFKStart then
-        setTimer(45.0, timers.AFK)  -- Reset the timer for the next AFK check
+        setTimer(timers.AFK.timer, timers.AFK)  -- Reset the timer for the next AFK check
         initialAFKStart = false
         isPlayerAFK = false
         goto skipAFKCheck
@@ -2330,15 +2315,20 @@ function createAFKCheck()
         goto skipAFKCheck
     end
 
+    if chatInputActive then
+        if currentTime - timers.AFK.sentTime >= timers.AFK.timeOut then
+            setAFKInactive(currentTime)
+            goto skipAFKCheck
+        end
+    end
+
     -- Check if the player is in a moving vehicle and only reset if enough time has passed
     if isCharInAnyCar(ped) then
         local vehid = storeCarCharIsInNoSave(ped)
         if getCarSpeed(vehid) > 1.0 then
             -- Only reset if the timeout has passed since the last reset
             if currentTime - timers.AFK.sentTime >= timers.AFK.timeOut then
-                isPlayerAFK = false
-                timers.AFK.last = currentTime
-                timers.AFK.sentTime = currentTime
+                setAFKInactive(currentTime)
                 goto skipAFKCheck
             end
         end
@@ -2348,9 +2338,7 @@ function createAFKCheck()
     for _, key in ipairs(afkKeys) do
         if isButtonPressed(h, key) then
             if currentTime - timers.AFK.sentTime >= timers.AFK.timeOut then
-                isPlayerAFK = false
-                timers.AFK.last = currentTime
-                timers.AFK.sentTime = currentTime
+                setAFKInactive(currentTime)
                 goto skipAFKCheck
             end
         end
@@ -2493,8 +2481,7 @@ function createWantedCommand()
             goto skipWantedTimer
         end
 
-        if (isPlayerAFK or not isGameFocused) and not specData.state then
-            print("Skipping wanted command due to AFK or not game focused or not spectating")
+        if (isPlayerAFK or not isGameFocused) and not isPlayerSpectating then
             goto skipWantedTimer
         end
 
@@ -2642,7 +2629,7 @@ local functionsToRun = {
         id = 11,
         name = "WantedCommand",
         func = createWantedCommand,
-        interval = 0.1,
+        interval = 0.3,
         lastRun = os.clock(),
         enabled = true,
         status = "idle",
@@ -2684,7 +2671,7 @@ function functionsLoop(onFunctionsStatus)
         end
     end
 
-    if onFunctionsStatus and not funcsLoop.callbackCalled then
+    if onFunctionsStatus and not functionsLoop_Callback then
         local success = {}
         for _, item in ipairs(functionsToRun) do
             if item.status == "running" or item.status == "idle" or item.status == "restarted" then
@@ -2694,7 +2681,7 @@ function functionsLoop(onFunctionsStatus)
             end
         end
         onFunctionsStatus(success)
-        funcsLoop.callbackCalled = true
+        functionsLoop_Callback = true
     end
 
     ::skipFunctionsLoop::
@@ -2829,13 +2816,7 @@ local clientCommands = {
         id = 5,
         func = function(cmd, params)
             if not autobind.Settings.autoFind then
-                local result, playerid, name = findPlayer(params, false)
-                if not result then
-                    sampAddChatMessage("Invalid player specified.", clr_WHITE)
-                    return
-                end
-
-                sampSendChat(string.format("/find %d", playerid))
+                sampSendChat("/find " .. params)
                 return
             end
 
@@ -3010,33 +2991,35 @@ local clientCommands = {
                 return
             end
 
-            local parsedIndex = tonumber(params)
-            if parsedIndex then
-                -- Validate input range
-                if parsedIndex < 1 or parsedIndex > 20 then
-                    formattedAddChatMessage("Please pick a number between 1 and 20!")
+            if params ~= "inf" then
+                local parsedIndex = tonumber(params)
+                if parsedIndex then
+                    -- Validate input range
+                    if parsedIndex < 1 or parsedIndex > 20 then
+                        formattedAddChatMessage("Please pick a number between 1 and 20!")
+                        return
+                    end
+        
+                    -- Convert user-friendly index to the internal (server) index
+                    local serverIndex = parsedIndex - 1
+        
+                    -- Check if that index is in the player's storage
+                    local foundNumeric = false
+                    for _, vehicleData in ipairs(vehsForPlayer) do
+                        if vehicleData.id == serverIndex then
+                            foundNumeric = true
+                            vehicles.spawning = true
+                            vehicles.currentIndex = serverIndex
+                            sampSendChat("/vst")
+                            break
+                        end
+                    end
+        
+                    if not foundNumeric then
+                        formattedAddChatMessage("No vehicle found at that slot or invalid slot used!")
+                    end
                     return
                 end
-    
-                -- Convert user-friendly index to the internal (server) index
-                local serverIndex = parsedIndex - 1
-    
-                -- Check if that index is in the player's storage
-                local foundNumeric = false
-                for _, vehicleData in ipairs(vehsForPlayer) do
-                    if vehicleData.id == serverIndex then
-                        foundNumeric = true
-                        vehicles.spawning = true
-                        vehicles.currentIndex = serverIndex
-                        sampSendChat("/vst")
-                        break
-                    end
-                end
-    
-                if not foundNumeric then
-                    formattedAddChatMessage("No vehicle found at that slot or invalid slot used!")
-                end
-                return
             end
 
             local nameMatches = findVehiclesByName(vehsForPlayer, params)
@@ -3198,7 +3181,7 @@ local clientCommands = {
                 if autobind.TimeAndWeather.modifyWeather then
                     setWeather(autobind.TimeAndWeather.weather)
                 else
-                    setWeather(autobind.TimeAndWeather.serverWeather or autobind_defaultSettings.TimeAndWeather.serverWeather)
+                    setWeather(autobind.TimeAndWeather.serverWeather or autobind_defaults.TimeAndWeather.serverWeather)
                 end
             elseif params:match("^list$") then
                 local messages = ""
@@ -3444,7 +3427,7 @@ local autobindCommands = {
     ["help"] = function(newParams, cmd, alias)
         if #newParams < 1 then
             formattedAddChatMessage(string.format("%s | Type '/%s %s desc' to display the description of all commands.", cmd:upperFirst(), alias, cmd), clr_GREY)
-            formattedAddChatMessage(string.format("/%s {%06x}cmds, showkeys, getskin, status, funcs, reload", alias, clr_GREY))
+            formattedAddChatMessage(string.format("/%s {%06x}cmds, showkeys, getskin, status, funcs, reload, debug", alias, clr_GREY))
             formattedAddChatMessage(string.format("/%s {%06x}names, charges, skins, bms, locker", alias, clr_GREY))
             formattedAddChatMessage(string.format("/%s {%06x}changelog, betatesters", alias, clr_GREY))
         elseif newParams:match("^desc$") then
@@ -3462,6 +3445,7 @@ local autobindCommands = {
             formattedAddChatMessage(string.format("/%s locker {%06x}- Opens the faction locker menu.", alias, clr_GREY))
             formattedAddChatMessage(string.format("/%s changelog {%06x}- Displays the changelog.", alias, clr_GREY))
             formattedAddChatMessage(string.format("/%s betatesters {%06x}- Displays the betatesters.", alias, clr_GREY))
+            formattedAddChatMessage(string.format("/%s debug {%06x}- Displays debug messages.", alias, clr_GREY))
         else
             formattedAddChatMessage(string.format("USAGE: '/%s %s desc' for more information.", alias, cmd))
         end
@@ -3796,11 +3780,33 @@ local autobindCommands = {
             return
         end
 
-        formattedAddChatMessage("__________________ Betatesters _________________")
+        local testers = ""
         for _, tester in ipairs(betatesters) do
-            formattedAddChatMessage(string.format("%s | Bugs Found: %s | Hours Wasted: %s | Discord: %s.", tester.nickName, tester.bugFinds, convertDecimalToHours(tester.hoursWasted), tester.discord))
+            testers = testers .. string.format(
+                "{%06x}%s{%06x} | Discord: {%06x}%s{%06x} | Bugs Found: {%06x}%s{%06x} | Hours Wasted: {%06x}%s{%06x}.\n", 
+                clr_LIGHTBLUE,
+                tester.nickName, 
+                clr_WHITE,
+                clr_YELLOW,
+                tester.discord, 
+                clr_WHITE,
+                clr_GREEN,
+                tester.bugFinds,
+                clr_WHITE,
+                clr_GREY,
+                convertDecimalToHours(tester.hoursWasted), 
+                clr_WHITE
+            )
         end
-        formattedAddChatMessage("_______________________________________________")
+
+        sampShowDialog(
+            4526, 
+            string.format("[%s] Beta Testers", shortName:upper()), 
+            testers, 
+            "Close", 
+            "", 
+            0
+        )
     end,
     ["changelog"] = function()
         menu.Changelog.window[0] = not menu.Changelog.window[0]
@@ -5323,14 +5329,28 @@ local messageHandlers = {
             end
         end
     },
-    {   -- (.+) is attempting to take over of the (.+) for (.+), they'll own it in 10 minutes.
+    {   -- Turf or Point Available
+        pattern = "^(.-)%s*has become available for capture%.$",
+        color = clrRGBA["YELLOW"],
+        action = function(location)
+            local locationType = locationTypes[location]
+            if locationType then
+                if locationType == "turf" then
+                    debugMessage(string.format("A turf has become available for capture. [%s]", location), true, true)
+                elseif locationType == "point" then
+                    debugMessage(string.format("A point has become available for capture. [%s]", location), true, true)
+                end
+            end
+        end
+    },
+    {   -- Point Start (Player Name, Location, Capture By)
         pattern = "^(.-)%s*is attempting to take over of the%s*(.-)%s*for%s*(.-)%, they'll own it in 10 minutes%.$",
         color = clrRGBA["YELLOW"],
         action = function(name, location, captureBy)
             debugMessage("Point Started", true, true)
         end
     },
-    {   -- (.+) is attempting to take control of (.+) for (.+) %(15 minutes remaining%).
+    {   -- Turf Start (Player Name, Location, Capture By)
         pattern = "^(.-)%s*is attempting to take control of%s*(.-)%s*for%s*(.-)%s*%(15 minutes remaining%)%.$",
         color = clrRGBA["YELLOW"],
         action = function(name, location, captureBy)
@@ -5341,18 +5361,18 @@ local messageHandlers = {
             end
         end
     },
-    {   -- Player Name has taken control of (the) Location for (Law Enforcement, Family Name).
+    {   -- Turf or Point Ended (Player Name, Location, Capture By)
         pattern = "^(.-)%s*has taken control of%s*(.-)%s*for%s*(.-)%.$",
         color = clrRGBA["YELLOW"],
-        action = function(name, location, captureBy)
+        action = function(name, location, capturedBy)
             location = location:gsub("the ", "")
             local locationType = locationTypes[location]
             if locationType then
                 if locationType == "turf" then
-                    if captureBy:match("^Law Enforcement$") then
+                    if capturedBy:match("^Law Enforcement$") then
                         debugMessage("Turf Ended by LEO", true, true)
                     else
-                        debugMessage("Turf Ended by " .. captureBy, true, true)
+                        debugMessage("Turf Ended by " .. capturedBy, true, true)
                     end
                     
                     if autoCapture and autobind.Settings.mode == "Family" and 
@@ -5373,6 +5393,55 @@ local messageHandlers = {
                 debugMessage("Unknown location type: " .. location, true, true)
                 return
             end
+        end
+    },
+    {   -- Turf or Point Info (Location, Capper, Capture By, Time Left)
+        pattern = "^%*%s*(.-)%s*%|%s*Capper:%s*(.-)%s*%|%s*([By:|Family:].-)%s*%|%s*Time left:%s*([Less than%s*].-)%s*minutes?$",
+        color = clrRGBA["WHITE"],
+        action = function(location, capper, capturedBy, time)
+            capturedBy = capturedBy:gsub("By: ", ""):gsub("Family: ", "")
+            time = time:gsub("Less than ", "")
+
+            local locationType = locationTypes[location]
+            if locationType then
+                if locationType == "turf" then
+                    if capturedBy:match("^Law Enforcement$") then
+                        debugMessage("Turf is being captured by LEO", true, true)
+                        debugMessage("Time left: " .. time .. " minutes", true, true)
+                    else
+                        debugMessage("Turf is being captured by " .. capturedBy, true, true)
+                        debugMessage("Time left: " .. time .. " minutes", true, true)
+                    end
+                elseif locationType == "point" then
+                    debugMessage("Point is being captured by " .. capturedBy, true, true)
+                    debugMessage("Time left: " .. time .. " minutes", true, true)
+                end
+            end
+        end
+    },
+    {   -- Turf Info:
+        pattern = "^([Turf|Point].-) Info:%s*",
+        color = clrRGBA["NEWS"],
+        action = function(type)
+            if type == "Turf" then
+                debugMessage("Turf Info", true, true)
+            elseif type == "Point" then
+                debugMessage("Point Info", true, true)
+            end
+        end
+    },
+    {   -- Nobody is attempting to capture any turfs or no turfs are available for capture yet.
+        pattern = "^Nobody is attempting to capture any turfs or no turfs are available for capture yet%.$",
+        color = clrRGBA["GRAD2"],
+        action = function()
+            debugMessage("No turf info available", true, true)
+        end
+    },
+    {   -- No family has capped the point or the point is not ready to be capped.
+        pattern = "^No family has capped the point or the point is not ready to be capped%.$",
+        color = clrRGBA["GRAD2"],
+        action = function()
+            debugMessage("No point info available", true, true)
         end
     },
     {   -- Disable Blank Messages
@@ -5401,23 +5470,8 @@ function listSuspectCharges(suspect)
     end
 end
 
---[[function listOfficerCharges(officer)
-    if not autobind.ReporterIndex or not autobind.ReporterIndex[officer] then
-        formattedAddChatMessage(string.format("No charges filed by %s", officer))
-        return
-    end
-    
-    local reports = autobind.ReporterIndex[officer]
-    formattedAddChatMessage(string.format("%s has filed %d total charges:", officer, #reports))
-    
-    for i, reportData in ipairs(reports) do
-        formattedAddChatMessage(string.format("  %d. Suspect: %s | Crime: %s | Date: %s", 
-            i, reportData.suspect, reportData.crime, os.date("%Y-%m-%d %H:%M:%S", reportData.timestamp) or "Unknown"))
-    end
-end]]
-
 function sampev.onServerMessage(color, text)
-    if not isGameFocused then
+    if not isGameFocused or not hasConfigLoaded then
         goto skipServerMessage
     end
 
@@ -5438,6 +5492,10 @@ function sampev.onServerMessage(color, text)
 end
 
 function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipHealTimer
+    end
+
 	if damage < 1 then
 		goto skipHealTimer
 	end
@@ -5464,19 +5522,27 @@ function sampev.onSendTakeDamage(senderID, damage, weapon, Bodypart)
     ::skipHealTimer::
 end
 
+function sampev.onSetSpawnInfo(team, skin, _unused, position, rotation, weapons, ammo)
+    if team == 254 and skin == 299 and _unused == 184 then
+        if math.abs(position.x - 1551.8800048828) < 0.1 and math.abs(position.y - -1354.3000488281) < 0.1 and math.abs(position.z - 27.979999542236) < 0.1 then
+            debugMessage("onSetSpawnInfo prevented spawn", true, true)
+            return false
+        end
+    end
+end
+
 function sampev.onSendCommand(command)
     if checkMuted() then
-        print("Muted, skipping command", command)
+        debugMessage(string.format("Muted, skipping command: %s", command), true, true)
         return false
     end
 
     if isLoadingObjects then
-        print("Objects are loading, skipping command", command)
+        debugMessage(string.format("Objects are loading, skipping command: %s", command), true, true)
         return false
     end
 
-    if isPlayerAFK then
-        formattedAddChatMessage("You are currently AFK, please move around to use commands.")
+    if isPlayerAFK and not isPlayerSpectating then
         debugMessage(string.format("Skipping '%s' due to player being AFK", command), true, true)
         return false
     end
@@ -5484,34 +5550,27 @@ function sampev.onSendCommand(command)
     if command:match("^/wanted$") then
         local currentTime = os.clock()
         if currentTime - lastKeybindTime < keyBindDelay then
-            print("preventing wanted command, keybind delay")
+            debugMessage("preventing wanted command, keybind delay", true, true)
             return false
         end
     end
 
     if autoCapture and command:match("^/reports$") then
-        print("Auto-capture is enabled skipping reports command")
+        debugMessage("Auto-capture is enabled skipping reports command", true, true)
         return false
-    end
-
-    local id = command:match("^/spec%s*(.-)$")
-    if id then
-        local res, id, name = findPlayer(id)
-        if res then
-            specData.id = id
-            specData.name = name
-        end
     end
 end
 
 function sampev.onTogglePlayerSpectating(state)
-    specData.id = state and specData.id or -1
-    specData.name = state and specData.name or ""
-    specData.state = state
+    isPlayerSpectating = state
 end
 
 -- Dynamically update the locations of the black market and faction locker
 function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedPlayerId, attachedVehicleId, text)
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipBlackMarket
+    end
+
     if text:match("Type /blackmarket to purchase items") or text:match("Type /dlocker to purchase items") then
         autobind.BlackMarket.Locations = autobind.BlackMarket.Locations or {}
         
@@ -5533,9 +5592,23 @@ function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedP
             radius = 3.5
         }
     end
+
+    ::skipBlackMarket::
 end
 
 function sampev.onShowDialog(id, style, title, button1, button2, text)
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipDialog
+    end
+
+    if title:find("Horizon Roleplay Points") then
+        --print(text)
+    end
+
+    if title:find("Horizon Roleplay Turfs") then
+        --print(text)
+    end
+
     if title:find("Vehicle storage") and style == 2 then
         if not vehicles.initialFetch then
             local playerName = getCurrentPlayingPlayer()
@@ -5636,6 +5709,8 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
         lockers.FactionLocker.gettingItem = false
         return false
     end
+
+    ::skipDialog::
 end
 
 function sampev.onSendDialogResponse(dialogId, button, listboxId, input)
@@ -5678,30 +5753,58 @@ function sampev.onPlayerQuit(playerId, reason)
 end
 
 function sampev.onConnectionRejected(reason)
-    if autobind.Settings and autobind.Settings.autoReconnect then
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipRejected
+    end
+
+    if autobind.Settings.autoReconnect then
         autoConnect()
     end
+
+    ::skipRejected::
 end
 
 function sampev.onConnectionClosed()
-    if autobind.Settings and autobind.Settings.autoReconnect then
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipClosed
+    end
+
+    if autobind.Settings.autoReconnect then
         autoConnect()
     end
+
+    ::skipClosed::
 end
 
 function sampev.onConnectionBanned()
-    if autobind.Settings and autobind.Settings.autoReconnect then
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipBanned
+    end
+
+    if autobind.Settings.autoReconnect then
         autoConnect()
     end
+
+    ::skipBanned::
 end
 
 function sampev.onConnectionLost()
-    if autobind.Settings and autobind.Settings.autoReconnect then
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipLost
+    end
+
+    if autobind.Settings.autoReconnect then
         autoConnect()
     end
+
+    ::skipLost::
 end
 
 function sampev.onSetPlayerTime(hour, minute)
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipTime
+    end
+
     if autobind.TimeAndWeather then
         autobind.TimeAndWeather.serverHour = hour
         autobind.TimeAndWeather.serverMinute = minute
@@ -5709,24 +5812,38 @@ function sampev.onSetPlayerTime(hour, minute)
             return {autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute}
         end
     end
+
+    ::skipTime::
 end
 
 function sampev.onSetWeather(weatherId)
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipWeather
+    end
+
     if autobind.TimeAndWeather then
         autobind.TimeAndWeather.serverWeather = weatherId
         if autobind.TimeAndWeather.modifyWeather then
             return {autobind.TimeAndWeather.weather}
         end
     end
+
+    ::skipWeather::
 end
 
 function sampev.onPlayAudioStream(url, position, radius, usePosition)
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipAudioStream
+    end
+
     if url:match("^https://hzgaming.net/horizonfm/radio.pls$") and not autobind.Settings.HZRadio then
         return false
     elseif url:match("^https://hzgaming.net/zhao/sounds%/%w+.mp3$") and not autobind.Settings.LoginMusic then
         formattedAddChatMessage("You have login music disabled, type /loginmusic to enable it.")
         return false
     end
+
+    ::skipAudioStream::
 end
 
 function sampev.onShowTextDraw(id, data)
@@ -5955,24 +6072,28 @@ local function dragElements()
 end
 
 function onD3DPresent()
+    if not isGameFocused or not hasConfigLoaded then
+        goto skipOnD3DPresent
+    end
+
     if not autobind.Settings.sprintBind then
-        goto sprintBindSkip
+        goto skipSprintBind
     end
 
 	if isButtonPressed(h, gkeys.player.SPRINT) and (isCharOnFoot(ped) or isCharInWater(ped)) then
 		setGameKeyState(gkeys.player.SPRINT, 0)
 	end
 
-    ::sprintBindSkip::
+    ::skipSprintBind::
 
     if isPauseMenuActive() or sampIsScoreboardOpen() or sampGetChatDisplayMode() == 0 or isKeyDown(VK_F10) then
-        goto elementsSkip
+        goto skipOnD3DPresent
     end
 
     drawElements()
     dragElements()
 
-    ::elementsSkip::
+    ::skipOnD3DPresent::
 end
 
 imgui.OnInitialize(function()
@@ -5980,13 +6101,6 @@ imgui.OnInitialize(function()
 
 	-- Check if the font exists
 	assert(doesFileExist(Files.trebucbd), string.format('[%s] Font "%s" doesn\'t exist!', shortName:upper(), Files.trebucbd))
-
-    -- Setup Font and Icons (Large, Medium, Small)
-    --[[imgui_funcs.loadFontIcons(false, 14.0, ti.min_range, ti.max_range, ti.get_font_data_base85())
-    for _, font in pairs(fontData) do
-        font.font = imgui.GetIO().Fonts:AddFontFromFileTTF(Files.trebucbd, font.size)
-        imgui_funcs.loadFontIcons(false, font.size, ti.min_range, ti.max_range, ti.get_font_data_base85())
-    end]]
 
     -- Setup Font and Icons (Large, Medium, Small)
     imgui_funcs.loadFontIcons(true, 14.0, fa.min_range, fa.max_range, Files.fawesome5)
@@ -6216,7 +6330,7 @@ local buttons1 = {
                 {"CurrentPlayer", "id"}
             }
 
-            configs.ensureDefaults(autobind, autobind_defaultSettings, true, ignoreKeys)
+            configs.ensureDefaults(autobind, autobind_defaults, true, ignoreKeys)
 
             createFonts()
 
@@ -6389,14 +6503,19 @@ for i, _ in ipairs(buttons1) do
 end
 
 function onWindowMessage(msg, wparam, lparam)
-    -- Check if the player is paused and set AFK upon setting focus
     if msg == wm.WM_SETFOCUS then
-        PausedLength = os.clock() - timers.Pause.last -- store the current pause time
-        timers.Pause.last = os.clock() -- reset the last pause time
+        local currentTime = os.clock()
+        PausedLength = currentTime - timers.Pause.last   
+        timers.Pause.last = currentTime
         isGameFocused = true
+
+        if isPlayerAFK or (currentTime - timers.AFK.last >= timers.AFK.timer) then
+            setTimer(timers.AFK.timer, timers.AFK)
+            isPlayerAFK = false
+        end
     elseif msg == wm.WM_KILLFOCUS then
         isGameFocused = false
-        timers.Pause.last = os.clock() -- reset the last pause time
+        timers.Pause.last = os.clock()
     end
 
     -- Auto Close Samp Help Dialog
@@ -6431,13 +6550,14 @@ end
 
 imgui.OnFrame(
     function()
-        return menu.Initialized[0]
-           and menu.Wanted.window[0]
-           and autobind.Wanted.Enabled
-           and wanted.lawyer
-           and activeCheck(false, false, true, false, true)
-           and sampGetChatDisplayMode() > 0 
-           and not isKeyDown(VK_F10)
+        return hasConfigLoaded
+            and menu.Initialized[0]
+            and menu.Wanted.window[0]
+            and autobind.Wanted.Enabled
+            and wanted.lawyer
+            and activeCheck(false, false, true, false, true)
+            and sampGetChatDisplayMode() > 0 
+            and not isKeyDown(VK_F10)
     end,
     function()
         local textLines = {}
@@ -6477,23 +6597,21 @@ imgui.OnFrame(
             local startY = (windowSize.y - totalTextHeight) / 2
             local offsetX = padding.x + borderSize * 0.25
 
-            if not isPlayerAFK or not autobind.Wanted.ShowAFK then
+            if (not isPlayerAFK or not autobind.Wanted.ShowAFK) or isPlayerSpectating then
                 for i, text in ipairs(textLines) do
                     local textPosY = startY + (i - 1) * lineHeight + 1
                     imgui.SetCursorPos(imgui.ImVec2(offsetX, textPosY))
                     imgui_funcs.TextColoredRGB(text)
                 end
             else
-                if not specData.state then
-                    local afkText = string.format("{%06x}You are currently AFK.", autobind.Wanted.AFKTextColor)
-                    local textSize = imgui_funcs.calcTextSize(afkText)
-                    local windowWidth = imgui.GetWindowWidth()
-                    local windowHeight = imgui.GetWindowHeight()
-                    local iconPosX = (windowWidth - textSize.x) / 2
-                    local iconPosY = (windowHeight - textSize.y) / 2.2
-                    imgui.SetCursorPos(imgui.ImVec2(iconPosX, iconPosY))
-                    imgui_funcs.TextColoredRGB(afkText)
-                end
+                local afkText = string.format("{%06x}You are currently AFK.", autobind.Wanted.AFKTextColor)
+                local textSize = imgui_funcs.calcTextSize(afkText)
+                local windowWidth = imgui.GetWindowWidth()
+                local windowHeight = imgui.GetWindowHeight()
+                local iconPosX = (windowWidth - textSize.x) / 2
+                local iconPosY = (windowHeight - textSize.y) / 2.2
+                imgui.SetCursorPos(imgui.ImVec2(iconPosX, iconPosY))
+                imgui_funcs.TextColoredRGB(afkText)
             end
 
             if autobind.Wanted.ShowRefresh then
@@ -6516,7 +6634,7 @@ imgui.OnFrame(
     end
 ).HideCursor = true
 
-imgui.OnFrame(function() return menu.Initialized[0] end,
+imgui.OnFrame(function() return hasConfigLoaded and menu.Initialized[0] end,
 function(self)
     if not isSampLoaded() or not isSampAvailable() then return end
 
@@ -7374,6 +7492,11 @@ function renderAutoFind()
 
     imgui.Text("Auto Find:")
     imgui.Indent()
+    if imgui.Checkbox(string.format("Autofind %s", autobind.Settings.autoFind and "Enabled" or "Disabled"), new.bool(autobind.Settings.autoFind)) then
+        autobind.Settings.autoFind = not autobind.Settings.autoFind
+    end
+    imgui_funcs.CustomTooltip("When this is disabled all features related to auto finding will be disabled.")
+
     createFontMenuElement("AutoFind", "Auto Find", autobind.Elements.AutoFind, false)
     imgui.Unindent()
 
@@ -7545,7 +7668,7 @@ function renderWanted()
     end
     imgui.SameLine()
     if imgui.Button("Defaults") then
-        autobind.Wanted = configs.deepCopy(autobind_defaultSettings.Wanted)
+        autobind.Wanted = configs.deepCopy(autobind_defaults.Wanted)
     end
 
     -- Refresh Settings
@@ -7801,7 +7924,7 @@ function renderVehicleStorage()
     end
     imgui.SameLine()
     if imgui.Button("Defaults") then
-        autobind.VehicleStorage = configs.deepCopy(autobind_defaultSettings.VehicleStorage)
+        autobind.VehicleStorage = configs.deepCopy(autobind_defaults.VehicleStorage)
     end
     imgui.SameLine()
     if imgui.Button("Reset Vehicle Storage") then
@@ -7996,7 +8119,7 @@ function renderChargeMenu()
                             if conflictLater then
                                 -- A conflicting active charge is found; do not allow activation.
                                 isActive[0] = false
-                                print("Cannot select " .. value.name .. " because it conflicts with active charge: " .. conflictNameLater)
+                                debugMessage(string.format("Cannot select %s because it conflicts with active charge: %s", value.name, conflictNameLater), true, true)
                             elseif charges.count < 6 then
                                 charges.count = charges.count + 1
                                 if value.fine then
@@ -8490,7 +8613,7 @@ function keyEditor(title, index, description, callback)
 
     -- Check if the Keybinds table exists, if not, copy the default settings
     if not keyBinds then
-        autobind.Keybinds[index] = autobind_defaultSettings.Keybinds[index]
+        autobind.Keybinds[index] = autobind_defaults.Keybinds[index]
         return
     end
 
@@ -8834,7 +8957,6 @@ function updateWantedList(updateId, updateType, playerName, playerId, playerChar
             entry.markedDeactivated = false
             entry.updated = true
             found = true
-            --debugMessage(string.format("updateWantedList: ID: %s, Type: %s, Name: %s, ID: %s, Charges: %s, Found: %s", updateId, updateType, playerName, playerId, playerCharges, found), false, true)
             break
         end
     end
@@ -8922,23 +9044,8 @@ function checkWantedList(updateType, playerName, playerId)
             if entry.active then
                 entry.updated = false
             end
-
-            --debugMessage(string.format("checkWantedList: Type: %s", updateType), false, true)
         end
     end
-end
-
-function getCurrentPlayingPlayer()
-    local playerName = autobind.CurrentPlayer.name
-    if not playerName or playerName == "" then
-        local _, playerId = sampGetPlayerIdByCharHandle(ped)
-        if not playerId then
-            return nil
-        end
-        playerName = sampGetPlayerNickname(playerId)
-    end
-
-    return playerName
 end
 
 local function fetchVehicleStorage()
@@ -9016,6 +9123,31 @@ function findVehiclesByName(vehList, partialName)
         end
     end
     return results
+end
+
+function getCurrentPlayingPlayer()
+    local playerName = autobind.CurrentPlayer.name
+    if not playerName or playerName == "" then
+        local _, playerId = sampGetPlayerIdByCharHandle(ped)
+        if not playerId then
+            return nil
+        end
+        playerName = sampGetPlayerNickname(playerId)
+    end
+
+    return playerName
+end
+
+function debugMessage(message, showChat, showPrint)
+    if autobind.Settings.enableDebugMessages then
+        if showChat then
+            formattedAddChatMessage(message)
+        end
+
+        if showPrint then
+            print(message)
+        end
+    end
 end
 
 function getKeybindKeys(bind)
@@ -9205,6 +9337,53 @@ function table.contains(tbl, value)
             return true
         end
     end
+    return false
+end
+
+function imgui.AnimProgressBar(label, int, int2, duration, size, color, color2)
+	local function bringFloatTo(from, to, start_time, duration)
+		local timer = os.clock() - start_time
+		if timer >= 0.00 and timer <= duration then; local count = timer / (duration / int2); return from + (count * (to - from) / int2),timer,false
+		end; return (timer > duration) and to or from,timer,true
+	end
+    if int > int2 then imgui.TextColored(imgui.ImVec4(1,0,0,0.7),'error func imgui.AnimProgressBar(*),int > 100') return end
+    if IMGUI_ANIM_PROGRESS_BAR == nil then IMGUI_ANIM_PROGRESS_BAR = {} end
+    if IMGUI_ANIM_PROGRESS_BAR ~= nil and IMGUI_ANIM_PROGRESS_BAR[label] == nil then
+        IMGUI_ANIM_PROGRESS_BAR[label] = {int = (int or 0),clock = 0}
+    end
+    local mf = math.floor
+    local p = IMGUI_ANIM_PROGRESS_BAR[label];
+    if (p['int']) ~= (int) then
+        if p.clock == 0 then; p.clock = os.clock(); end
+        local d = {bringFloatTo(p.int,int,p.clock,(duration or 2.25))}
+        if d[1] > int  then
+            if ((d[1])-0.01) < (int) then; p.clock = 0; p.int = mf(d[1]-0.01); end
+        elseif d[1] < int then
+            if ((d[1])+0.01) > (int) then; p.clock = 0; p.int = mf(d[1]+0.01); end
+        end
+        p.int = d[1];
+    end
+	local clr = imgui.Col
+    imgui.PushStyleColor(clr.Text, imgui.ImVec4(0,0,0,0))
+    imgui.PushStyleColor(clr.FrameBg, color) -- background color progress bar
+    imgui.PushStyleColor(clr.PlotHistogram, color2) -- fill color progress bar
+    imgui.ProgressBar(p.int / int2,size or imgui.ImVec2(-1,15))
+    imgui.PopStyleColor(3)
+end
+
+function isPlayerAiming(firstperson, thirdperson)
+    local camModes = {
+		FirstPerson = {[7] = true, [8] = true, [16] = true, [34] = true, [39] = true, [40] = true, [41] = true, [42] = true, [45] = true, [46] = true, [51] = true, [52] = true},
+		ThirdPerson = {[5] = true, [53] = true, [55] = true, [65] = true}
+	}
+
+    local camId = mem.read(0xB6F1A8, 2, false)
+    if firstperson and camModes.FirstPerson[camId] then
+        return true, "FirstPerson"
+    elseif thirdperson and camModes.ThirdPerson[camId] then
+        return true, "ThirdPerson"
+    end
+
     return false
 end
 
