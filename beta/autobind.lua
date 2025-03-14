@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.25a61")
+script_version("1.8.25a62")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -136,11 +136,51 @@ local dependencies = {
             "samp/events/utils.lua"
         }
     },
-    {required = true, name = "akacross.downloads", var = "downloads", localFile = "akacross/downloads.lua"},
-    {required = true, name = "akacross.configs", var = "configs", localFile = "akacross/configs.lua"},
-    {required = true, name = "akacross.colors", var = "colors", localFile = "akacross/colors.lua"},
-    {required = true, name = "akacross.imgui_funcs", var = "imgui_funcs", localFile = "akacross/imgui_funcs.lua"}
+    {required = true, name = "akacross.downloads", var = "downloads", localFile = "akacross/downloads.lua", version = "0.1.0"},
+    {required = true, name = "akacross.configs", var = "configs", localFile = "akacross/configs.lua", version = "0.1.0"},
+    {required = true, name = "akacross.colors", var = "colors", localFile = "akacross/colors.lua", version = "0.1.2"},
+    {required = true, name = "akacross.imgui_funcs", var = "imgui_funcs", localFile = "akacross/imgui_funcs.lua", version = "0.1.1"}
 }
+
+function compareVersions(version1, version2)
+    local letterWeights = {
+        A = 1, B = 2, C = 3, D = 4, E = 5,
+        a = 1, b = 2, c = 3, d = 4, e = 5,
+        alpha = 1, beta = 2, rc = 3, p = 4, h = 5
+    }
+
+    local function parseVersion(version)
+        local parts = {}
+        for numPart, letterPart in version:gmatch("(%d+)(%a*)") do
+            table.insert(parts, {num = tonumber(numPart), letter = letterPart:lower()})
+        end
+        return parts
+    end
+
+    local function getLetterWeight(letter)
+        return letterWeights[letter] or 0
+    end
+
+    local v1 = parseVersion(version1)
+    local v2 = parseVersion(version2)
+
+    local maxLength = math.max(#v1, #v2)
+    for i = 1, maxLength do
+        local part1 = v1[i] or {num = 0, letter = ""}
+        local part2 = v2[i] or {num = 0, letter = ""}
+        
+        if part1.num ~= part2.num then
+            return (part1.num > part2.num) and 1 or -1
+        end
+        
+        local weight1 = getLetterWeight(part1.letter)
+        local weight2 = getLetterWeight(part2.letter)
+        if weight1 ~= weight2 then
+            return (weight1 > weight2) and 1 or -1
+        end
+    end
+    return 0
+end
 
 local function downloadFiles(table, onCompleteCallback)
     local downloadsInProgress = 0
@@ -217,6 +257,31 @@ local function checkAndDownloadDependencies(callback)
                 local mod = safeRequire(dep.name)
                 if not mod then
                     print("Missing dependency and no download info provided: " .. dep.name)
+                end
+
+                if dep.version then
+                    print(compareVersions(mod._VERSION, dep.version))
+                    if compareVersions(mod._VERSION, dep.version) == -1 then
+                        print("new update!")
+
+                        if dep.localFiles then
+                            for _, file in ipairs(dep.localFiles) do
+                                local fullPath = Paths.libraries .. file:gsub("/", "\\")
+                                filesMissing = true
+                                table.insert(missingFiles, {
+                                    url = Urls.libraries .. file,
+                                    path = fullPath
+                                })
+                            end
+                        elseif dep.localFile then
+                            local fullPath = Paths.libraries .. dep.localFile:gsub("/", "\\")
+                            filesMissing = true
+                            table.insert(missingFiles, {
+                                url = Urls.libraries .. dep.localFile,
+                                path = fullPath
+                            })
+                        end
+                    end
                 end
             end
         end
@@ -483,7 +548,8 @@ for name, color in pairs(colors.list()) do
        name == "LIGHTBLUE" or 
        name == "TEAM_MED_COLOR" or
        name == "NEWS" or
-       name == "BLACK" then
+       name == "BLACK" or
+       name == "LIGHTGREY2" then
         clrs.a = 170
     elseif name == "DEPTRADIO" then
         clrs.a = 74
@@ -1123,6 +1189,22 @@ local updateStatus = "up_to_date"
 local currentContent = nil
 local isUpdateHovered = false
 
+local updateStatusIcons = {
+    up_to_date = fa.ICON_FA_CHECK .. ' Up to date',
+    new_version = fa.ICON_FA_RETWEET .. ' Update\nNew Version',
+    outdated = fa.ICON_FA_EXCLAMATION_TRIANGLE .. ' Update\n Outdated',
+    failed = fa.ICON_FA_EXCLAMATION_TRIANGLE .. ' Update\n    Failed',
+    beta_version = fa.ICON_FA_RETWEET .. ' Update\nBeta Version'
+}
+
+local updateTypeStyles = {
+    up_to_date = 0,
+    new_version = 1,
+    outdated = 3,
+    failed = 2,
+    beta_version = 1
+}
+
 local menu = {
     Initialized = new.bool(false),
     Confirm = {
@@ -1231,7 +1313,7 @@ local menuData = {states = {}, previous = {}}
 for name, data in pairs(menu) do
     if name ~= "Initialized" and name ~= "Wanted" then
         menuData.states[name] = data.window
-        menuData.previous[name] = false
+        menuData.previous[name] = data.window[0]
     end
 end
 
@@ -1289,7 +1371,6 @@ local ignoreKeysMap = {
     FactionLocker = {"Locations"},
     VehicleStorage = {"Vehicles"},
     Elements = {"OfferedTo", "OfferedFrom", "PedsCount", "AutoFind", "LastBackup", "FactionBadge"},
-    --WindowPos = {"Settings", "VehicleStorage", "Skins", "Keybinds", "Names", "BlackMarket", "FactionLocker", "Changelog"},
     Wanted = {"List", "Pos", "Pivot", "Padding"},
     Charges = {"List"}
 }
@@ -1358,7 +1439,11 @@ function initializeComponents()
         configs.saveConfigWithErrorHandling(Files.settings, autobind.Settings)
     end
 
-    updateCheck()
+    if autobind.Settings.checkForUpdates then
+        updateCheck(function()
+            mimtoasts.Show(updateStatusIcons[updateStatus] or "Update", updateTypeStyles[updateStatus] or 0, 4)
+        end)
+    end
 
     -- Set autovest timer based on donor status
     timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
@@ -3924,14 +4009,6 @@ local messageHandlers = {
                 -- Reset vehicle storage status
                 initializeVehicleStorage()
 
-                if currentContent and autobind.Settings.checkForUpdates then
-                    if updateStatus == "new_version" then
-                        formattedAddChatMessage(string.format("A new version of %s %s is available, please update to the latest version %s.", scriptName, scriptVersion, currentContent.version), clr_NEWS)
-                    elseif updateStatus == "outdated" then
-                        formattedAddChatMessage(string.format("%s %s is outdated, please update to the latest version %s.", scriptName, scriptVersion, currentContent.version), clr_NEWS)
-                    end
-                end
-
                 autobind.CurrentPlayer.welcomeMessage = true
 
                 -- Save settings
@@ -5470,6 +5547,13 @@ local messageHandlers = {
                 return false
             end
         end
+    },
+    {   -- * 1. {4be263}Outlaw Panzers{BBBBBB} | Leader: {FFFFFF}Ethan Evo Brazy{BBBBBB} | Members: {FFFFFF}388{BBBBBB} | Online: {FFFFFF}8
+        pattern = "^%*%s*(.-)%.%s*%{(.-)%}(.-){%x+}%s*|%s*Leader:%s*{%x+}(.-){%x+}%s*|%s*Members:%s*{%x+}(.-){%x+}%s*|%s*Online:%s*{%x+}(.-)$",
+        color = clrRGBA["LIGHTGREY2"],
+        action = function(id, color, family, leader, members, online)
+            print(id, color, family, leader, members, online)
+        end
     }
 }
 
@@ -6214,14 +6298,6 @@ local child_size_pages = imgui.ImVec2(513, 278)
 local child_size_bottom = imgui.ImVec2(400, 20)
 local button_size_small2 = imgui.ImVec2(15, 15)
 
-local updateStatusIcons = {
-    up_to_date = fa.ICON_FA_CHECK .. ' Up to date',
-    new_version = fa.ICON_FA_RETWEET .. ' Update\nNew Version',
-    outdated = fa.ICON_FA_EXCLAMATION_TRIANGLE .. ' Update\n Outdated',
-    failed = fa.ICON_FA_EXCLAMATION_TRIANGLE .. ' Update\n    Failed',
-    beta_version = fa.ICON_FA_RETWEET .. ' Update\nBeta Version'
-}
-
 local recentMessages = {} -- Track recently used messages
 local recentLimit = 3 -- Number of recent messages to avoid repeating
 
@@ -6407,30 +6483,22 @@ local buttons1 = {
         end,
         tooltip = function() return 'Check for update' end,
         action = function()
-            updateCheck()
-
-            if updateStatus == "new_version" or updateStatus == "beta_version" or updateStatus == "outdated" then
-                local autoRebootScript = script.find("ML-AutoReboot")
-                if autoRebootScript then
-                    autoRebootScript:unload()
-                    autoReboot = true
-                else
-                    autoReboot = false
+            updateCheck(function()
+                if updateStatus == "new_version" or updateStatus == "beta_version" or updateStatus == "outdated" then
+                    local autoRebootScript = script.find("ML-AutoReboot")
+                    if autoRebootScript then
+                        autoRebootScript:unload()
+                        autoReboot = true
+                    else
+                        autoReboot = false
+                    end
+    
+                    menu.Confirm.update[0] = true
+                    menu.Confirm.window[0] = true
                 end
-
-                menu.Confirm.update[0] = true
-                menu.Confirm.window[0] = true
-            end
-
-            local updateType = {
-                up_to_date = 0,
-                new_version = 1,
-                outdated = 3,
-                failed = 2,
-                beta_version = 1
-            }
-
-            mimtoasts.Show(updateStatusIcons[updateStatus] or "Update", updateType[updateStatus] or 0, 4)
+    
+                mimtoasts.Show(updateStatusIcons[updateStatus] or "Update", updateTypeStyles[updateStatus] or 0, 4)
+            end)
         end,
         color = function()
             return (updateStatus == "new_version" or updateStatus == "beta_version" or updateStatus == "outdated") and imguiRGBA["GREEN"] or imguiRGBA["DARKGREY"]
@@ -7284,53 +7352,53 @@ function(self)
         renderChangelogWindow(changeLogKey)
         imgui.PopStyleVar(1)
     end
-    
-    if menu.Wanted.window[0] and autobind.Wanted.Enabled and wanted.lawyer and activeCheck(false, false, true, false, true) and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) then
+
+    local wantedKey = "Wanted"
+    if menu[wantedKey].window[0] and autobind[wantedKey].Enabled and wanted.lawyer and activeCheck(false, false, true, false, true) and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) then
         local textLines = {}
-        if autobind.Wanted.List and #autobind.Wanted.List > 0 then
-            for _, entry in ipairs(autobind.Wanted.List) do
+        if autobind[wantedKey].List and #autobind[wantedKey].List > 0 then
+            for _, entry in ipairs(autobind[wantedKey].List) do
                 table.insert(textLines, formatWantedString(entry, true, true))
             end
         else
             textLines = {"No current wanted suspects."}
         end
 
-        local windowSize = imgui_funcs.calculateWindowSize(textLines, autobind.Wanted.Padding)
-        local newPos, isDragging = imgui_funcs.handleWindowDragging("WantedList", autobind.Wanted.Pos, windowSize, autobind.Wanted.Pivot, true)
+        local windowSize = imgui_funcs.calculateWindowSize(textLines, autobind[wantedKey].Padding)
+        local newPos, isDragging = imgui_funcs.handleWindowDragging("WantedList", autobind[wantedKey].Pos, windowSize, autobind[wantedKey].Pivot, true)
         if isDragging and menu.Settings.window[0] then
-            autobind.Wanted.Pos = newPos
+            autobind[wantedKey].Pos = newPos
         end
-        imgui.SetNextWindowPos(autobind.Wanted.Pos, imgui.Cond.Always, autobind.Wanted.Pivot)
+        imgui.SetNextWindowPos(autobind[wantedKey].Pos, imgui.Cond.Always, autobind[wantedKey].Pivot)
         imgui.SetNextWindowSize(windowSize, imgui.Cond.Always)
 
-        local bgColor = colors.convertColor(autobind.Wanted.BackgroundColor, true, true, false)
-        local borderColor = colors.convertColor(autobind.Wanted.BorderColor, true, true, false)
-        local borderSize = autobind.Wanted.BorderSize
-        local padding = autobind.Wanted.Padding
-        local rounding = autobind.Wanted.Rounding
+        local bgColor = colors.convertColor(autobind[wantedKey].BackgroundColor, true, true, false)
+        local borderColor = colors.convertColor(autobind[wantedKey].BorderColor, true, true, false)
+        local borderSize = autobind[wantedKey].BorderSize
+        local padding = autobind[wantedKey].Padding
+        local rounding = autobind[wantedKey].Rounding
 
-        imgui.PushStyleColor(imgui.Col.WindowBg, imgui.ImVec4(bgColor.r, bgColor.g, bgColor.b, autobind.Wanted.ShowBackground and bgColor.a or 0))
-        imgui.PushStyleColor(imgui.Col.Border, imgui.ImVec4(borderColor.r, borderColor.g, borderColor.b, autobind.Wanted.ShowBorder and borderColor.a or 0))
+        imgui.PushStyleColor(imgui.Col.WindowBg, imgui.ImVec4(bgColor.r, bgColor.g, bgColor.b, autobind[wantedKey].ShowBackground and bgColor.a or 0))
+        imgui.PushStyleColor(imgui.Col.Border, imgui.ImVec4(borderColor.r, borderColor.g, borderColor.b, autobind[wantedKey].ShowBorder and borderColor.a or 0))
         imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, padding)
         imgui.PushStyleVarFloat(imgui.StyleVar.WindowBorderSize, borderSize)
         imgui.PushStyleVarFloat(imgui.StyleVar.WindowRounding, rounding)
         imgui.PushStyleVarVec2(imgui.StyleVar.WindowMinSize, imgui.ImVec2(0, 0))
 
-        local wantedKey = "Wanted"
         if imgui.Begin(wantedKey, menu[wantedKey].window, menu[wantedKey].flags) then
             local lineHeight = imgui.GetTextLineHeightWithSpacing()
             local totalTextHeight = #textLines * lineHeight
             local startY = (windowSize.y - totalTextHeight) / 2
             local offsetX = padding.x + borderSize * 0.25
 
-            if (not isPlayerAFK or not autobind.Wanted.ShowAFK) or isPlayerSpectating then
+            if (not isPlayerAFK or not autobind[wantedKey].ShowAFK) or isPlayerSpectating then
                 for i, text in ipairs(textLines) do
                     local textPosY = startY + (i - 1) * lineHeight + 1
                     imgui.SetCursorPos(imgui.ImVec2(offsetX, textPosY))
                     imgui_funcs.TextColoredRGB(text)
                 end
             else
-                local afkText = string.format("{%06x}You are currently AFK.", autobind.Wanted.AFKTextColor)
+                local afkText = string.format("{%06x}You are currently AFK.", autobind[wantedKey].AFKTextColor)
                 local textSize = imgui_funcs.calcTextSize(afkText)
                 local windowWidth = imgui.GetWindowWidth()
                 local windowHeight = imgui.GetWindowHeight()
@@ -7340,10 +7408,10 @@ function(self)
                 imgui_funcs.TextColoredRGB(afkText)
             end
 
-            if autobind.Wanted.ShowRefresh then
-                local timeRemaining = autobind.Wanted.Timer - (os.clock() - last_wanted)
-                if timeRemaining >= (autobind.Wanted.Timer - 1) and timeRemaining <= autobind.Wanted.Timer + 1 then
-                    local icon = string.format("{%06x}%s", autobind.Wanted.RefreshColor, fa.ICON_FA_CHECK)
+            if autobind[wantedKey].ShowRefresh then
+                local timeRemaining = autobind[wantedKey].Timer - (os.clock() - last_wanted)
+                if timeRemaining >= (autobind[wantedKey].Timer - 1) and timeRemaining <= autobind[wantedKey].Timer + 1 then
+                    local icon = string.format("{%06x}%s", autobind[wantedKey].RefreshColor, fa.ICON_FA_CHECK)
                     local iconSize = imgui_funcs.calcTextSize(icon)
                     local iconPosX = windowSize.x - iconSize.x - (borderSize * 0.25 - 2)
                     local iconPosY = borderSize * 0.25 + 2
@@ -8783,7 +8851,7 @@ function keyEditor(title, index, description, callback)
     --imgui.PopStyleVar()
 end
 
-function updateCheck()
+function updateCheck(callback)
     fetchJsonDataDirectlyFromURL(Urls.update(autobind.Settings.fetchBeta), function(content)
         if content and content.version and content.lastversion then
             local compareNew = compareVersions(content.version, scriptVersion)
@@ -8798,9 +8866,15 @@ function updateCheck()
                 updateStatus = "outdated"
             end
             currentContent = content
+            if callback then
+                callback()
+            end
         else
             updateStatus = "failed"
             currentContent = nil
+            if callback then
+                callback()
+            end
         end
     end)
 end
@@ -9632,46 +9706,6 @@ function displayTimers()
         end
         formattedAddChatMessage(string.format("%s: %s.", name, timerInfo))
     end
-end
-
-function compareVersions(version1, version2)
-    local letterWeights = {
-        A = 1, B = 2, C = 3, D = 4, E = 5,
-        a = 1, b = 2, c = 3, d = 4, e = 5,
-        alpha = 1, beta = 2, rc = 3, p = 4, h = 5
-    }
-
-    local function parseVersion(version)
-        local parts = {}
-        for numPart, letterPart in version:gmatch("(%d+)(%a*)") do
-            table.insert(parts, {num = tonumber(numPart), letter = letterPart:lower()})
-        end
-        return parts
-    end
-
-    local function getLetterWeight(letter)
-        return letterWeights[letter] or 0
-    end
-
-    local v1 = parseVersion(version1)
-    local v2 = parseVersion(version2)
-
-    local maxLength = math.max(#v1, #v2)
-    for i = 1, maxLength do
-        local part1 = v1[i] or {num = 0, letter = ""}
-        local part2 = v2[i] or {num = 0, letter = ""}
-        
-        if part1.num ~= part2.num then
-            return (part1.num > part2.num) and 1 or -1
-        end
-        
-        local weight1 = getLetterWeight(part1.letter)
-        local weight2 = getLetterWeight(part2.letter)
-        if weight1 ~= weight2 then
-            return (weight1 > weight2) and 1 or -1
-        end
-    end
-    return 0
 end
 
 function getDownKeys()
