@@ -1,6 +1,6 @@
 script_name("autobind")
 script_description("Autobind is a collection of useful features and modifications")
-script_version("1.8.25a62")
+script_version("1.8.26a1")
 script_authors("akacross")
 script_url("https://akacross.net/")
 
@@ -51,7 +51,8 @@ local Urls = {
     names = getBaseUrl(false, scriptName) .. "names.json",
     charges = getBaseUrl(false, scriptName) .. "charges.json",
     changelog = getBaseUrl(false, scriptName) .. "changelog.json",
-    betatesters = getBaseUrl(true, scriptName) .. "betatesters.json"
+    betatesters = getBaseUrl(true, scriptName) .. "betatesters.json",
+    scriptGitHub = "https://github.com/akacross/autobind"
 }
 
 local function safeRequire(moduleName)
@@ -139,7 +140,7 @@ local dependencies = {
     {required = true, name = "akacross.downloads", var = "downloads", localFile = "akacross/downloads.lua", version = "0.1.0"},
     {required = true, name = "akacross.configs", var = "configs", localFile = "akacross/configs.lua", version = "0.1.0"},
     {required = true, name = "akacross.colors", var = "colors", localFile = "akacross/colors.lua", version = "0.1.2"},
-    {required = true, name = "akacross.imgui_funcs", var = "imgui_funcs", localFile = "akacross/imgui_funcs.lua", version = "0.1.1"}
+    {required = true, name = "akacross.imgui_funcs", var = "imgui_funcs", localFile = "akacross/imgui_funcs.lua", version = "0.1.2"}
 }
 
 function compareVersions(version1, version2)
@@ -260,10 +261,7 @@ local function checkAndDownloadDependencies(callback)
                 end
 
                 if dep.version then
-                    print(compareVersions(mod._VERSION, dep.version))
                     if compareVersions(mod._VERSION, dep.version) == -1 then
-                        print("new update!")
-
                         if dep.localFiles then
                             for _, file in ipairs(dep.localFiles) do
                                 local fullPath = Paths.libraries .. file:gsub("/", "\\")
@@ -549,7 +547,8 @@ for name, color in pairs(colors.list()) do
        name == "TEAM_MED_COLOR" or
        name == "NEWS" or
        name == "BLACK" or
-       name == "LIGHTGREY2" then
+       name == "LIGHTGREY2" or
+       name == "FORSTATS" then
         clrs.a = 170
     elseif name == "DEPTRADIO" then
         clrs.a = 74
@@ -609,7 +608,7 @@ local chatInputActive = false
 local isGameFocused = true
 local isPlayerAFK = false
 local isPlayerSpectating = false
-local hasPlayerLoaded = false
+local hasPlayerConnected = true
 local functionsLoop_Callback = false
 local resX, resY = getScreenResolution()
 
@@ -639,10 +638,12 @@ local autobind_defaults = {
         blankMessagesAtConnection = true
 	},
     Family = {
+        name = "",
         frequency = 0,
         turf = false,
         point = false,
-        disableAfterCapturing = true
+        disableAfterCapturing = true,
+        familyData = {}
     },
     Faction = {
         type = "",
@@ -1057,7 +1058,8 @@ local factions = {
     skins = {},
     names = {},
     ranks = {},
-    badges = {}
+    badges = {},
+    active = {}
 }
 
 local extraBadges = {
@@ -1070,6 +1072,7 @@ local extraBadges = {
     [clr_ORANGE] = "Prisoner"
 }
 
+local factionNameCheck = {}
 for name, faction in pairs(factionData) do
     if faction.enabled then
         factions.colors[faction.color] = true
@@ -1079,6 +1082,8 @@ for name, faction in pairs(factionData) do
         end
 
         table.insert(factions.names, name)
+        factions.active[name] = true
+
         factions.ranks[name] = faction.ranks
         factions.badges[faction.color] = name
     end
@@ -1209,9 +1214,9 @@ local menu = {
     Initialized = new.bool(false),
     Confirm = {
         flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar,
-        title = function() return ("%s - Update - Current: %s"):format(shortName:upper(), currentContent.version or "Unknown") end,
+        title = function() return ("{%06x}%s{%06x} %s - Update Script"):format(clr_GREEN, fa.ICON_FA_CANNABIS, clr_WHITE, shortName:upper()) end,
         window = new.bool(false),
-        size = {x = 300, y = 200},
+        size = {x = 282, y = 160},
         pivot = {x = 0.5, y = 0.5},
         update = new.bool(false),
         dragging = new.bool(true)
@@ -1346,7 +1351,18 @@ local fontData = {
 
 local escapePressed = false
 local skinTextures = {}
+
 local skinsUrls = {}
+for i = 0, 311 do
+    table.insert(skinsUrls, {
+        url = string.format("%sSkin_%d.png", Urls.skinsPath, i),
+        path = string.format("%sSkin_%d.png", Paths.skins, i),
+        replace = false,
+        index = i
+    })
+end
+
+table.sort(skinsUrls, function(a, b) return tonumber(a.index) < tonumber(b.index) end)
 
 local changeKey = {}
 local keyEditors = {
@@ -1366,6 +1382,7 @@ local keyEditors = {
 
 local ignoreKeysMap = {
     AutoVest = {"skins", "names"},
+    Family = {"familyData"},
     Keybinds = {"BikeBind", "SprintBind", "Frisk", "TakePills", "Accept", "Offer", "AcceptDeath", "RequestBackup", "UseCrack", "UsePot"},
     BlackMarket = {"Locations"},
     FactionLocker = {"Locations"},
@@ -1431,6 +1448,133 @@ ffi.cdef[[
 	};
 ]]
 
+-- Create a table to track all fetch operations
+local fetchOperations = {
+    {
+        name = "skins",
+        url = function() return autobind.AutoVest.skinsUrl end,
+        condition = function() return (autobind.AutoVest.autoFetchSkins and autobind.Settings.mode == "Family") end,
+        callback = function(decodedData)
+            if decodedData then
+                autobind.AutoVest.skins = decodedData
+                family.skins = table.listToSet(autobind.AutoVest.skins)
+                return true
+            end
+            return false
+        end,
+        fallback = function()
+            family.skins = table.listToSet(autobind.AutoVest.skins)
+        end
+    },
+    {
+        name = "names",
+        url = function() return autobind.AutoVest.namesUrl end,
+        condition = function() return autobind.AutoVest.autoFetchNames end,
+        callback = function(decodedData)
+            if decodedData then
+                autobind.AutoVest.names = decodedData
+                namesList = table.listToSet(autobind.AutoVest.names)
+                return true
+            end
+            return false
+        end,
+        fallback = function()
+            namesList = table.listToSet(autobind.AutoVest.names)
+        end
+    },
+    {
+        name = "charges",
+        url = function() return Urls.charges end,
+        condition = function() return autobind.Settings.mode == "Faction" end,
+        callback = function(decodedData)
+            if decodedData then
+                chargeList = decodedData or nil
+                return true
+            end
+            return false
+        end
+    },
+    {
+        name = "betatesters",
+        url = function() return Urls.betatesters end,
+        condition = function() return true end,
+        callback = function(decodedData)
+            if decodedData then
+                betatesters = decodedData or nil
+                return true
+            end
+            return false
+        end
+    },
+    {
+        name = "changelog",
+        url = function() return Urls.changelog end,
+        condition = function() return true end,
+        callback = function(decodedData)
+            if decodedData then
+                changelog = decodedData or nil
+                return true
+            end
+            return false
+        end
+    }
+}
+
+-- Track results
+local fetchResults = {
+    success = {},
+    failed = {}
+}
+
+-- Function to process all fetch operations
+local function processFetchOperations()
+    local pendingFetches = 0
+    
+    for _, operation in ipairs(fetchOperations) do
+        if operation.condition() then
+            pendingFetches = pendingFetches + 1
+            
+            fetchJsonDataDirectlyFromURL(operation.url(), function(decodedData)
+                local success = operation.callback(decodedData)
+                
+                if success then
+                    table.insert(fetchResults.success, operation.name)
+                else
+                    table.insert(fetchResults.failed, operation.name)
+                end
+                
+                pendingFetches = pendingFetches - 1
+                
+                -- If all fetches are complete, show the final message
+                if pendingFetches == 0 then
+                    local successMsg = #fetchResults.success > 0 
+                        and table.concat(fetchResults.success, ", ") 
+                        or "No items"
+                    
+                    local failedMsg = #fetchResults.failed > 0 
+                        and table.concat(fetchResults.failed, ", ") 
+                        or ""
+                    
+                    local finalMsg = "Successfully fetched: " .. successMsg
+                    if #fetchResults.failed > 0 then
+                        finalMsg = finalMsg .. "\nFailed to fetch: " .. failedMsg
+                    end
+                    
+                    debugMessage(finalMsg, true, true)
+                    mimtoasts.Show(finalMsg, 1, 8)
+                end
+            end)
+        elseif operation.fallback then
+            operation.fallback()
+        end
+    end
+    
+    -- If no fetches were started, show a message
+    if pendingFetches == 0 then
+        mimtoasts.Show("No items to fetch", 0, 8)
+    end
+end
+
 function initializeComponents()
     -- Check if update is in progress and check update status
     if autobind.Settings.updateInProgress then
@@ -1439,59 +1583,17 @@ function initializeComponents()
         configs.saveConfigWithErrorHandling(Files.settings, autobind.Settings)
     end
 
+    -- Set autovest timer based on donor status
+    timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
+
+    -- Start the fetch process
+    processFetchOperations()
+
     if autobind.Settings.checkForUpdates then
         updateCheck(function()
             mimtoasts.Show(updateStatusIcons[updateStatus] or "Update", updateTypeStyles[updateStatus] or 0, 4)
         end)
     end
-
-    -- Set autovest timer based on donor status
-    timers.Vest.timer = autobind.AutoVest.donor and ddguardTime or guardTime
-
-    -- Fetch Skins and Names
-    if autobind.AutoVest.autoFetchSkins then
-        fetchJsonDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
-            debugMessage("Skins fetched successfully!", true, true)
-            mimtoasts.Show("Skins fetched successfully!", 1, 4)
-            if decodedData then
-                autobind.AutoVest.skins = decodedData
-                family.skins = table.listToSet(autobind.AutoVest.skins)
-            end
-        end)
-    else
-        family.skins = table.listToSet(autobind.AutoVest.skins)
-    end
-
-    if autobind.AutoVest.autoFetchNames then
-        fetchJsonDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
-            debugMessage("Names fetched successfully!", true, true)
-            mimtoasts.Show("Names fetched successfully!", 1, 4)
-            if decodedData then
-                autobind.AutoVest.names = decodedData
-                namesList = table.listToSet(autobind.AutoVest.names)
-            end
-        end)
-    else
-        namesList = table.listToSet(autobind.AutoVest.names)
-    end
-
-    fetchJsonDataDirectlyFromURL(Urls.charges, function(decodedData)
-        debugMessage("Charges fetched successfully!", true, true)
-        mimtoasts.Show("Charges fetched successfully!", 1, 4)
-        chargeList = decodedData or nil
-    end)
-
-    fetchJsonDataDirectlyFromURL(Urls.betatesters, function(decodedData)
-        debugMessage("Betatesters fetched successfully!", true, false)
-        mimtoasts.Show("Betatesters fetched successfully!", 1, 4)
-        betatesters = decodedData or nil
-    end)
-
-    fetchJsonDataDirectlyFromURL(Urls.changelog, function(decodedData)
-        debugMessage("Changelog fetched successfully!", true, false)
-        mimtoasts.Show("Changelog fetched successfully!", 1, 4)
-        changelog = decodedData or nil
-    end)
 
     -- Startup Timers
     local currentTime = os.clock()
@@ -1510,8 +1612,7 @@ function initializeComponents()
     end
 
     -- Setup Skins
-    skinsUrls = generateSkinsUrls()
-    downloadSkins(skinsUrls)
+    downloadSkins()
 
     -- Turn radio on/off and set favorite radio
     lua_thread.create(function()
@@ -1541,16 +1642,31 @@ function initializeComponents()
         setTime(autobind.TimeAndWeather.hour, autobind.TimeAndWeather.minute)
     end
 
-    if autobind.CurrentPlayer.welcomeMessage then
-        initializeVehicleStorage()
-    end
-
     -- Initialize Menu
     menu.Initialized[0] = true
 end
 
+local oldConfigNames = {"autobind", "autofind", "lastbackup", "names", "pedscount", "reconnect", "skins"}
+
 function main()
 	if not isSampLoaded() or not isSampfuncsLoaded() then return end
+
+    for _, filename in ipairs(oldConfigNames) do
+        local file = Paths.settings .. filename .. ".json"
+        if doesFileExist(file) then
+            local remove, error = pcall(os.remove, file)
+            if not remove then
+                print("Error removing file: " .. error)
+            end
+        end
+    end
+
+    if doesFileExist(Paths.config .. "autobind.json") then
+        local remove, error = pcall(os.remove, Paths.config .. "autobind.json")
+        if not remove then
+            print("Error removing file: " .. error)
+        end
+    end
 
 	-- Create Directories and load all configs
     for _, path in pairs({Paths.libraries, Paths.config, Paths.resource, Paths.settings, Paths.skins, Paths.fonts}) do
@@ -1575,19 +1691,19 @@ function main()
     
     while true do wait(0)
         if sampGetGamestate() ~= 3 then
-            if not hasPlayerLoaded then
+            if hasPlayerConnected then
                 resetAccepterAndBodyguard()
 
                 clearWantedList()
 
                 autobind.CurrentPlayer.welcomeMessage = false
-                hasPlayerLoaded = true
+                hasPlayerConnected = false
             end
         end
 
         if sampGetGamestate() == 3 and (isCharOnFoot(ped) or isCharInWater(ped) or isCharInAnyCar(ped)) then
-            if hasPlayerLoaded then
-                hasPlayerLoaded = false
+            if not hasPlayerConnected then
+                hasPlayerConnected = true
             end
         end
 
@@ -2171,10 +2287,10 @@ function createKeybinds()
 
         if (key:find("FactionLocker") and (lockers.FactionLocker.isProcessing)) or 
            (key:find("BlackMarket") and (lockers.BlackMarket.isProcessing)) then
-            goto skipLockerProcessing
+            goto skipKeybinds
         end
 
-        if keycheck(bind) and (value.Toggle or key == "BikeBind" or key == "SprintBind") then
+        if keycheck(bind) and value.Toggle and #bind.keys > 0 and #bind.type > 0 then
             if activeCheck(true, true, true, true, true) and not menu.Settings.window[0] then
                 if key == "BikeBind" or not timers.Binds.last[key] or (currentTime - timers.Binds.last[key]) >= timers.Binds.timer then
                     local success, errorMsg = pcall(keyFunctions[key])
@@ -2184,14 +2300,14 @@ function createKeybinds()
 
                     timers.Binds.last[key] = currentTime
                     -- Record the last keybind activity
-                    if key ~= "BikeBind" and key ~= "Reconnect" and key ~= "SprintBind" then
+                    if key ~= "BikeBind" and key ~= "Reconnect" then
                         lastKeybindTime = currentTime
                     end
                 end
             end
         end
 
-        ::skipLockerProcessing::
+        ::skipKeybinds::
     end
 end
 
@@ -3219,15 +3335,21 @@ local clientCommands = {
         func = function(cmd, params)
             if #params < 1 then
                 formattedAddChatMessage(string.format("Current Mode: {%06x}%s.", clr_GREY, autobind.Settings.mode or "N/A"))
-                formattedAddChatMessage(string.format("USAGE: /%s [faction|family]", cmd))
-            elseif params:match("^faction$") then
-                formattedAddChatMessage(string.format("You have changed the mode to {%06x}Faction.", clr_GREY))
-                autobind.Settings.mode = "Faction"
-            elseif params:match("^family$") then
-                formattedAddChatMessage(string.format("You have changed the mode to {%06x}Family.", clr_GREY))
-                autobind.Settings.mode = "Family"
+                formattedAddChatMessage(string.format("USAGE: /%s [civ|fac|fam]", cmd))
+            elseif params:match("^[Cc][Ii][Vv]$") then
+                local modeName = "Civilian"
+                formattedAddChatMessage(string.format("You have changed your mode to {%06x}%s.", clr_GREY, modeName))
+                autobind.Settings.mode = modeName
+            elseif params:match("^[Ff][Aa][Cc]$") then
+                local modeName = "Faction"
+                formattedAddChatMessage(string.format("You have changed your mode to {%06x}%s.", clr_ARES, modeName))
+                autobind.Settings.mode = modeName
+            elseif params:match("^[Ff][Aa][Mm]$") then
+                local modeName = "Family"
+                formattedAddChatMessage(string.format("You have changed your mode to {%06x}%s.", clr_YELLOW, modeName))
+                autobind.Settings.mode = modeName
             else
-                formattedAddChatMessage(string.format("USAGE: /%s [faction|family]", cmd))
+                formattedAddChatMessage(string.format("USAGE: /%s [civ|fac|fam]", cmd))
             end
         end
     },
@@ -3982,6 +4104,7 @@ function onScriptTerminate(scr, quitGame)
 	end
 end
 
+local statsCmdSent = false
 local messageHandlers = {
     {   -- Time Change (Auto Capture)
         pattern = "^The time is now (%d+):(%d+)%.$", -- The time is now 22:00.
@@ -4007,15 +4130,180 @@ local messageHandlers = {
                 autobind.CurrentPlayer.id = sampGetPlayerIdByNickname(autobind.CurrentPlayer.name)
 
                 -- Reset vehicle storage status
-                initializeVehicleStorage()
+                lua_thread.create(function()
+                    wait(500)
+                    initializeVehicleStorage()
+                    autobind.CurrentPlayer.welcomeMessage = true
 
-                autobind.CurrentPlayer.welcomeMessage = true
+                    -- Save settings
+                    configs.saveConfigWithErrorHandling(Files.currentplayer, autobind.CurrentPlayer)
+                    configs.saveConfigWithErrorHandling(Files.vehiclestorage, autobind.VehicleStorage)
 
-                -- Save settings
-                configs.saveConfigWithErrorHandling(Files.currentplayer, autobind.CurrentPlayer)
-                configs.saveConfigWithErrorHandling(Files.vehiclestorage, autobind.VehicleStorage)
+                    sampSendChat("/stats")
+                    statsCmdSent = true
+                end)
 
                 return {clrRGBA["NEWS"], string.format("Welcome to Horizon Roleplay, {%06x}%s.", clr_GREY, name)}
+            end
+        end
+    },
+    {   -- MOTD
+        pattern = "^([Family|" .. table.concat(factions.names, "|") .. "|LSFMD].+) MOTD: (.+)",
+        color = clrRGBA["YELLOW"],
+        action = function(type, motdMsg)
+            debugMessage(string.format("%s %s", type, motdMsg), false, true)
+
+            return {clrRGBA["DEPTRADIO"], string.format("%s MOTD: %s", type, motdMsg)}
+        end
+    },
+    {   -- Set Frequency Message
+        pattern = "You have set the frequency of your portable radio to (-?%d+) kHz.",
+        color = clrRGBA["WHITE"],
+        action = function(freq)
+            
+        end
+    },
+    {   -- Radio Message
+        pattern = "%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)",
+        color = clrRGBA["PUBLICRADIO_COLOR"],
+        action = function(freq, playerName, message)
+            local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
+            if playerId then
+                local playerColor = sampGetPlayerColor(playerId)
+                local frequency = freq
+                if autobind.Settings.mode == "Family" then
+                    frequency = "Family"
+                elseif autobind.Settings.mode == "Faction" then
+                    frequency = "Faction"
+                end
+
+                return {clrRGBA["PUBLICRADIO_COLOR"], string.format("** %s Radio ** {%06x}%s (%d){%06x}: %s", frequency, colors.changeAlpha(playerColor, 0), playerName, playerId, clr_PUBLICRADIO_COLOR, message)}
+            end
+        end
+    },
+    {   -- Line 1 Stats
+        pattern = "(.-)%s*-%s*%(Level%:%s*(.-)%)%s*-%s*%(Playing%s*hours%:%s*(.-)%)%s*-%s*%(Gender%:%s*(.-)%)%s*-%s*%(Age%:%s*(.-)%)%s*-%s*%(Phone%s*number%:%s*(.-)%)%s*-%s*%(Warnings%:%s*(.-)%)?$",
+        color = clrRGBA["WHITE"],
+        action = function(name, level, hours, gender, age, number, warnings)
+            --print(name, level, hours, gender, age, number, warnings)
+            if statsCmdSent then
+                lua_thread.create(function()
+                    wait(500)
+                    statsCmdSent = false
+                end)
+                return false
+            end
+        end
+    },
+    {   -- Line 2 Stats
+        pattern = "^%((.-)%)%s*-%s*%(Rank%:%s*(.-)%)%s*-%s*%((.-)%)%s*-%s*%(Job%:%s*(.-)%)%s*-%s*%(Job%s*2:%s*(.-)%)?$",
+        color = clrRGBA["FORSTATS"],
+        action = function(type, rank, division, job, job2)
+            local detectPattern = "^Lawyer %[lvl%: (.-)%]$"
+            local lawyerLevel = job:match(detectPattern) or job2:match(detectPattern)
+            if lawyerLevel then
+                wanted.lawyer = true
+            else
+                wanted.lawyer = false
+            end
+
+            local typeName = type:gsub("Faction: ", ""):gsub("Family: ", "")
+            if type:match("^Faction%:%s*None$") then
+                autobind.Settings.mode = "Civilian"
+                autobind.Faction.type = typeName
+
+                configs.saveConfigWithErrorHandling(Files.faction, autobind.Faction)
+            elseif type:match("^Faction%:%s*(.-)$") and factions.active[typeName] then
+                autobind.Settings.mode = "Faction"
+                autobind.Faction.type = typeName
+
+                -- Enable wanted list because you are now in faction mode.
+                wanted.lawyer = true
+
+                if accepter.enable then
+                    formattedAddChatMessage("Auto Accept is now disabled because you are now in Faction Mode.")
+                    accepter.enable = false
+                end
+
+                if typeName == "ARES" then
+                    local aresPriceMapping = {
+                        ["SPAS-12"] = 3200,
+                        ["MP5"]    = 250,
+                        ["M4"]     = 2100,
+                        ["AK-47"]  = 2100,
+                        ["Sniper"] = 5500
+                    }
+
+                    for i, item in ipairs(lockers.FactionLocker.Items) do
+                        if aresPriceMapping[item.label] then
+                            item.price = aresPriceMapping[item.label]
+                        end
+                    end
+                end
+
+                configs.saveConfigWithErrorHandling(Files.faction, autobind.Faction)
+            elseif type:match("^Family%:%s*(.-)$") then
+                autobind.Settings.mode = "Family"
+                autobind.Family.name = typeName
+
+                configs.saveConfigWithErrorHandling(Files.family, autobind.Family)
+            else
+                print("Other type:", typeName)
+            end
+
+            configs.saveConfigWithErrorHandling(Files.settings, autobind.Settings)
+
+            if statsCmdSent then
+                return false
+            end
+        end
+    },
+    {   -- Line 3 Stats
+        pattern = "^%(Total%s*wealth%:%s*(.-)%)%s*-%s*%(Cash%:%s*(.-)%)%s*-%s*%(Bank%s*balance%:%s*(.-)%)%s*-%s*%(Insurance%:%s*(.-)%)%s*-%s*%(Married%s*to%:%s*(.-)%)?$",
+        color = clrRGBA["WHITE"],
+        action = function(total, cash, bank, insurance, spouse)
+            --print(total, cash, bank, insurance, spouse)
+            if statsCmdSent then
+                return false
+            end
+        end
+    },
+    {   -- Line 4 Stats
+        pattern = "^%(Respect%s*points%:%s*(.-)%)%s*-%s*%(Upgrades:%s*(.-)%)%s*-%s*%(Spawn%s*armor%:%s*(.-)%)%s*-%s*%(Health%:%s*(.-)%)%s*-%s*%(Armor%:%s*(.-)%)%s*-%s*%(Radio%:%s*(.-)%)?$",
+        color = clrRGBA["FORSTATS"],
+        action = function(points, upgrades, spawnarmor, health, armor, freq)
+            --print(points, upgrades, spawnarmor, health, armor, freq)
+            if statsCmdSent then
+                return false
+            end
+        end
+    },
+    {   -- Line 5 Stats
+        pattern = "^%(Crimes%:%s*(.-)%)%s*-%s*%(Arrests%:%s*(.-)%)%s*-%s*%(Wanted%s*Level%:%s*(.-)%)%s*-%s*%(Materials%:%s*(.-)%)%s*-%s*%(Pot%:%s*(.-)%)%s*-%s*%(Crack%:%s*(.-)%)%s*-%s*%(Packages%:%s*(.-)%)%s*-%s*%(Crates%:%s*(.-)%)?$",
+        color = clrRGBA["WHITE"],
+        action = function(crimes, arrests, wantedlevel, materials, pot, crack, packages, crates)
+            --print(crimes, arrests, wantedlevel, materials, pot, crack, packages, crates)
+            if statsCmdSent then
+                return false
+            end
+        end
+    },
+    {   -- Line 6 Stats
+        pattern = "^%(Rope%:%s*(.-)%)%s*-%s*%(Cigars%:%s*(.-)%)%s*-%s*%(Sprunk%:%s*(.-)%)%s*-%s*%(Spray%:%s*(.-)%)%s*-%s*%(Seeds%:%s*(.-)%)%s*-%s*%(Blindfolds%:%s*(.-)%)%s*-%s*%(Ref%s*Tokens%:%s*(.-)%)%s*-%s*%(Donator%:%s*(.-)%)?$",
+        color = clrRGBA["FORSTATS"],
+        action = function(rope, cigars, sprunk, spray, seeds, blindfolds, tokens, donator)
+            --print(rope, cigars, sprunk, spray, seeds, blindfolds, tokens, donator)
+            if statsCmdSent then
+                return false
+            end
+        end
+    },
+    {   -- Stats Brackets
+        pattern = "^___________________________________________________________________________________________________$",
+        color = clrRGBA["NEWS"],
+        action = function()
+            if statsCmdSent then
+                return false
             end
         end
     },
@@ -4045,7 +4333,7 @@ local messageHandlers = {
         color = clrRGBA["TEAM_FBI_COLOR"],
         action = function(header, message)
             -- Check if settings and faction modifications are enabled
-            if not (autobind.Settings and autobind.Faction and autobind.Faction.modifyRadioChat) then
+            if not autobind.Faction.modifyRadioChat then
                 return
             end
 
@@ -4095,127 +4383,6 @@ local messageHandlers = {
             end
         end
     },
-    {   -- Mode/Frequency
-        pattern = "^([Family|" .. table.concat(factions.names, "|") .. "|LSFMD].+) MOTD: (.+)",
-        color = clrRGBA["YELLOW"],
-        action = function(type, motdMsg)
-            if type:match("Family") then
-                autobind.Settings.mode = type
-
-                --[[local freq, allies = motdMsg:match("[Ff]req:?%s*(-?%d+)%s*[/%s]*[Aa]llies:?%s*([^,]+)")
-                if freq and allies then
-                    print("Frequency detected", freq)
-                    currentFamilyFreq = freq
-
-                    print("Allies detected", allies)
-
-                    local newMessage = motdMsg:gsub("[Ff]req:?%s*(-?%d+)", "")
-                    newMessage = newMessage:gsub("^%s*,%s*", "")
-                    print("New message: " .. newMessage)
-
-                    sampAddChatMessage(string.format("{%06x}%s MOTD: %s", clr_DEPTRADIO, type, newMessage), -1)
-                    return false
-                end
-
-                -- Family MOTD: F: -3232 A: LS.
-                -- Family MOTD: F: -3232 // A: TC // discord.gg/GYwedAXGzV // MASS RECRUIT!.
-
-                local freq2, allies2 = motdMsg:match("F: -3232 // A: TC // discord.gg/GYwedAXGzV // MASS RECRUIT!.")
-                if freq2 and allies2 then
-
-                end]]
-
-                configs.saveConfigWithErrorHandling(Files.settings, autobind.Settings)
-                configs.saveConfigWithErrorHandling(Files.family, autobind.Family)
-
-                return {clrRGBA["DEPTRADIO"], string.format("Family MOTD: %s", motdMsg)}
-            elseif type:match("[LSPD|SASD|FBI|ARES|GOV]") then
-                autobind.Settings.mode = "Faction"
-                autobind.Faction.type = type
-
-                -- Enable wanted list because you are now in faction mode.
-                wanted.lawyer = true
-
-                if accepter.enable then
-                    formattedAddChatMessage("Auto Accept is now disabled because you are now in Faction Mode.")
-                    accepter.enable = false
-                end
-
-                if type == "ARES" then
-                    local aresPriceMapping = {
-                        ["SPAS-12"] = 3200,
-                        ["MP5"]    = 250,
-                        ["M4"]     = 2100,
-                        ["AK-47"]  = 2100,
-                        ["Sniper"] = 5500
-                    }
-
-                    for i, item in ipairs(lockers.FactionLocker.Items) do
-                        if aresPriceMapping[item.label] then
-                            item.price = aresPriceMapping[item.label]
-                        end
-                    end
-                end
-
-                --[[local freqType, freq = motdMsg:match("[/|%s*]%s*([RL FREQ:|FREQ:].-)%s*(-?%d+)")
-                if freqType and freq then
-                    print("Faction frequency detected: " .. freq)
-                    currentFactionFreq = freq
-
-                    local newMessage = motdMsg:gsub(freqType .. "%s*" .. freq:gsub("%-", "%%%-") .. "%s*", "")
-                    newMessage = newMessage:gsub("%s*/%s*/%s*", " / ")
-
-                    sampAddChatMessage(string.format("{%06x}%s MOTD: %s", clr_DEPTRADIO, type, newMessage), -1)
-                    return false
-                end]]
-
-                configs.saveConfigWithErrorHandling(Files.settings, autobind.Settings)
-                configs.saveConfigWithErrorHandling(Files.faction, autobind.Faction)
-
-                return {clrRGBA["DEPTRADIO"], string.format("%s MOTD: %s", type, motdMsg)}
-            elseif type:match("LSFMD") then
-                autobind.Settings.mode = "Faction"
-                autobind.Faction.type = type
-
-                -- Enable wanted list because you are now in faction mode.
-                wanted.lawyer = true
-
-                configs.saveConfigWithErrorHandling(Files.settings, autobind.Settings)
-                configs.saveConfigWithErrorHandling(Files.faction, autobind.Faction)
-
-                return {clrRGBA["DEPTRADIO"], string.format("%s MOTD: %s", type, motdMsg)}
-            end
-        end
-    },
-    {   -- Set Frequency Message
-        pattern = "You have set the frequency of your portable radio to (-?%d+) kHz.",
-        color = clrRGBA["WHITE"],
-        action = function(freq)
-            if tonumber(freq) == 0 then
-                if autobind.Settings.mode == "Family" then
-                    currentFamilyFreq = 0
-                    autobind.Family.frequency = 0
-                elseif autobind.Settings.mode == "Faction" then
-                    currentFactionFreq = 0
-                    autobind.Faction.frequency = 0
-                end
-            else
-                formattedAddChatMessage(string.format("You have set the frequency to your {%06x}%s {%06x}portable radio.", clr_DEPTRADIO, autobind.Settings.mode, clr_WHITE))
-                return false
-            end
-        end
-    },
-    {   -- Radio Message
-        pattern = "%*%* Radio %((%-?%d+) kHz%) %*%* (.-): (.+)",
-        color = clrRGBA["PUBLICRADIO_COLOR"],
-        action = function(freq, playerName, message)
-            local playerId = sampGetPlayerIdByNickname(playerName:gsub("%s+", "_"))
-            if playerId then
-                local playerColor = sampGetPlayerColor(playerId)
-                return {clrRGBA["PUBLICRADIO_COLOR"], string.format("** %s Radio ** {%06x}%s (%d){%06x}: %s", autobind.Settings.mode, colors.changeAlpha(playerColor, 0), playerName, playerId, clr_PUBLICRADIO_COLOR, message)}
-            end
-        end
-    },
     {   -- Autocap Disabled
         pattern = "^Your gang is already attempting to capture this turf%.$",
         color = clrRGBA["GRAD1"],
@@ -4229,12 +4396,10 @@ local messageHandlers = {
         end
     },
     {   -- Turf Not Ready
-        pattern = "This turf is not ready for takeover yet.",
+        pattern = "^This turf is not ready for takeover yet%.$",
         color = clrRGBA["GRAD1"],
         action = function()
-            if autoCapture then
-                
-            end
+            -- Nothing for now.
         end
     },
     {   -- You are not high rank enough to capture!
@@ -4330,7 +4495,7 @@ local messageHandlers = {
         pattern = "You are not a bodyguard%.$",
         color = clrRGBA["GREY"],
         action = function()
-            if autobind.AutoVest.guardFeatures then
+            if autobind.AutoVest.guardFeatures and bodyguard.enable then
                 bodyguard.enable = false
                 bodyguard.playerName = ""
                 bodyguard.playerId = -1
@@ -4344,7 +4509,7 @@ local messageHandlers = {
         pattern = "%* You are now a Bodyguard, type %/help to see your new commands%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
-            if autobind.AutoVest.guardFeatures then
+            if autobind.AutoVest.guardFeatures and not bodyguard.enable then
                 bodyguard.enable = true
                 bodyguard.received = false
 
@@ -5049,14 +5214,14 @@ local messageHandlers = {
                 return
             end]]
 
-            print(factionId, factionName)
+            debugMessage(string.format("%s %s", factionId, factionName), false, true)
         end
     },
     {   -- * You sold your (.+) to (.+) for %$([%d,]+)%.$
         pattern = "^%* You sold your (.+) to (.+) for %$([%d,]+)%.$",
         color = clrRGBA["WHITE"],
         action = function(vehicle, buyer, price)
-            print("You sold your " .. vehicle .. " to " .. buyer .. " for $" .. price .. ".")
+            debugMessage(string.format("You sold your %s to %s for $%s.", vehicle, buyer, price), false, true)
         end
     },
     {   -- DIAMOND DONATOR: You have purchased an? (.-) for %$([%d,]+)%.
@@ -5258,10 +5423,9 @@ local messageHandlers = {
         end
     },
     {   -- You are now a Lawyer, type /help to see your new commands.
-        pattern = "^You are now a Lawyer, type /help to see your new commands%.$",
+        pattern = "^* You are now a Lawyer, type /help to see your new commands%.$",
         color = clrRGBA["LIGHTBLUE"],
         action = function()
-            print("Lawyer enabled")
             wanted.lawyer = true
             clearWantedList()
         end
@@ -5270,7 +5434,6 @@ local messageHandlers = {
         pattern = "^%s*You're not a Lawyer / Cop / FBI!$",
         color = clrRGBA["GREY"],
         action = function()
-            print("Lawyer disabled")
             wanted.lawyer = false
             clearWantedList()
         end
@@ -5280,7 +5443,7 @@ local messageHandlers = {
         color = clrRGBA["WHITE"],
         action = function()
             print("First aid kit stopped")
-            setTimer(10.0, timers.Heal)
+            setTimer(timers.Heal.timer, timers.Heal)
         end
     },
     {   -- HQ: A barricade has been deployed by Player Name at Location (Cade: X).
@@ -5548,12 +5711,26 @@ local messageHandlers = {
             end
         end
     },
-    {   -- * 1. {4be263}Outlaw Panzers{BBBBBB} | Leader: {FFFFFF}Ethan Evo Brazy{BBBBBB} | Members: {FFFFFF}388{BBBBBB} | Online: {FFFFFF}8
+    {   -- /families (Family)
         pattern = "^%*%s*(.-)%.%s*%{(.-)%}(.-){%x+}%s*|%s*Leader:%s*{%x+}(.-){%x+}%s*|%s*Members:%s*{%x+}(.-){%x+}%s*|%s*Online:%s*{%x+}(.-)$",
         color = clrRGBA["LIGHTGREY2"],
         action = function(id, color, family, leader, members, online)
-            print(id, color, family, leader, members, online)
+            debugMessage(string.format("%s %s %s %s %s %s", id, color, family, leader, members, online), false, true)
+        end 
+    },
+    {   -- Members Online:
+        pattern = "^Members%s*Online%:$",
+        color = clrRGBA["NEWS"],
+        action = function()
+            debugMessage("Members Online:", false, true)
         end
+    },
+    {   -- /members (Faction/Family)
+        pattern = "^%*%s*(.-)%s*{%x+}(.-){%x+}%s*%((.-)%)%s*%(?(.-)%)?%s*{%x+}A?F?K?$",
+        color = clrRGBA["WHITE"],
+        action = function(begin, name, rank, crew)
+            debugMessage(string.format("%s %s %s %s", begin, name, rank, crew), false, true)
+        end 
     }
 }
 
@@ -5704,11 +5881,11 @@ function sampev.onShowDialog(id, style, title, button1, button2, text)
     end
 
     if title:find("Horizon Roleplay Points") then
-        --print(text)
+        debugMessage(text, false, true)
     end
 
     if title:find("Horizon Roleplay Turfs") then
-        --print(text)
+        debugMessage(text, false, true)
     end
 
     if title:find("Vehicle storage") and style == 2 then
@@ -5860,7 +6037,9 @@ function sampev.onConnectionRejected(reason)
     end
 
     if autobind.Settings.autoReconnect then
+        formattedAddChatMessage("Connection rejected, attempting to reconnect...")
         autoConnect()
+        return false
     end
 
     ::skipRejected::
@@ -5872,7 +6051,9 @@ function sampev.onConnectionClosed()
     end
 
     if autobind.Settings.autoReconnect then
+        formattedAddChatMessage("Connection closed, attempting to reconnect...")
         autoConnect()
+        return false
     end
 
     ::skipClosed::
@@ -5884,7 +6065,9 @@ function sampev.onConnectionBanned()
     end
 
     if autobind.Settings.autoReconnect then
+        formattedAddChatMessage("Connection banned, attempting to reconnect...")
         autoConnect()
+        return false
     end
 
     ::skipBanned::
@@ -5896,7 +6079,9 @@ function sampev.onConnectionLost()
     end
 
     if autobind.Settings.autoReconnect then
+        formattedAddChatMessage("Connection lost, attempting to reconnect...")
         autoConnect()
+        return false
     end
 
     ::skipLost::
@@ -6743,143 +6928,159 @@ function(self)
         if imgui.Begin(settingsKey, menu[settingsKey].window, menu[settingsKey].flags) then
             customTitleBar(settingsKey, menu[settingsKey].title())
 
-            imgui.SetCursorPos(imgui.ImVec2(252, 9))
-            imgui.PushFont(fontData.medium.font)
-            imgui.BeginGroup()
-            imgui_funcs.TextColoredRGB(string.format("{%06x}({%06x}?{%06x})", clr_GREY, clr_GREEN, clr_GREY))
-            imgui.EndGroup()
-            imgui_funcs.CustomTooltip(string.format('%s', scriptDesc))
-            imgui.PopFont()
-
-            imgui.SetCursorPosY(30)
-            imgui.PushFont(fontData.medium.font)
-            if imgui.BeginChild("##SideButtons", child_size1, false) then
-                for i, button in ipairs(buttons1) do
-                    imgui.SetCursorPosY(cursor_positions_y_buttons1[i])
-
-                    -- Push custom font if specified
-                    if button.font then
-                        imgui.PushFont(fontData[button.font].font)
-                        if imgui_funcs.CustomButton(button.icon(), button.color(), button.hoveredColor(), button.activeColor(), button.textColor(), button_size_small) then
-                            button.action()
-                        end
-                        imgui.PopFont()
-                    end
-    
-                    
-                    if not isUpdateHovered then
-                        imgui_funcs.CustomTooltip(button.tooltip())
-                    end
-
-                    if button.id == 5 then
-                        imgui.PushStyleVarFloat(imgui.StyleVar.FrameRounding, 5)
-
-                        imgui.SetCursorPos(imgui.ImVec2(15, cursor_positions_y_buttons1[i] + 50))
-                        imgui.BeginChild("##checkbox", imgui.ImVec2(55, 20), false)
-                        imgui.SetCursorPos(imgui.ImVec2(0, 2))
-                        if imgui.Checkbox('Beta', new.bool(autobind[settingsKey].fetchBeta)) then
-                            autobind[settingsKey].fetchBeta = toggleBind("Beta Updates", autobind[settingsKey].fetchBeta)
-                            updateCheck()
-                        end
-                        imgui_funcs.CustomTooltip('Fetch the latest version from the beta branch')
-                        isUpdateHovered = imgui.IsItemHovered()
-                        imgui.EndChild()
-                        imgui.PopStyleVar(1)
-                    end
-                end
-            end
-            imgui.EndChild()
-            imgui.PopFont()
-
-            imgui.SetCursorPos(imgui.ImVec2(76, 30))
-            imgui.PushFont(fontData.medium.font)
-
-            local widthSpacing = 1
-            local heightSpacing = 1
-            local numColumns = 4
-            local numRows = 2
-
-            local buttonWidth = ((child_size2.x - (numColumns - 1) * widthSpacing) / numColumns) - 1
-            local buttonHeight = ((child_size2.y - (numRows - 1) * heightSpacing) / numRows) - 6.5
-            local buttonSize = imgui.ImVec2(buttonWidth, buttonHeight)
-
-            if imgui.BeginChild("##Pages", child_size2, false) then
-                for i, button in ipairs(buttons2) do
-                    if button.id == 1 then
-                        imgui.BeginGroup()
-                    elseif button.id == numColumns + 1 then
-                        imgui.SetCursorPosY(buttonSize.y + heightSpacing)
-                        imgui.BeginGroup()
-                    elseif button.id == numColumns * 2 + 1 then
-                        imgui.SetCursorPosY(buttonSize.y * 2 + heightSpacing * 2)
-                        imgui.BeginGroup()
-                    end
-
-                    local isActive = menu[settingsKey].pageId == button.id
-                    local color = isActive and imguiRGBA["RED"] or imguiRGBA["DARKGREY"]
-                    
-                    if imgui_funcs.CustomButton(button.icon(), color, imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], buttonSize) then
-                        menu[settingsKey].pageId = button.id
-                    end
-                    
-                    if not isActive then
-                        imgui_funcs.CustomTooltip(button.tooltip)
-                    end
-
-                    if (button.id == numColumns or button.id == numColumns * 2) or button.id == #buttons2 then
-                        imgui.EndGroup()
-                    end
-
-                    if (i % numColumns) ~= 0 then
-                        imgui.SameLine(nil, widthSpacing)
-                    end
-                end
-            end
-            imgui.EndChild()
-            imgui.PopFont()
-
-            imgui.SetCursorPos(imgui.ImVec2(75, 105))
-            if imgui.BeginChild("##PageRenders", child_size_pages, false) then
-                for _, button in ipairs(buttons2) do
-                    if button.id == menu[settingsKey].pageId and button.render then
-                        button.render()
-                        break
-                    end
-                end
-            end
-            imgui.EndChild()
-
-            imgui.SetCursorPos(imgui.ImVec2(80, 385))
-            imgui.PushFont(fontData.medium.font)
-            if imgui.BeginChild("##BottomSettings", child_size_bottom, false) then
-                imgui.SetCursorPos(imgui.ImVec2(0, 2))
-                if imgui.Button(fa.ICON_FA_KEYBOARD .. " Charges [WIP]") then
-                    menu.Charges.window[0] = not menu.Charges.window[0]
-                end
-                imgui_funcs.CustomTooltip("Opens charges settings.")
-                imgui_funcs.CustomTooltip(string.format("You can also use {%06x}'/%s charges'{%06x} to open this menu.", clr_GREY, shortName, clr_WHITE))
-
-                imgui.SameLine()
-                if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " BMS") then
-                    menu.BlackMarket.window[0] = not menu.BlackMarket.window[0]
-                end
-                imgui_funcs.CustomTooltip("Opens black market settings.")
-                imgui_funcs.CustomTooltip(string.format("You can also use {%06x}'/%s bms'{%06x} to open this menu.", clr_GREY, shortName, clr_WHITE))
-
-                if autobind[settingsKey].mode == "Faction" then
-                    imgui.SameLine()
-                    if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " Locker") then
-                        menu.FactionLocker.window[0] = not menu.FactionLocker.window[0]
-                    end
-                    imgui_funcs.CustomTooltip("Opens faction locker settings.")
-                    imgui_funcs.CustomTooltip(string.format("You can also use {%06x}'/%s locker'{%06x} to open this menu.", clr_GREY, shortName, clr_WHITE))
-                end
-            end
-            imgui.EndChild()
-            imgui.PopFont()
+            renderMainSettings(settingsKey)
         end
         imgui.End()
         imgui.PopStyleVar(1)
+    end
+
+    local chargesKey = "Charges"
+    if menu[chargesKey].window[0] then
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
+        setupWindowDraggingAndSize(chargesKey)
+        if imgui.Begin(chargesKey, menu[chargesKey].window, menu[chargesKey].flags) then
+            customTitleBar(chargesKey, menu[chargesKey].title())
+
+            renderChargeMenu()
+        end
+        imgui.End()
+        imgui.PopStyleVar(1)
+    end
+
+    local skinsKey = "Skins"
+    if menu[skinsKey].window[0] then
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
+        imgui.PushStyleVarFloat(imgui.StyleVar.ScrollbarSize, 10)
+        setupWindowDraggingAndSize(skinsKey)
+
+        if imgui.Begin(skinsKey, menu[skinsKey].window, menu[skinsKey].flags) then
+            customTitleBar(skinsKey, menu[skinsKey].title())
+
+            renderSkins(skinsKey)
+        end
+        imgui.End()
+        imgui.PopStyleVar(2)
+    end
+
+    local namesKey = "Names"
+    if menu[namesKey].window[0] then
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
+        setupWindowDraggingAndSize(namesKey)
+
+        if imgui.Begin(namesKey, menu[namesKey].window, menu[namesKey].flags) then
+            customTitleBar(namesKey, menu[namesKey].title())
+            
+            renderNames(namesKey)
+        end
+        imgui.End()
+        imgui.PopStyleVar(1)
+    end
+
+    local confirmKey = "Confirm"
+    if menu[confirmKey].window[0] then
+        imgui.PushStyleVarFloat(imgui.StyleVar.FrameRounding, 5)
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
+        setupWindowDraggingAndSize(confirmKey)
+        imgui.SetNextWindowFocus()
+
+        if imgui.Begin(confirmKey, menu[confirmKey].window, menu[confirmKey].flags) then
+            customTitleBar(confirmKey, menu[confirmKey].title())
+            
+            renderConfirm(confirmKey)
+        end
+        imgui.End()
+        imgui.PopStyleVar(2)
+    end
+
+    for label, name in pairs(lockerVars) do
+        if menu[name].window[0] then
+            imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
+            renderLockerWindow(label, name)
+            imgui.PopStyleVar(1)
+        end
+    end
+
+    local changeLogKey = "Changelog"
+    if menu[changeLogKey].window[0] then
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
+        renderChangelogWindow(changeLogKey)
+        imgui.PopStyleVar(1)
+    end
+
+    local wantedKey = "Wanted"
+    if menu[wantedKey].window[0] and autobind[wantedKey].Enabled and wanted.lawyer and activeCheck(false, false, true, false, true) and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) then
+        imgui.PushFont(fontData.font)
+        local textLines = {}
+        if autobind[wantedKey].List and #autobind[wantedKey].List > 0 then
+            for _, entry in ipairs(autobind[wantedKey].List) do
+                table.insert(textLines, formatWantedString(entry, true, true))
+            end
+        else
+            textLines = {"No current wanted suspects."}
+        end
+
+        local bgColor = colors.convertColor(autobind[wantedKey].BackgroundColor, true, true, false)
+        local borderColor = colors.convertColor(autobind[wantedKey].BorderColor, true, true, false)
+        local borderSize = autobind[wantedKey].BorderSize
+        local padding = autobind[wantedKey].Padding
+        local rounding = autobind[wantedKey].Rounding
+
+        imgui.PushStyleColor(imgui.Col.WindowBg, imgui.ImVec4(bgColor.r, bgColor.g, bgColor.b, autobind[wantedKey].ShowBackground and bgColor.a or 0))
+        imgui.PushStyleColor(imgui.Col.Border, imgui.ImVec4(borderColor.r, borderColor.g, borderColor.b, autobind[wantedKey].ShowBorder and borderColor.a or 0))
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, padding)
+        imgui.PushStyleVarFloat(imgui.StyleVar.WindowBorderSize, borderSize)
+        imgui.PushStyleVarFloat(imgui.StyleVar.WindowRounding, rounding)
+        imgui.PushStyleVarVec2(imgui.StyleVar.WindowMinSize, imgui.ImVec2(0, 0))
+
+        local windowSize = imgui_funcs.calculateWindowSize(textLines, autobind[wantedKey].Padding)
+        local newPos, isDragging = imgui_funcs.handleWindowDragging("WantedList", autobind[wantedKey].Pos, windowSize, autobind[wantedKey].Pivot, true)
+        if isDragging and menu.Settings.window[0] then
+            autobind[wantedKey].Pos = newPos
+        end
+        imgui.SetNextWindowPos(autobind[wantedKey].Pos, imgui.Cond.Always, autobind[wantedKey].Pivot)
+        imgui.SetNextWindowSize(windowSize, imgui.Cond.Always)
+
+        if imgui.Begin(wantedKey, menu[wantedKey].window, menu[wantedKey].flags) then
+            local lineHeight = imgui.GetTextLineHeightWithSpacing()
+            local totalTextHeight = #textLines * lineHeight
+            local startY = (windowSize.y - totalTextHeight) / 2
+            local offsetX = padding.x + borderSize * 0.25
+
+            if (not isPlayerAFK or not autobind[wantedKey].ShowAFK) or isPlayerSpectating then
+                for i, text in ipairs(textLines) do
+                    local textPosY = startY + (i - 1) * lineHeight + 1
+                    imgui.SetCursorPos(imgui.ImVec2(offsetX, textPosY))
+                    imgui_funcs.TextColoredRGB(text)
+                end
+            else
+                local afkText = string.format("{%06x}You are currently AFK.", autobind[wantedKey].AFKTextColor)
+                local textSize = imgui_funcs.calcTextSize(afkText)
+                local windowWidth = imgui.GetWindowWidth()
+                local windowHeight = imgui.GetWindowHeight()
+                local iconPosX = (windowWidth - textSize.x) / 2
+                local iconPosY = (windowHeight - textSize.y) / 2.2
+                imgui.SetCursorPos(imgui.ImVec2(iconPosX, iconPosY))
+                imgui_funcs.TextColoredRGB(afkText)
+            end
+
+            if autobind[wantedKey].ShowRefresh then
+                local timeRemaining = autobind[wantedKey].Timer - (os.clock() - last_wanted)
+                if timeRemaining >= (autobind[wantedKey].Timer - 1) and timeRemaining <= autobind[wantedKey].Timer + 1 then
+                    local icon = string.format("{%06x}%s", autobind[wantedKey].RefreshColor, fa.ICON_FA_CHECK)
+                    local iconSize = imgui_funcs.calcTextSize(icon)
+                    local iconPosX = windowSize.x - iconSize.x - (borderSize * 0.25 - 2)
+                    local iconPosY = borderSize * 0.25 + 2
+                    imgui.SetCursorPos(imgui.ImVec2(iconPosX, iconPosY))
+                    imgui.PushFont(fontData.xsmall.font)
+                    imgui_funcs.TextColoredRGB(icon)
+                    imgui.PopFont()
+                end
+            end
+        end
+        imgui.End()
+        imgui.PopStyleVar(4)
+        imgui.PopStyleColor(2)
+        imgui.PopFont()
     end
 
     local vsKey = "VehicleStorage"
@@ -6975,182 +7176,296 @@ function(self)
     end
 
     ::skipVehicleStorage::
+end).HideCursor = true
 
-    local chargesKey = "Charges"
-    if menu[chargesKey].window[0] then
-        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
-        setupWindowDraggingAndSize(chargesKey)
-        if imgui.Begin(chargesKey, menu[chargesKey].window, menu[chargesKey].flags) then
-            customTitleBar(chargesKey, menu[chargesKey].title())
+function renderMainSettings(label)
+    imgui.SetCursorPos(imgui.ImVec2(252, 9))
+    imgui.PushFont(fontData.medium.font)
+    imgui.BeginGroup()
+    imgui_funcs.TextColoredRGB(string.format("{%06x}({%06x}?{%06x})", clr_GREY, clr_GREEN, clr_GREY))
+    imgui.EndGroup()
+    imgui_funcs.CustomTooltip(string.format('%s', scriptDesc))
+    imgui.PopFont()
 
-            renderChargeMenu()
-        end
-        imgui.End()
-        imgui.PopStyleVar(1)
-    end
+    imgui.SetCursorPosY(30)
+    imgui.PushFont(fontData.medium.font)
+    if imgui.BeginChild("##SideButtons", child_size1, false) then
+        for i, button in ipairs(buttons1) do
+            imgui.SetCursorPosY(cursor_positions_y_buttons1[i])
 
-    local skinsKey = "Skins"
-    if menu[skinsKey].window[0] then
-        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
-        imgui.PushStyleVarFloat(imgui.StyleVar.ScrollbarSize, 10)
-        setupWindowDraggingAndSize(skinsKey)
-
-        if imgui.Begin(skinsKey, menu[skinsKey].window, menu[skinsKey].flags) then
-            customTitleBar(skinsKey, menu[skinsKey].title())
-
-            imgui.SetCursorPos(imgui.ImVec2(8, 38))
-
-            local columns = 8
-            local imageSize = imgui.ImVec2(50, 80)
-            local spacing = 10.0
-
-            if autobind.Settings.mode == "Family" then
-                imgui.PushFont(fontData.medium.font)
-    
-                imgui.PushItemWidth(326)
-                local url = new.char[128](autobind.AutoVest.skinsUrl)
-                if imgui.InputText('##skins_url', url, sizeof(url)) then
-                    autobind.AutoVest.skinsUrl = u8:decode(str(url))
+            -- Push custom font if specified
+            if button.font then
+                imgui.PushFont(fontData[button.font].font)
+                if imgui_funcs.CustomButton(button.icon(), button.color(), button.hoveredColor(), button.activeColor(), button.textColor(), button_size_small) then
+                    button.action()
                 end
-                imgui_funcs.CustomTooltip(string.format('URL to fetch skins from, must be a JSON array of skin IDs,\n%s "%s"', fa.ICON_FA_LINK, autobind.AutoVest.skinsUrl))
-                imgui.SameLine()
-                imgui.PopItemWidth()
-                if imgui.Button("Fetch") then
-                    fetchJsonDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
-                        autobind.AutoVest.skins = decodedData
-    
-                        -- Convert list to set
-                        family.skins = table.listToSet(autobind.AutoVest.skins)
-                    end)
-                end
-                imgui_funcs.CustomTooltip("Fetches skins from provided URL")
-                imgui.SameLine()
-                if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchSkins)) then
-                    autobind.AutoVest.autoFetchSkins = not autobind.AutoVest.autoFetchSkins
-                end
-                imgui_funcs.CustomTooltip("Fetch skins at startup")
-    
                 imgui.PopFont()
-    
-                local startPos = imgui.GetCursorPos()
-                local index = drawSkinImages(family.skins, columns, imageSize, spacing, startPos)
-    
-                local column = index % columns
-                local row = math.floor(index / columns)
-                local posX = startPos.x + column * (imageSize.x + spacing)
-                local posY = startPos.y + row * (imageSize.y + spacing / 4)
-    
-                imgui.SetCursorPos(imgui.ImVec2(posX, posY))
-                if imgui.Button(" Edit\nSkins", imageSize) then
-                    menu.Skins.window[0] = not menu.Skins.window[0]
+            end
+
+            
+            if not isUpdateHovered then
+                imgui_funcs.CustomTooltip(button.tooltip())
+            end
+
+            if button.id == 5 then
+                imgui.PushStyleVarFloat(imgui.StyleVar.FrameRounding, 5)
+
+                imgui.SetCursorPos(imgui.ImVec2(15, cursor_positions_y_buttons1[i] + 50))
+                imgui.BeginChild("##checkbox", imgui.ImVec2(55, 20), false)
+                imgui.SetCursorPos(imgui.ImVec2(0, 2))
+                if imgui.Checkbox('Beta', new.bool(autobind[label].fetchBeta)) then
+                    autobind[label].fetchBeta = toggleBind("Beta Updates", autobind[label].fetchBeta)
+                    updateCheck()
                 end
-
-                local storedSkins = {}
-                for skinId, _ in pairs(family.skins) do
-                    table.insert(storedSkins, skinId)
-                end
-
-                table.sort(storedSkins)
-
-                -- Create a string of selected skin IDs
-                local selectedSkinsText = table.concat(storedSkins, ",")
-
-                imgui.PushFont(fontData.medium.font)
-
-                -- Display read-only input field with selected skins
-                imgui.PushItemWidth(500)
-                local buffer = new.char[256](selectedSkinsText)
-                imgui.InputText("##selected_skins", buffer, sizeof(buffer), imgui.InputTextFlags.ReadOnly)
-                imgui.PopItemWidth()
-                imgui_funcs.CustomTooltip("Select skins to use for your family")
-
-                imgui.SameLine()
-                if imgui.Button(fa.ICON_FA_COPY) then
-                    setClipboardText(selectedSkinsText)
-                end
-                imgui_funcs.CustomTooltip("Copy selected skin IDs to clipboard")
-
-                imgui.PopFont()
-
-                -- Begin a child window for scrolling
-                if imgui.BeginChild("SkinList", imgui.ImVec2(538, 358), false) then
-                    imgui.SetCursorPos(imgui.ImVec2(8, 2))
-                    imgui.BeginGroup()
-                    for skinId = 0, 311 do
-                        if (skinId % 8) ~= 0 then
-                            imgui.SameLine()
-                        end
-
-                        -- Check if the skin is selected
-                        local isSelected = family.skins[skinId] == true
-
-                        -- Highlight the selected skin
-                        if isSelected then
-                            imgui.PushStyleColor(imgui.Col.Button, imguiRGBA["REALGREEN"]) -- Green highlight
-                        end
-
-                        if skinTextures[skinId] == nil then
-                            local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, skinId)
-                            if doesFileExist(skinPath) then
-                                skinTextures[skinId] = imgui.CreateTextureFromFile(skinPath)
-                            end
-                        end
-
-                        if imgui.ImageButton(skinTextures[skinId], imgui.ImVec2(50, 80)) then
-                            if isSelected then
-                                family.skins[skinId] = nil -- Remove entry if deselected
-                            else
-                                family.skins[skinId] = true -- Add entry if selected
-                            end
-                        end
-
-                        if isSelected then
-                            imgui.PopStyleColor()
-                        end
-
-                        imgui_funcs.CustomTooltip("Skin " .. skinId)
-                    end
-                    imgui.EndGroup()
-                end
+                imgui_funcs.CustomTooltip('Fetch the latest version from the beta branch')
+                isUpdateHovered = imgui.IsItemHovered()
                 imgui.EndChild()
-            elseif autobind.Settings.mode == "Faction" then
-                local storedSkins = {}
-                for skinId, _ in pairs(factions.skins) do
-                    table.insert(storedSkins, skinId)
-                end
-
-                table.sort(storedSkins)
-
-                imgui.SetCursorPos(imgui.ImVec2(0, 30))
-                if imgui.BeginChild("SkinList", imgui.ImVec2(menu[skinsKey].size.x, menu[skinsKey].size.y - 30), true) then
-                    imgui.SetCursorPos(imgui.ImVec2(5, 5))
-                    imgui.BeginGroup()
-                    for index, skinId in ipairs(storedSkins) do
-                        local isSelected = factions.skins[skinId] == true
-                        if isSelected then
-                            if index % 7 ~= 1 then
-                                imgui.SameLine()
-                            end
-
-                            if skinTextures[skinId] == nil then
-                                local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, skinId)
-                                if doesFileExist(skinPath) then
-                                    skinTextures[skinId] = imgui.CreateTextureFromFile(skinPath)
-                                end
-                            end
-
-                            imgui.ImageButton(skinTextures[skinId], imgui.ImVec2(50, 80))
-                            imgui_funcs.CustomTooltip("Skin " .. skinId)
-                        end
-                    end
-                    imgui.EndGroup()
-                end
-                imgui.EndChild()
+                imgui.PopStyleVar(1)
             end
         end
-        imgui.End()
-        imgui.PopStyleVar(2)
     end
+    imgui.EndChild()
+    imgui.PopFont()
+
+    imgui.SetCursorPos(imgui.ImVec2(76, 30))
+    imgui.PushFont(fontData.medium.font)
+
+    local widthSpacing = 1
+    local heightSpacing = 1
+    local numColumns = 4
+    local numRows = 2
+
+    local buttonWidth = ((child_size2.x - (numColumns - 1) * widthSpacing) / numColumns) - 1
+    local buttonHeight = ((child_size2.y - (numRows - 1) * heightSpacing) / numRows) - 6.5
+    local buttonSize = imgui.ImVec2(buttonWidth, buttonHeight)
+
+    if imgui.BeginChild("##Pages", child_size2, false) then
+        for i, button in ipairs(buttons2) do
+            if button.id == 1 then
+                imgui.BeginGroup()
+            elseif button.id == numColumns + 1 then
+                imgui.SetCursorPosY(buttonSize.y + heightSpacing)
+                imgui.BeginGroup()
+            elseif button.id == numColumns * 2 + 1 then
+                imgui.SetCursorPosY(buttonSize.y * 2 + heightSpacing * 2)
+                imgui.BeginGroup()
+            end
+
+            local isActive = menu[label].pageId == button.id
+            local color = isActive and imguiRGBA["RED"] or imguiRGBA["DARKGREY"]
+            
+            if imgui_funcs.CustomButton(button.icon(), color, imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], buttonSize) then
+                menu[label].pageId = button.id
+            end
+            
+            if not isActive then
+                imgui_funcs.CustomTooltip(button.tooltip)
+            end
+
+            if (button.id == numColumns or button.id == numColumns * 2) or button.id == #buttons2 then
+                imgui.EndGroup()
+            end
+
+            if (i % numColumns) ~= 0 then
+                imgui.SameLine(nil, widthSpacing)
+            end
+        end
+    end
+    imgui.EndChild()
+    imgui.PopFont()
+
+    imgui.SetCursorPos(imgui.ImVec2(75, 105))
+    if imgui.BeginChild("##PageRenders", child_size_pages, false) then
+        for _, button in ipairs(buttons2) do
+            if button.id == menu[label].pageId and button.render then
+                button.render()
+                break
+            end
+        end
+    end
+    imgui.EndChild()
+
+    imgui.SetCursorPos(imgui.ImVec2(80, 385))
+    imgui.PushFont(fontData.medium.font)
+    if imgui.BeginChild("##BottomSettings", child_size_bottom, false) then
+        imgui.SetCursorPos(imgui.ImVec2(0, 2))
+        if imgui.Button(fa.ICON_FA_KEYBOARD .. " Charges [WIP]") then
+            menu.Charges.window[0] = not menu.Charges.window[0]
+        end
+        imgui_funcs.CustomTooltip("Opens charges settings.")
+        imgui_funcs.CustomTooltip(string.format("You can also use {%06x}'/%s charges'{%06x} to open this menu.", clr_GREY, shortName, clr_WHITE))
+
+        imgui.SameLine()
+        if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " BMS") then
+            menu.BlackMarket.window[0] = not menu.BlackMarket.window[0]
+        end
+        imgui_funcs.CustomTooltip("Opens black market settings.")
+        imgui_funcs.CustomTooltip(string.format("You can also use {%06x}'/%s bms'{%06x} to open this menu.", clr_GREY, shortName, clr_WHITE))
+
+        if autobind[label].mode == "Faction" then
+            imgui.SameLine()
+            if imgui.Button(fa.ICON_FA_SHOPPING_CART .. " Locker") then
+                menu.FactionLocker.window[0] = not menu.FactionLocker.window[0]
+            end
+            imgui_funcs.CustomTooltip("Opens faction locker settings.")
+            imgui_funcs.CustomTooltip(string.format("You can also use {%06x}'/%s locker'{%06x} to open this menu.", clr_GREY, shortName, clr_WHITE))
+        end
+    end
+    imgui.EndChild()
+    imgui.PopFont()
+end
+
+function renderSkins(label)
+    imgui.SetCursorPos(imgui.ImVec2(8, 38))
+
+    local columns = 8
+    local imageSize = imgui.ImVec2(50, 80)
+    local spacing = 10.0
+
+    if autobind.Settings.mode == "Family" then
+        imgui.PushFont(fontData.medium.font)
+
+        imgui.PushItemWidth(326)
+        local url = new.char[128](autobind.AutoVest.skinsUrl)
+        if imgui.InputText('##skins_url', url, sizeof(url)) then
+            autobind.AutoVest.skinsUrl = u8:decode(str(url))
+        end
+        imgui_funcs.CustomTooltip(string.format('URL to fetch skins from, must be a JSON array of skin IDs,\n%s "%s"', fa.ICON_FA_LINK, autobind.AutoVest.skinsUrl))
+        imgui.SameLine()
+        imgui.PopItemWidth()
+        if imgui.Button("Fetch") then
+            fetchJsonDataDirectlyFromURL(autobind.AutoVest.skinsUrl, function(decodedData)
+                autobind.AutoVest.skins = decodedData
+
+                -- Convert list to set
+                family.skins = table.listToSet(autobind.AutoVest.skins)
+            end)
+        end
+        imgui_funcs.CustomTooltip("Fetches skins from provided URL")
+        imgui.SameLine()
+        if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchSkins)) then
+            autobind.AutoVest.autoFetchSkins = not autobind.AutoVest.autoFetchSkins
+        end
+        imgui_funcs.CustomTooltip("Fetch skins at startup")
+
+        imgui.PopFont()
+
+        local startPos = imgui.GetCursorPos()
+        local index = drawSkinImages(family.skins, columns, imageSize, spacing, startPos)
+
+        local column = index % columns
+        local row = math.floor(index / columns)
+        local posX = startPos.x + column * (imageSize.x + spacing)
+        local posY = startPos.y + row * (imageSize.y + spacing / 4)
+
+        imgui.SetCursorPos(imgui.ImVec2(posX, posY))
+        if imgui.Button(" Edit\nSkins", imageSize) then
+            menu.Skins.window[0] = not menu.Skins.window[0]
+        end
+
+        local storedSkins = {}
+        for skinId, _ in pairs(family.skins) do
+            table.insert(storedSkins, skinId)
+        end
+
+        table.sort(storedSkins)
+
+        -- Create a string of selected skin IDs
+        local selectedSkinsText = table.concat(storedSkins, ",")
+
+        imgui.PushFont(fontData.medium.font)
+
+        -- Display read-only input field with selected skins
+        imgui.PushItemWidth(500)
+        local buffer = new.char[256](selectedSkinsText)
+        imgui.InputText("##selected_skins", buffer, sizeof(buffer), imgui.InputTextFlags.ReadOnly)
+        imgui.PopItemWidth()
+        imgui_funcs.CustomTooltip("Select skins to use for your family")
+
+        imgui.SameLine()
+        if imgui.Button(fa.ICON_FA_COPY) then
+            setClipboardText(selectedSkinsText)
+        end
+        imgui_funcs.CustomTooltip("Copy selected skin IDs to clipboard")
+
+        imgui.PopFont()
+
+        -- Begin a child window for scrolling
+        if imgui.BeginChild("SkinList", imgui.ImVec2(538, 358), false) then
+            imgui.SetCursorPos(imgui.ImVec2(8, 2))
+            imgui.BeginGroup()
+            for skinId = 0, 311 do
+                if (skinId % 8) ~= 0 then
+                    imgui.SameLine()
+                end
+
+                -- Check if the skin is selected
+                local isSelected = family.skins[skinId] == true
+
+                -- Highlight the selected skin
+                if isSelected then
+                    imgui.PushStyleColor(imgui.Col.Button, imguiRGBA["REALGREEN"]) -- Green highlight
+                end
+
+                if skinTextures[skinId] == nil then
+                    local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, skinId)
+                    if doesFileExist(skinPath) then
+                        skinTextures[skinId] = imgui.CreateTextureFromFile(skinPath)
+                    end
+                end
+
+                if imgui.ImageButton(skinTextures[skinId], imgui.ImVec2(50, 80)) then
+                    if isSelected then
+                        family.skins[skinId] = nil -- Remove entry if deselected
+                    else
+                        family.skins[skinId] = true -- Add entry if selected
+                    end
+                end
+
+                if isSelected then
+                    imgui.PopStyleColor()
+                end
+
+                imgui_funcs.CustomTooltip("Skin " .. skinId)
+            end
+            imgui.EndGroup()
+        end
+        imgui.EndChild()
+    elseif autobind.Settings.mode == "Faction" then
+        local storedSkins = {}
+        for skinId, _ in pairs(factions.skins) do
+            table.insert(storedSkins, skinId)
+        end
+
+        table.sort(storedSkins)
+
+        imgui.SetCursorPos(imgui.ImVec2(0, 30))
+        if imgui.BeginChild("SkinList", imgui.ImVec2(menu[label].size.x, menu[label].size.y - 30), true) then
+            imgui.SetCursorPos(imgui.ImVec2(5, 5))
+            imgui.BeginGroup()
+            for index, skinId in ipairs(storedSkins) do
+                local isSelected = factions.skins[skinId] == true
+                if isSelected then
+                    if index % 7 ~= 1 then
+                        imgui.SameLine()
+                    end
+
+                    if skinTextures[skinId] == nil then
+                        local skinPath = string.format("%s\\Skin_%d.png", Paths.skins, skinId)
+                        if doesFileExist(skinPath) then
+                            skinTextures[skinId] = imgui.CreateTextureFromFile(skinPath)
+                        end
+                    end
+
+                    imgui.ImageButton(skinTextures[skinId], imgui.ImVec2(50, 80))
+                    imgui_funcs.CustomTooltip("Skin " .. skinId)
+                end
+            end
+            imgui.EndGroup()
+        end
+        imgui.EndChild()
+    end
+end
 
     --[[function renderSkins()
         imgui.SetCursorPos(imgui.ImVec2(10, 1))
@@ -7203,230 +7518,87 @@ function(self)
         imgui.EndGroup()
     end]]
 
-    local namesKey = "Names"
-    if menu[namesKey].window[0] then
-        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
-        setupWindowDraggingAndSize(namesKey)
+function renderNames(label)
+    imgui.SetCursorPos(imgui.ImVec2(10, 38))
+    if imgui.BeginChild("##names", imgui.ImVec2(menu[label].size.x - 10, menu[label].size.y - 38), false) then
 
-        if imgui.Begin(namesKey, menu[namesKey].window, menu[namesKey].flags) then
-            customTitleBar(namesKey, menu[namesKey].title())
-            imgui.SetCursorPos(imgui.ImVec2(10, 38))
-            if imgui.BeginChild("##names", imgui.ImVec2(menu[namesKey].size.x - 10, menu[namesKey].size.y - 38), false) then
+        imgui.PushItemWidth(326)
+        local url = new.char[128](autobind.AutoVest.namesUrl)
+        if imgui.InputText('##names_url', url, sizeof(url)) then
+            autobind.AutoVest.namesUrl = u8:decode(str(url))
+        end
+        imgui_funcs.CustomTooltip(string.format('%s (%s)', fa.ICON_FA_LINK, autobind.AutoVest.namesUrl))
+        imgui.SameLine()
+        imgui.PopItemWidth()
+        if imgui.Button("Fetch") then
+            fetchJsonDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
+                if decodedData then
+                    autobind.AutoVest.names = decodedData
 
-                imgui.PushItemWidth(326)
-                local url = new.char[128](autobind.AutoVest.namesUrl)
-                if imgui.InputText('##names_url', url, sizeof(url)) then
-                    autobind.AutoVest.namesUrl = u8:decode(str(url))
+                    -- Convert list to set
+                    namesList = table.listToSet(autobind.AutoVest.names)
                 end
-                imgui_funcs.CustomTooltip(string.format('%s (%s)', fa.ICON_FA_LINK, autobind.AutoVest.namesUrl))
-                imgui.SameLine()
-                imgui.PopItemWidth()
-                if imgui.Button("Fetch") then
-                    fetchJsonDataDirectlyFromURL(autobind.AutoVest.namesUrl, function(decodedData)
-                        if decodedData then
-                            autobind.AutoVest.names = decodedData
+            end)
+        end
+        imgui_funcs.CustomTooltip("URL to fetch names must be a JSON formatted array of names.")
+        imgui.SameLine()
+        if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchNames)) then
+            autobind.AutoVest.autoFetchNames = not autobind.AutoVest.autoFetchNames
+        end
+        imgui_funcs.CustomTooltip("Fetch names at startup")
 
-                            -- Convert list to set
-                            namesList = table.listToSet(autobind.AutoVest.names)
-                        end
-                    end)
-                end
-                imgui_funcs.CustomTooltip("URL to fetch names must be a JSON formatted array of names.")
-                imgui.SameLine()
-                if imgui.Checkbox("Auto Fetch", new.bool(autobind.AutoVest.autoFetchNames)) then
-                    autobind.AutoVest.autoFetchNames = not autobind.AutoVest.autoFetchNames
-                end
-                imgui_funcs.CustomTooltip("Fetch names at startup")
-
-                imgui.PushFont(fontData.medium.font)
-                        
-                local itemsPerRow = 3  -- Number of items per row
-                local itemCount = 0
-
-                local sortedNames = {}
-                for name, _ in pairs(namesList) do
-                    table.insert(sortedNames, name)
-                end
-
-                table.sort(sortedNames)
+        imgui.PushFont(fontData.medium.font)
                 
-                for _, name in ipairs(sortedNames) do
+        local itemsPerRow = 3  -- Number of items per row
+        local itemCount = 0
 
-                    imgui.PushItemWidth(138)  -- Adjust the width of the input field
-                    local nick = new.char[128](name)
-                    if imgui.InputText('##Nickname'..name, nick, sizeof(nick), imgui.InputTextFlags.EnterReturnsTrue) then
-                        namesList[name] = nil
-                        namesList[u8:decode(str(nick))] = true
-                    end
-                    imgui.PopItemWidth()
-                    imgui.SameLine()
-                    imgui.SetCursorPosX(imgui.GetCursorPosX() - 7)
-                    if imgui.Button("x##"..name) then
-                        namesList[name] = nil
-                    end
-                        
-                    itemCount = itemCount + 1
-                    if itemCount % itemsPerRow ~= 0 then
-                        imgui.SameLine()
-                    end
-                end
-
-                if imgui.Button("Add Name", imgui.ImVec2(154, 18)) then
-                    local baseName = "Name"
-                    local newName = baseName
-                    local counter = 1
-
-                    -- Check if the name already exists and append a number if necessary
-                    while namesList[newName] do
-                        newName = baseName .. tostring(counter)
-                        counter = counter + 1
-                    end
-
-                    -- Add the new name to the set
-                    namesList[newName] = true
-                end
-
-                imgui.PopFont()
-            end
-            imgui.EndChild()
+        local sortedNames = {}
+        for name, _ in pairs(namesList) do
+            table.insert(sortedNames, name)
         end
-        imgui.End()
-        imgui.PopStyleVar(1)
-    end
 
-    local confirmKey = "Confirm"
-    if menu[confirmKey].window[0] then
-        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
-        setupWindowDraggingAndSize(confirmKey)
-        imgui.SetNextWindowFocus()
+        table.sort(sortedNames)
+        
+        for _, name in ipairs(sortedNames) do
 
-        if imgui.Begin(confirmKey, menu[confirmKey].window, menu[confirmKey].flags) then
-            if menu[confirmKey].update[0] then
-                customTitleBar(confirmKey, menu[confirmKey].title())
-
-                imgui.SetCursorPos(imgui.ImVec2(10, 38))
-                if imgui.BeginChild("##confirm", imgui.ImVec2(menu[confirmKey].size.x - 10, menu[confirmKey].size.y - 38), false) then
-                    imgui.Text('Do you want to update this script?')
-                    if currentContent and currentContent.version and currentContent.lastversion and currentContent.updatedBy and currentContent.date then
-                        imgui.Text(string.format('Current: %s\nLatest: %s\nLast: %s', scriptVersion, currentContent.version, currentContent.lastversion))
-                        imgui.Text(string.format('Updated by: %s\nDate: %s', currentContent.updatedBy, currentContent.date))
-                    end
-
-                    -- Get available space and divide it for the buttons
-                    local buttonWidth = (180 - imgui.GetStyle().ItemSpacing.x) / 2
-                    local buttonSize = imgui.ImVec2(buttonWidth, 30)
-
-                    if imgui_funcs.CustomButton(fa.ICON_FA_CHECK .. ' Update', imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], buttonSize) then
-                        updateScript()
-                        menu[confirmKey].update[0] = false
-                        menu[confirmKey].window[0] = false
-                    end
-                    imgui.SameLine()
-                    if imgui_funcs.CustomButton(fa.ICON_FA_TIMES .. ' Cancel', imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], buttonSize) then
-                        menu[confirmKey].update[0] = false
-                        menu[confirmKey].window[0] = false
-
-                        if autoReboot then
-                            script.load(workingDir .. "\\AutoReboot.lua")
-                        end
-                    end
-                end
-                imgui.EndChild()
+            imgui.PushItemWidth(138)  -- Adjust the width of the input field
+            local nick = new.char[128](name)
+            if imgui.InputText('##Nickname'..name, nick, sizeof(nick), imgui.InputTextFlags.EnterReturnsTrue) then
+                namesList[name] = nil
+                namesList[u8:decode(str(nick))] = true
+            end
+            imgui.PopItemWidth()
+            imgui.SameLine()
+            imgui.SetCursorPosX(imgui.GetCursorPosX() - 7)
+            if imgui.Button("x##"..name) then
+                namesList[name] = nil
+            end
+                
+            itemCount = itemCount + 1
+            if itemCount % itemsPerRow ~= 0 then
+                imgui.SameLine()
             end
         end
-        imgui.End()
-        imgui.PopStyleVar(1)
-    end
 
-    for label, name in pairs(lockerVars) do
-        if menu[name].window[0] then
-            imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
-            renderLockerWindow(label, name)
-            imgui.PopStyleVar(1)
-        end
-    end
+        if imgui.Button("Add Name", imgui.ImVec2(154, 18)) then
+            local baseName = "Name"
+            local newName = baseName
+            local counter = 1
 
-    local changeLogKey = "Changelog"
-    if menu[changeLogKey].window[0] then
-        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, imgui.ImVec2(0, 0))
-        renderChangelogWindow(changeLogKey)
-        imgui.PopStyleVar(1)
-    end
-
-    local wantedKey = "Wanted"
-    if menu[wantedKey].window[0] and autobind[wantedKey].Enabled and wanted.lawyer and activeCheck(false, false, true, false, true) and sampGetChatDisplayMode() > 0 and not isKeyDown(VK_F10) then
-        local textLines = {}
-        if autobind[wantedKey].List and #autobind[wantedKey].List > 0 then
-            for _, entry in ipairs(autobind[wantedKey].List) do
-                table.insert(textLines, formatWantedString(entry, true, true))
-            end
-        else
-            textLines = {"No current wanted suspects."}
-        end
-
-        local windowSize = imgui_funcs.calculateWindowSize(textLines, autobind[wantedKey].Padding)
-        local newPos, isDragging = imgui_funcs.handleWindowDragging("WantedList", autobind[wantedKey].Pos, windowSize, autobind[wantedKey].Pivot, true)
-        if isDragging and menu.Settings.window[0] then
-            autobind[wantedKey].Pos = newPos
-        end
-        imgui.SetNextWindowPos(autobind[wantedKey].Pos, imgui.Cond.Always, autobind[wantedKey].Pivot)
-        imgui.SetNextWindowSize(windowSize, imgui.Cond.Always)
-
-        local bgColor = colors.convertColor(autobind[wantedKey].BackgroundColor, true, true, false)
-        local borderColor = colors.convertColor(autobind[wantedKey].BorderColor, true, true, false)
-        local borderSize = autobind[wantedKey].BorderSize
-        local padding = autobind[wantedKey].Padding
-        local rounding = autobind[wantedKey].Rounding
-
-        imgui.PushStyleColor(imgui.Col.WindowBg, imgui.ImVec4(bgColor.r, bgColor.g, bgColor.b, autobind[wantedKey].ShowBackground and bgColor.a or 0))
-        imgui.PushStyleColor(imgui.Col.Border, imgui.ImVec4(borderColor.r, borderColor.g, borderColor.b, autobind[wantedKey].ShowBorder and borderColor.a or 0))
-        imgui.PushStyleVarVec2(imgui.StyleVar.WindowPadding, padding)
-        imgui.PushStyleVarFloat(imgui.StyleVar.WindowBorderSize, borderSize)
-        imgui.PushStyleVarFloat(imgui.StyleVar.WindowRounding, rounding)
-        imgui.PushStyleVarVec2(imgui.StyleVar.WindowMinSize, imgui.ImVec2(0, 0))
-
-        if imgui.Begin(wantedKey, menu[wantedKey].window, menu[wantedKey].flags) then
-            local lineHeight = imgui.GetTextLineHeightWithSpacing()
-            local totalTextHeight = #textLines * lineHeight
-            local startY = (windowSize.y - totalTextHeight) / 2
-            local offsetX = padding.x + borderSize * 0.25
-
-            if (not isPlayerAFK or not autobind[wantedKey].ShowAFK) or isPlayerSpectating then
-                for i, text in ipairs(textLines) do
-                    local textPosY = startY + (i - 1) * lineHeight + 1
-                    imgui.SetCursorPos(imgui.ImVec2(offsetX, textPosY))
-                    imgui_funcs.TextColoredRGB(text)
-                end
-            else
-                local afkText = string.format("{%06x}You are currently AFK.", autobind[wantedKey].AFKTextColor)
-                local textSize = imgui_funcs.calcTextSize(afkText)
-                local windowWidth = imgui.GetWindowWidth()
-                local windowHeight = imgui.GetWindowHeight()
-                local iconPosX = (windowWidth - textSize.x) / 2
-                local iconPosY = (windowHeight - textSize.y) / 2.2
-                imgui.SetCursorPos(imgui.ImVec2(iconPosX, iconPosY))
-                imgui_funcs.TextColoredRGB(afkText)
+            -- Check if the name already exists and append a number if necessary
+            while namesList[newName] do
+                newName = baseName .. tostring(counter)
+                counter = counter + 1
             end
 
-            if autobind[wantedKey].ShowRefresh then
-                local timeRemaining = autobind[wantedKey].Timer - (os.clock() - last_wanted)
-                if timeRemaining >= (autobind[wantedKey].Timer - 1) and timeRemaining <= autobind[wantedKey].Timer + 1 then
-                    local icon = string.format("{%06x}%s", autobind[wantedKey].RefreshColor, fa.ICON_FA_CHECK)
-                    local iconSize = imgui_funcs.calcTextSize(icon)
-                    local iconPosX = windowSize.x - iconSize.x - (borderSize * 0.25 - 2)
-                    local iconPosY = borderSize * 0.25 + 2
-                    imgui.SetCursorPos(imgui.ImVec2(iconPosX, iconPosY))
-                    imgui.PushFont(fontData.xsmall.font)
-                    imgui_funcs.TextColoredRGB(icon)
-                    imgui.PopFont()
-                end
-            end
+            -- Add the new name to the set
+            namesList[newName] = true
         end
-        imgui.End()
-        imgui.PopStyleVar(4)
-        imgui.PopStyleColor(2)
+
+        imgui.PopFont()
     end
-end).HideCursor = true
+    imgui.EndChild()
+end
 
 function renderAutoBind()
     imgui.SetCursorPos(imgui.ImVec2(10, 10))
@@ -7572,6 +7744,81 @@ function renderGuard(mode)
         imgui.EndGroup()
     else
         imgui.Text("Mode not found.")
+    end
+end
+
+function renderConfirm(label)
+    if menu[label].update[0] then
+        imgui.SetCursorPos(imgui.ImVec2(10, 38))
+        if imgui.BeginChild("##confirm", imgui.ImVec2(menu[label].size.x - 10, menu[label].size.y - 38), false) then
+            imgui.PushFont(fontData.medium.font)
+            if currentContent and currentContent.version and currentContent.lastversion and currentContent.updatedBy and currentContent.date then
+                imgui_funcs.TextColoredRGB(string.format('{%06x}Installed: {%06x}%s', 
+                    clr_GREY,
+                    clr_ARES,
+                    scriptVersion
+                ))
+                imgui_funcs.TextColoredRGB(string.format('{%06x}Latest: {%06x}%s', 
+                    clr_GREY, 
+                    clr_ARES,
+                    currentContent.version
+                ))
+                imgui_funcs.TextColoredRGB(string.format('{%06x}Last: {%06x}%s', 
+                    clr_GREY, 
+                    clr_ARES,
+                    currentContent.lastversion
+                ))
+
+                imgui_funcs.TextColoredRGB(string.format('{%06x}Updated by: {%06x}%s', 
+                    clr_GREY, 
+                    clr_ARES,
+                    currentContent.updatedBy
+                ))
+                imgui.SameLine()
+                imgui_funcs.TextColoredRGB(string.format('{%06x}Date: {%06x}%s', 
+                    clr_GREY, 
+                    clr_ARES,
+                    currentContent.date
+                ))
+            end
+            imgui.PopFont()
+
+            imgui.PushFont(fontData.large.font)
+            imgui_funcs.TextColoredRGB(string.format('{%06x}Are you sure you want to update %s?', clr_GREY, scriptName))
+
+            -- Get available space and divide it for the buttons
+            local buttonWidth = (180 - imgui.GetStyle().ItemSpacing.x) / 2
+            local buttonSize = imgui.ImVec2(buttonWidth, 30)
+
+            if imgui_funcs.CustomButton(fa.ICON_FA_CHECK .. '  Update', imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], buttonSize) then
+                updateScript()
+                menu[label].update[0] = false
+                menu[label].window[0] = false
+            end
+            imgui.SameLine()
+            if imgui_funcs.CustomButton(fa.ICON_FA_TIMES .. '  Cancel', imguiRGBA["DARKGREY"], imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], buttonSize) then
+                menu[label].update[0] = false
+                menu[label].window[0] = false
+
+                if autoReboot then
+                    script.load(workingDir .. "\\AutoReboot.lua")
+                end
+            end
+            imgui.PopFont()
+            imgui.SameLine()
+            imgui.PushFont(fontData.medium.font)
+            if imgui_funcs.CustomButton(fa.ICON_FA_QUESTION_CIRCLE .. ' Changes', imguiRGBA["ARES"], imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], imgui.ImVec2(75, 30)) then
+                menu.Changelog.window[0] = not menu.Changelog.window[0]
+            end
+
+            imgui.SetCursorPos(imgui.ImVec2(195, 0))
+            if imgui_funcs.CustomButton(fa.ICON_FA_SEARCH_LOCATION .. ' GitHub', imguiRGBA["ARES"], imguiRGBA["ALTRED"], imguiRGBA["RED"], imguiRGBA["WHITE"], imgui.ImVec2(65, 25)) then
+                os.execute('start ' .. Urls.scriptGitHub)
+
+            end
+            imgui.PopFont()
+        end
+        imgui.EndChild()
     end
 end
 
@@ -8927,26 +9174,9 @@ function updateScript()
     end)
 end
 
-function generateSkinsUrls()
-    local files = {}
-    for i = 0, 311 do
-        table.insert(files, {
-            url = string.format("%sSkin_%d.png", Urls.skinsPath, i),
-            path = string.format("%sSkin_%d.png", Paths.skins, i),
-            replace = false,
-            index = i
-        })
-    end
-
-    -- Sort the files by index
-    table.sort(files, function(a, b) return tonumber(a.index) < tonumber(b.index) end)
-
-    return files
-end
-
-function downloadSkins(urls)
-    downloadFilesFromURL(urls, true, function(downloadsFinished)
-        if downloadsFinished then
+function downloadSkins()
+    downloadFilesFromURL(skinsUrls, true, function(result)
+        if result then
             formattedAddChatMessage("All skins files were downloaded successfully!")
             autobind.Settings.notifySkins = false
         else
@@ -9336,16 +9566,16 @@ function handleCapture(mode)
         return
     end
 
-    if autobind[mode].point and mode ~= "Faction" then
+    if autobind[mode].point and mode == "Family" then
         sampSendChat("/capture")
         timers.Capture.sentTime = currentTime
-        if autobind[mode].disableAfterCapturing and mode == "Family" then
+        if autobind[mode].disableAfterCapturing then
             autobind[mode].point = false
         end
         return
     end
 
-    if autobind[mode].turf then
+    if autobind[mode].turf and (mode == "Family" or mode == "Faction") then
         sampSendChat("/capturf")
         timers.Capture.sentTime = currentTime
         if autobind[mode].disableAfterCapturing and mode == "Family" then
